@@ -183,7 +183,8 @@ final class ScreenshotCapture {
     let historyResult = try Self.deliverScreenshot(
       pngData, copy: Clipboard.shared.copyScreenshot, saveHistory: saveInHistory, present: present
     )
-    if case .failure = historyResult {
+    if case .failure(let error) = historyResult {
+      History.shared.logger.error("Failed to save screenshot history: \(String(reflecting: error))")
       Task { [weak self] in
         self?.showError("ScreenshotHistorySaveWarning", title: "ScreenshotHistorySaveWarningTitle")
       }
@@ -199,18 +200,15 @@ final class ScreenshotCapture {
     return historyResult
   }
 
-  private func saveInHistory(_ pngData: Data) throws {
+  func saveInHistory(_ pngData: Data) throws {
     let item = HistoryItem(contents: [
       HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData)
     ])
     item.application = Bundle.main.bundleIdentifier
     item.title = text("ScreenshotTitle")
 
-    if #unavailable(macOS 15.0) {
-      try History.shared.insertIntoStorage(item)
-    }
-    History.shared.add(item)
-    try Storage.shared.context.save()
+    History.shared.add(item, saveToStorage: false)
+    try History.shared.insertIntoStorage(item)
   }
 
   private func pinImage(_ image: NSImage, anchor: NSPoint? = nil) {

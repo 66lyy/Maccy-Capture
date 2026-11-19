@@ -26,7 +26,7 @@ class Sorter {
   func sort(_ items: [HistoryItem], by: By = Defaults[.sortBy]) -> [HistoryItem] {
     let sortedUnpinned = items
       .filter { $0.pin == nil }
-      .sorted(by: { bySortingAlgorithm($0, $1, by) })
+      .sorted(by: { precedes($0, $1, by: by) })
 
     let pinnedItems = items.filter { $0.pin != nil }
     let pinOrder = Defaults[.pinOrder].pins
@@ -53,7 +53,7 @@ class Sorter {
     }
   }
 
-  private func bySortingAlgorithm(_ lhs: HistoryItem, _ rhs: HistoryItem, _ by: By) -> Bool {
+  func precedes(_ lhs: HistoryItem, _ rhs: HistoryItem, by: By = Defaults[.sortBy]) -> Bool {
     switch by {
     case .firstCopiedAt:
       return lhs.firstCopiedAt > rhs.firstCopiedAt

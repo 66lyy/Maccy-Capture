@@ -40,6 +40,179 @@ extension SharedStateTests {
       #expect(history.items.toArray() == [second, first])
     }
 
+    @Test("Binary insertion matches the full stable sort", arguments: Sorter.By.allCases)
+    func binaryInsertionMatchesFullSort(by: Sorter.By) {
+      Defaults[.sortBy] = by
+      let firstCopiedAt: [TimeInterval] = [20, 10, 30, 20, 0]
+      let lastCopiedAt: [TimeInterval] = [40, 20, 30, 40, 10]
+      let copies = [2, 1, 4, 2, 3]
+      for index in firstCopiedAt.indices {
+        let item = historyItem("unique \(index)")
+        item.firstCopiedAt = Date(timeIntervalSince1970: firstCopiedAt[index])
+        item.lastCopiedAt = Date(timeIntervalSince1970: lastCopiedAt[index])
+        item.numberOfCopies = copies[index]
+        let expected = Sorter().sort(history.unpinnedItems.map(\.item) + [item], by: by)
+
+        history.add(item)
+
+        #expect(history.unpinnedItems.map(\.item) == expected)
+      }
+    }
+
+    @Test("Duplicate replacement preserves full-sort ordering", arguments: Sorter.By.allCases)
+    func duplicateReplacementOrdering(by: Sorter.By) {
+      Defaults[.sortBy] = by
+      for index in 0..<3 {
+        let item = historyItem("ordered \(index)")
+        item.firstCopiedAt = Date(timeIntervalSince1970: TimeInterval(index))
+        item.lastCopiedAt = Date(timeIntervalSince1970: TimeInterval(index))
+        item.numberOfCopies = index + 1
+        history.add(item)
+      }
+      let previous = history.unpinnedItems.map(\.item).filter { $0.text != "ordered 0" }
+      let incoming = historyItem("ordered 0")
+      incoming.lastCopiedAt = Date(timeIntervalSince1970: 10)
+      incoming.numberOfCopies = 5
+
+      let replacement = history.add(incoming)
+
+      #expect(history.unpinnedItems.map(\.item) == Sorter().sort(previous + [replacement.item], by: by))
+      #expect(replacement.item.firstCopiedAt == Date(timeIntervalSince1970: 0))
+      #expect(replacement.item.numberOfCopies == 6)
+    }
+
+    @Test("Comparable fingerprints ignore transient types")
+    func comparableFingerprintsIgnoreTransientTypes() {
+      let original = historyItem("same content")
+      original.contents.append(HistoryItemContent(type: NSPasteboard.PasteboardType.fromMaccy.rawValue, value: Data()))
+      history.add(original)
+      let incoming = historyItem("same content")
+      incoming.contents.append(HistoryItemContent(type: NSPasteboard.PasteboardType.modified.rawValue,
+                                                 value: Data("not a change count".utf8)))
+
+      #expect(original.comparableContentFingerprint == incoming.comparableContentFingerprint)
+      let replacement = history.add(incoming)
+
+      #expect(history.items.toArray() == [replacement])
+      #expect(replacement.item.numberOfCopies == 2)
+    }
+
+    @Test("Indexed subset matches preserve pinned-first priority", arguments: Sorter.By.allCases)
+    func indexedSubsetMatchesPreferPinned(by: Sorter.By) {
+      Defaults[.sortBy] = by
+      let exact = history.add(historyItem("shared"))
+      let richer = historyItem("shared")
+      richer.contents.append(HistoryItemContent(type: NSPasteboard.PasteboardType.html.rawValue,
+                                               value: Data("extra representation".utf8)))
+      richer.pin = "f"
+      history.add(richer)
+      let incoming = historyItem("shared")
+      #expect(richer.comparableContentFingerprint != incoming.comparableContentFingerprint)
+
+      let replacement = history.add(incoming)
+
+      #expect(history.pinnedItems == [replacement])
+      #expect(history.unpinnedItems == [exact])
+      #expect(replacement.item.pin == "f")
+      #expect(replacement.item.contents.count == 2)
+      #expect(replacement.item.numberOfCopies == 2)
+    }
+
+    @Test("Empty comparable contents still match the first stored item")
+    func emptyComparableContentsMatchFirstStored() {
+      history.add(historyItem("unpinned"))
+      let pinned = historyItem("pinned")
+      pinned.pin = "f"
+      history.add(pinned)
+
+      let replacement = history.add(HistoryItem())
+
+      #expect(replacement.item.pin == "f")
+      #expect(replacement.item.text == "pinned")
+      #expect(history.items.count == 2)
+    }
+
+    @Test("Duplicate index refreshes edited contents synchronously", arguments: ["value", "type", "append", "remove"])
+    func duplicateIndexRefreshesEditedContents(edit: String) {
+      let original = historyItem("old")
+      let htmlType = NSPasteboard.PasteboardType.html.rawValue
+      if edit == "remove" {
+        original.contents.append(HistoryItemContent(type: htmlType, value: Data("extra".utf8)))
+      }
+      history.add(original)
+      let incoming: HistoryItem
+      switch edit {
+      case "value":
+        original.contents[0].value = Data("new".utf8)
+        incoming = historyItem("new")
+      case "type":
+        original.contents[0].type = htmlType
+        incoming = HistoryItem(contents: [HistoryItemContent(type: htmlType, value: Data("old".utf8))])
+      default:
+        if edit == "append" {
+          original.contents.append(HistoryItemContent(type: htmlType, value: Data("extra".utf8)))
+        } else {
+          original.contents.removeAll { $0.type == htmlType }
+        }
+        incoming = historyItem("old")
+        incoming.contents.append(HistoryItemContent(type: htmlType, value: Data("extra".utf8)))
+      }
+
+      #expect(original.supersedes(incoming) == (edit != "remove"))
+      #expect(incoming.comparableContentFingerprint.isSubset(of: original.comparableContentFingerprint)
+              == (edit != "remove"))
+      let added = history.add(incoming)
+
+      #expect(history.items.count == (edit == "remove" ? 2 : 1))
+      #expect(added.item.numberOfCopies == (edit == "remove" ? 1 : 2))
+    }
+
+    @Test("Comparable fingerprints distinguish nil from empty data")
+    func comparableFingerprintsDistinguishNilFromEmpty() {
+      let type = NSPasteboard.PasteboardType.string.rawValue
+      history.add(HistoryItem(contents: [HistoryItemContent(type: type)]))
+      let empty = history.add(HistoryItem(contents: [HistoryItemContent(type: type, value: Data())]))
+      #expect(history.items.count == 2)
+      #expect(empty.item.numberOfCopies == 1)
+
+      let nilDuplicate = history.add(HistoryItem(contents: [HistoryItemContent(type: type)]))
+
+      #expect(history.items.count == 2)
+      #expect(nilDuplicate.item.numberOfCopies == 2)
+    }
+
+    @Test("Subset fingerprints do not count repeated content twice")
+    func repeatedContentDoesNotChangeSubsetMatching() {
+      history.add(historyItem("repeated"))
+      let incoming = historyItem("repeated")
+      incoming.contents.append(HistoryItemContent(type: NSPasteboard.PasteboardType.string.rawValue,
+                                                 value: Data("repeated".utf8)))
+
+      let replacement = history.add(incoming)
+
+      #expect(history.items.toArray() == [replacement])
+      #expect(replacement.item.numberOfCopies == 2)
+    }
+
+    @Test("Duplicate index follows history lifecycle", arguments: ["delete", "clear", "clearAll", "evict", "load"])
+    func duplicateIndexFollowsLifecycle(path: String) async throws {
+      let original = history.add(historyItem("indexed"))
+      switch path {
+      case "delete": history.delete(original)
+      case "clear": history.clear()
+      case "clearAll": history.clearAll()
+      case "evict":
+        Defaults[.size] = 1
+        history.add(historyItem("evicting"))
+      default: try await history.load()
+      }
+
+      let added = history.add(historyItem("indexed"))
+
+      #expect(history.items.toArray() == [added])
+      #expect(added.item.numberOfCopies == (path == "load" ? 2 : 1))
+    }
+
     @Test("Adding persisted duplicate")
     func addingPersistedDuplicate() throws {
       let first = historyItem("foo")
@@ -208,6 +381,375 @@ extension SharedStateTests {
 
       #expect(history.items.toArray() == [modifiedItemDecorator])
       #expect(history.items[0].text == "bar")
+    }
+
+    @Test("Repeated duplicates retain only the live model in the session log")
+    func repeatedDuplicatesRetainOnlyLiveModel() throws {
+      let savedChangeCount = Clipboard.shared.changeCount
+      defer { Clipboard.shared.changeCount = savedChangeCount }
+      for changeCount in 1...20 {
+        Clipboard.shared.changeCount = changeCount
+        let current = history.add(historyItem("foo"))
+        #expect(history.items.count == 1)
+        #expect(history.sessionLog.count == changeCount)
+        #expect(history.sessionLog.values.allSatisfy { $0 === current.item })
+        try assertStorageCounts(items: 1, contents: 1)
+      }
+    }
+
+    @Test("Modification aliases resolve to the live replacement", arguments: [1, 2])
+    func modificationAliasesResolveToLiveReplacement(originalChangeCount: Int) throws {
+      let savedChangeCount = Clipboard.shared.changeCount
+      defer { Clipboard.shared.changeCount = savedChangeCount }
+      Clipboard.shared.changeCount = 1
+      let original = history.add(historyItem("foo"))
+      Clipboard.shared.changeCount = 2
+      let replacement = history.add(historyItem("foo"))
+      #expect(history.sessionLog[originalChangeCount] === replacement.item)
+      #expect(history.sessionLog.values.allSatisfy { $0 !== original.item })
+
+      let modified = historyItem("bar")
+      modified.contents.append(HistoryItemContent(
+        type: NSPasteboard.PasteboardType.modified.rawValue,
+        value: String(originalChangeCount).data(using: .utf8)
+      ))
+      Clipboard.shared.changeCount = 3
+      let current = history.add(modified)
+
+      #expect(history.items.toArray() == [current])
+      #expect(current.text == "bar")
+      #expect(current.item.numberOfCopies == 3)
+      #expect(history.sessionLog.values.allSatisfy { $0 === current.item })
+      try assertStorageCounts(items: 1, contents: 2)
+    }
+
+    @Test("Deletion prunes all replacement aliases", arguments: ["delete", "clear", "clearAll", "limit"])
+    func deletionPrunesAllReplacementAliases(path: String) {
+      let savedChangeCount = Clipboard.shared.changeCount
+      defer { Clipboard.shared.changeCount = savedChangeCount }
+      Clipboard.shared.changeCount = 1
+      history.add(historyItem("foo"))
+      Clipboard.shared.changeCount = 2
+      let replacement = history.add(historyItem("foo"))
+
+      switch path {
+      case "delete": history.delete(replacement)
+      case "clear": history.clear()
+      case "clearAll": history.clearAll()
+      default:
+        Defaults[.size] = 1
+        Clipboard.shared.changeCount = 3
+        history.add(historyItem("bar"))
+      }
+
+      #expect(history.sessionLog[1] == nil)
+      #expect(history.sessionLog[2] == nil)
+      #expect(history.sessionLog.values.allSatisfy { $0 !== replacement.item })
+      #expect(history.sessionLog.count == (path == "limit" ? 1 : 0))
+    }
+
+    @Test("Screenshot insertion saves once after finalizing history", arguments: ["new", "duplicate", "eviction"])
+    func screenshotInsertionSavesOnce(scenario: String) throws {
+      let bitmap = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0
+      ))
+      bitmap.setColor(.red, atX: 0, y: 0)
+      let data = try #require(bitmap.representation(using: .png, properties: [:]))
+      let capture = ScreenshotCapture.shared
+      if scenario == "duplicate" {
+        try capture.saveInHistory(data)
+      } else if scenario == "eviction" {
+        Defaults[.size] = 1
+        history.add(historyItem("old"))
+      }
+
+      let context = Storage.shared.context
+      let autosaveEnabled = context.autosaveEnabled
+      context.autosaveEnabled = false
+      defer { context.autosaveEnabled = autosaveEnabled }
+      let counts = SaveCounts()
+      let willSave = NotificationCenter.default.addObserver(forName: ModelContext.willSave, object: context, queue: nil) {
+        _ in MainActor.assumeIsolated { counts.attempted += 1 }
+      }
+      let didSave = NotificationCenter.default.addObserver(forName: ModelContext.didSave, object: context, queue: nil) {
+        _ in MainActor.assumeIsolated { counts.completed += 1 }
+      }
+      defer {
+        NotificationCenter.default.removeObserver(willSave)
+        NotificationCenter.default.removeObserver(didSave)
+      }
+
+      try capture.saveInHistory(data)
+
+      #expect(counts.attempted == 1)
+      #expect(counts.completed == 1)
+      let savedContext = ModelContext(Storage.shared.container)
+      let savedItems = try savedContext.fetch(FetchDescriptor<HistoryItem>())
+      let saved = try #require(savedItems.first)
+      #expect(savedItems.count == 1)
+      #expect(saved.title == NSLocalizedString("ScreenshotTitle", tableName: "GeneralSettings", comment: ""))
+      #expect(saved.application == Bundle.main.bundleIdentifier)
+      #expect(saved.numberOfCopies == (scenario == "duplicate" ? 2 : 1))
+      #expect(saved.contents.count == 1)
+      #expect(saved.contents.first?.value == data)
+      #expect(!context.hasChanges)
+    }
+
+    @Test("An attached item is saved without being inserted twice")
+    func attachedItemIsSavedOnce() throws {
+      let item = historyItem("attached")
+      let counts = SaveCounts()
+      let observer = NotificationCenter.default.addObserver(
+        forName: ModelContext.didSave, object: Storage.shared.context, queue: nil
+      ) { _ in MainActor.assumeIsolated { counts.completed += 1 } }
+      defer { NotificationCenter.default.removeObserver(observer) }
+
+      history.add(item)
+
+      #expect(counts.completed == 1)
+      #expect(!Storage.shared.context.hasChanges)
+      #expect(try ModelContext(Storage.shared.container).fetchCount(FetchDescriptor<HistoryItem>()) == 1)
+    }
+
+    @Test("A storage save error propagates without undoing the screenshot clipboard copy")
+    func screenshotStorageSaveFailurePreservesCopy() throws {
+      let originalContainer = Storage.shared.container
+      let originalChangeCount = Clipboard.shared.changeCount
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let url = directory.appendingPathComponent("History.sqlite")
+      do {
+        let writable = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(url: url))
+        writable.mainContext.insert(HistoryItem())
+        try writable.mainContext.save()
+      }
+      let configuration = ModelConfiguration(url: url, allowsSave: false)
+      Storage.shared.container = try ModelContainer(for: HistoryItem.self, configurations: configuration)
+      Storage.shared.context.autosaveEnabled = false
+      defer {
+        Storage.shared.context.rollback()
+        Storage.shared.container = originalContainer
+        history.clearAll()
+        Clipboard.shared.changeCount = originalChangeCount
+      }
+
+      let data = Data("screenshot storage failure fixture".utf8)
+      var presented = false
+      let result = try ScreenshotCapture.deliverScreenshot(
+        data, copy: Clipboard.shared.copyScreenshot, saveHistory: ScreenshotCapture.shared.saveInHistory,
+        present: { presented = true }
+      )
+
+      guard case .failure = result else {
+        Issue.record("The storage save error was swallowed")
+        return
+      }
+      #expect(presented)
+      #expect(NSPasteboard.general.data(forType: .png) == data)
+    }
+
+    @MainActor
+    private final class SaveCounts {
+      var attempted = 0
+      var completed = 0
+    }
+
+    @Test("Preference title regeneration still schedules file-backed OCR")
+    func preferenceTitleRegenerationSchedulesOCR() async throws {
+      let recognizer = ControlledHistoryRecognizer()
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(4)
+        history.clearAll()
+      }
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpeg")
+      let item = HistoryItem(contents: [
+        HistoryItemContent(type: NSPasteboard.PasteboardType.fileURL.rawValue, value: url.dataRepresentation),
+        HistoryItemContent(type: NSPasteboard.PasteboardType.universalClipboard.rawValue, value: Data())
+      ])
+      item.title = "existing"
+      history.add(item)
+      #expect(!coordinator.isRunning)
+
+      history.updateTitlesForSpecialSymbols()
+
+      try await waitForOCR { recognizer.calls.count == 1 }
+      recognizer.release()
+      try await waitForOCR { !coordinator.isRunning }
+      #expect(item.title == "recognized")
+    }
+
+    @Test("Image OCR burst keeps one active and three newest pending jobs")
+    func imageOCRBurstIsBounded() async throws {
+      let recognizer = ControlledHistoryRecognizer()
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(8)
+        history.clearAll()
+      }
+      let first = history.add(ocrItem(0))
+      try await waitForOCR { recognizer.calls.count == 1 }
+      var images = [first]
+      for value in UInt8(1)...6 {
+        images.append(history.add(ocrItem(value)))
+        #expect(coordinator.pendingCount <= 3)
+      }
+      #expect(coordinator.pendingCount == 3)
+      recognizer.release(4)
+      try await waitForOCR { !coordinator.isRunning }
+
+      #expect(recognizer.calls == [0, 4, 5, 6].map { Data([UInt8($0)]) })
+      #expect(!recognizer.ranOnMainThread)
+      #expect(images[1...3].allSatisfy { $0.item.title.isEmpty })
+      #expect(images[4...6].allSatisfy { $0.item.title == "recognized" })
+    }
+
+    @Test("Deleting queued OCR never sets its title", arguments: ["delete", "clear", "clearAll", "limit"])
+    func deletingQueuedOCR(path: String) async throws {
+      let recognizer = ControlledHistoryRecognizer()
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(4)
+        history.clearAll()
+      }
+      history.add(ocrItem(0))
+      try await waitForOCR { recognizer.calls.count == 1 }
+      let queued = history.add(ocrItem(1))
+      #expect(coordinator.pendingCount == 1)
+
+      switch path {
+      case "delete": history.delete(queued)
+      case "clear": history.clear()
+      case "clearAll": history.clearAll()
+      default:
+        Defaults[.size] = 1
+        history.add(historyItem("trigger eviction"))
+      }
+      #expect(coordinator.pendingCount == 0)
+      recognizer.release()
+      try await waitForOCR { !coordinator.isRunning }
+      #expect(recognizer.calls.count == 1)
+      #expect(queued.item.title.isEmpty)
+    }
+
+    @Test("Duplicate images share OCR and update only the live replacement")
+    func duplicateImagesShareOCR() async throws {
+      let recognizer = ControlledHistoryRecognizer()
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(4)
+        history.clearAll()
+      }
+      let original = history.add(ocrItem(0))
+      try await waitForOCR { recognizer.calls.count == 1 }
+      let replacement = history.add(ocrItem(0))
+      #expect(coordinator.pendingCount == 0)
+      recognizer.release()
+      try await waitForOCR { !coordinator.isRunning }
+
+      #expect(recognizer.calls.count == 1)
+      #expect(original.item.title.isEmpty)
+      #expect(replacement.item.title == "recognized")
+      #expect(replacement.title == "recognized")
+      #expect(history.items.toArray() == [replacement])
+    }
+
+    @Test("OCR failure leaves the existing title unchanged")
+    func imageOCRFailurePreservesTitle() async throws {
+      let recognizer = ControlledHistoryRecognizer(fails: true)
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(4)
+        history.clearAll()
+      }
+      let item = ocrItem(0)
+      item.title = "unchanged"
+      history.add(item)
+      coordinator.enqueue(item, in: history)
+      try await waitForOCR { recognizer.calls.count == 1 }
+      recognizer.release()
+      try await waitForOCR { !coordinator.isRunning }
+      #expect(item.title == "unchanged")
+    }
+
+    @Test("An obsolete OCR generation cannot overwrite a newer request")
+    func obsoleteOCRGenerationIsDiscarded() async throws {
+      let recognizer = ControlledHistoryRecognizer()
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(4)
+        history.clearAll()
+      }
+      let item = ocrItem(0)
+      history.add(item)
+      try await waitForOCR { recognizer.calls.count == 1 }
+      item.contents[0].value = Data([1])
+      coordinator.enqueue(item, in: history)
+      recognizer.release()
+      try await waitForOCR { recognizer.calls.count == 2 }
+      #expect(item.title.isEmpty)
+      recognizer.release()
+      try await waitForOCR { !coordinator.isRunning }
+      #expect(item.title == "recognized")
+    }
+
+    private func ocrItem(_ value: UInt8) -> HistoryItem {
+      HistoryItem(contents: [HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: Data([value]))])
+    }
+
+    private func waitForOCR(_ condition: () -> Bool) async throws {
+      let deadline = ContinuousClock.now + .seconds(5)
+      while !condition() && ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      #expect(condition())
+    }
+
+    private final class ControlledHistoryRecognizer: @unchecked Sendable {
+      private let lock = NSLock()
+      private let gate = DispatchSemaphore(value: 0)
+      private let fails: Bool
+      private var recordedCalls: [Data] = []
+      private var recordedMainThread = false
+
+      init(fails: Bool = false) {
+        self.fails = fails
+      }
+
+      var calls: [Data] {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedCalls
+      }
+
+      var ranOnMainThread: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedMainThread
+      }
+
+      func recognize(data: Data?, fileURL: URL?) throws -> String? {
+        lock.lock()
+        recordedCalls.append(data ?? Data())
+        recordedMainThread = recordedMainThread || Thread.isMainThread
+        lock.unlock()
+        gate.wait()
+        if fails { throw CocoaError(.fileReadCorruptFile) }
+        return "recognized"
+      }
+
+      func release(_ count: Int = 1) {
+        for _ in 0..<count { gate.signal() }
+      }
     }
 
     @Test("Clearing unpinned")

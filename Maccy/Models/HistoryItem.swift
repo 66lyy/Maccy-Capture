@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Defaults
 import Sauce
 import SwiftData
@@ -101,21 +102,13 @@ class HistoryItem {
       }
   }
 
+  var comparableContentFingerprint: Set<Data> {
+    Set(contents.filter { !Self.transientTypes.contains($0.type) }.map(\.fingerprint))
+  }
+
   @MainActor
   func generateTitle() -> String {
-    let pasteboardImageData = contentData(Self.imageTypes)
-    let universalClipboardImageURL = universalClipboardImage ? fileURLs.first : nil
-    guard pasteboardImageData == nil && universalClipboardImageURL == nil else {
-      Task {
-        if let recognizedText = await TextRecognition.recognizeClipboardImage(
-          imageData: pasteboardImageData,
-          fileURL: universalClipboardImageURL
-        ) {
-          self.title = recognizedText
-        }
-      }
-      return ""
-    }
+    guard textRecognitionInput == nil else { return "" }
 
     // 1k characters is trade-off for performance
     var title = previewableText
@@ -246,5 +239,141 @@ class HistoryItem {
     return contents
       .filter { types.contains(NSPasteboard.PasteboardType($0.type)) }
       .compactMap { $0.value }
+  }
+
+  @MainActor
+  var textRecognitionInput: HistoryOCRCoordinator.Input? {
+    let data = contentData(Self.imageTypes)
+    let fileURL = universalClipboardImage ? fileURLs.first : nil
+    guard data != nil || fileURL != nil else { return nil }
+    return HistoryOCRCoordinator.Input(data: data, fileURL: fileURL)
+  }
+
+}
+
+@MainActor
+final class HistoryOCRCoordinator {
+  typealias Recognizer = @Sendable (Data?, URL?) throws -> String?
+
+  struct Input: Sendable {
+    let data: Data?
+    let fileURL: URL?
+
+    var key: String {
+      if let data {
+        return "data:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+      }
+      return "url:" + (fileURL?.absoluteString ?? "")
+    }
+  }
+
+  private struct Job {
+    let id = UUID()
+    let key: String
+    let input: Input
+  }
+
+  @MainActor
+  private final class Target {
+    weak var item: HistoryItem?
+    weak var history: History?
+    let generation: UUID
+
+    init(item: HistoryItem, history: History, generation: UUID) {
+      self.item = item
+      self.history = history
+      self.generation = generation
+    }
+  }
+
+  private let maximumPending: Int
+  private let recognize: Recognizer
+  private var active: Job?
+  private var pending: [Job] = []
+  private var targets: [ObjectIdentifier: Target] = [:]
+
+  var pendingCount: Int { pending.count }
+  var isRunning: Bool { active != nil }
+
+  init(maximumPending: Int = 3, recognize: @escaping Recognizer = TextRecognition.performClipboardRecognition) {
+    precondition(maximumPending > 0)
+    self.maximumPending = maximumPending
+    self.recognize = recognize
+  }
+
+  func enqueue(_ item: HistoryItem, in history: History) {
+    guard let input = item.textRecognitionInput else {
+      cancel(item)
+      return
+    }
+    let key = input.key
+    let job: Job
+    if let existing = ([active].compactMap { $0 } + pending).first(where: { $0.key == key }) {
+      job = existing
+    } else {
+      job = Job(key: key, input: input)
+      if pending.count == maximumPending {
+        let dropped = pending.removeFirst()
+        targets = targets.filter { $0.value.generation != dropped.id }
+      }
+      pending.append(job)
+    }
+    targets[ObjectIdentifier(item)] = Target(item: item, history: history, generation: job.id)
+    prunePending()
+    startNext()
+  }
+
+  func replace(_ item: HistoryItem, with replacement: HistoryItem, in history: History) {
+    if targets[ObjectIdentifier(item)] != nil {
+      enqueue(replacement, in: history)
+    }
+    cancel(item)
+  }
+
+  func cancel(_ item: HistoryItem) {
+    targets.removeValue(forKey: ObjectIdentifier(item))
+    prunePending()
+  }
+
+  func cancelAll() {
+    targets.removeAll()
+    pending.removeAll()
+  }
+
+  private func prunePending() {
+    targets = targets.filter { $0.value.item != nil && $0.value.history != nil }
+    let generations = Set(targets.values.map(\.generation))
+    pending.removeAll { !generations.contains($0.id) }
+  }
+
+  private func startNext() {
+    guard active == nil, !pending.isEmpty else { return }
+    let job = pending.removeFirst()
+    active = job
+    let input = job.input
+    let generation = job.id
+    let recognize = recognize
+    TextRecognition.clipboardQueue.async { [weak self] in
+      let result = Result { try recognize(input.data, input.fileURL) }
+      Task { @MainActor [weak self] in
+        self?.finish(generation, result: result)
+      }
+    }
+  }
+
+  private func finish(_ generation: UUID, result: Result<String?, any Error>) {
+    guard active?.id == generation else { return }
+    active = nil
+    let completed = targets.filter { $0.value.generation == generation }
+    for (identity, target) in completed {
+      guard targets[identity]?.generation == generation else { continue }
+      targets.removeValue(forKey: identity)
+      if case .success(let title?) = result, !title.isEmpty,
+         let item = target.item, let history = target.history {
+        history.applyRecognizedTitle(title, to: item)
+      }
+    }
+    prunePending()
+    startNext()
   }
 }

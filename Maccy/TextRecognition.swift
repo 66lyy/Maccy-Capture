@@ -5,7 +5,7 @@ import Vision
 nonisolated enum TextRecognition {
   typealias Operation = @Sendable (CGImage, Cancellation) throws -> String
   private static let screenshotQueue = DispatchQueue(label: "local.maccy.capture.ocr", qos: .userInitiated)
-  private static let clipboardQueue = DispatchQueue(label: "org.p0deje.Maccy.textRecognition", qos: .utility)
+  static let clipboardQueue = DispatchQueue(label: "org.p0deje.Maccy.textRecognition", qos: .utility)
 
   private enum Failure: Error {
     case render
@@ -82,15 +82,8 @@ nonisolated enum TextRecognition {
   static func recognizeClipboardImage(imageData: Data?, fileURL: URL?) async -> String? {
     await withCheckedContinuation { continuation in
       clipboardQueue.async {
-        guard let data = imageData ?? fileURL.flatMap({ try? Data(contentsOf: $0) }) else {
-          continuation.resume(returning: nil)
-          return
-        }
-        let request = accurateRequest()
-        request.automaticallyDetectsLanguage = true
         do {
-          let lines = try recognize(using: VNImageRequestHandler(data: data), request: request)
-          continuation.resume(returning: lines?.joined(separator: "\n"))
+          continuation.resume(returning: try performClipboardRecognition(imageData: imageData, fileURL: fileURL))
         } catch {
           print("Unable to perform the request: \(error).")
           continuation.resume(returning: nil)
@@ -103,6 +96,13 @@ nonisolated enum TextRecognition {
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     return request
+  }
+
+  static func performClipboardRecognition(imageData: Data?, fileURL: URL?) throws -> String? {
+    guard let data = imageData ?? fileURL.flatMap({ try? Data(contentsOf: $0) }) else { return nil }
+    let request = accurateRequest()
+    request.automaticallyDetectsLanguage = true
+    return try recognize(using: VNImageRequestHandler(data: data), request: request)?.joined(separator: "\n")
   }
 
   private static func recognizeScreenshot(

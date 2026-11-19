@@ -78,6 +78,8 @@ extension SharedStateTests {
     @Test("Image title becomes the recognized text")
     func imageTitleBecomesRecognizedText() async throws {
       let item = historyItem(textImage("Hello Maccy"))
+      let decorator = History.shared.add(item)
+      defer { History.shared.delete(decorator) }
       let deadline = ContinuousClock.now + .seconds(10)
       while item.title.isEmpty && ContinuousClock.now < deadline {
         try await Task.sleep(for: .milliseconds(100))
