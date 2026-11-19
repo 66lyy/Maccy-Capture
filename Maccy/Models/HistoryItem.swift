@@ -2,7 +2,6 @@ import AppKit
 import Defaults
 import Sauce
 import SwiftData
-import Vision
 
 @Model
 class HistoryItem {
@@ -108,7 +107,7 @@ class HistoryItem {
     let universalClipboardImageURL = universalClipboardImage ? fileURLs.first : nil
     guard pasteboardImageData == nil && universalClipboardImageURL == nil else {
       Task {
-        if let recognizedText = await Self.recognizeText(
+        if let recognizedText = await TextRecognition.recognizeClipboardImage(
           imageData: pasteboardImageData,
           fileURL: universalClipboardImageURL
         ) {
@@ -247,46 +246,5 @@ class HistoryItem {
     return contents
       .filter { types.contains(NSPasteboard.PasteboardType($0.type)) }
       .compactMap { $0.value }
-  }
-
-  nonisolated private static let textRecognitionQueue = DispatchQueue(
-    label: "org.p0deje.Maccy.textRecognition",
-    qos: .utility
-  )
-
-  /// Runs OCR on a dedicated queue so the blocking Vision call never occupies
-  /// a thread of Swift's cooperative pool or the main thread.
-  nonisolated private static func recognizeText(imageData: Data?, fileURL: URL?) async -> String? {
-    await withCheckedContinuation { continuation in
-      textRecognitionQueue.async {
-        continuation.resume(returning: performTextRecognition(imageData: imageData, fileURL: fileURL))
-      }
-    }
-  }
-
-  nonisolated private static func performTextRecognition(imageData: Data?, fileURL: URL?) -> String? {
-    guard let data = imageData ?? fileURL.flatMap({ try? Data(contentsOf: $0) }) else {
-      return nil
-    }
-
-    let requestHandler = VNImageRequestHandler(data: data)
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.automaticallyDetectsLanguage = true
-
-    do {
-      try requestHandler.perform([request])
-    } catch {
-      print("Unable to perform the request: \(error).")
-      return nil
-    }
-
-    guard let observations = request.results else {
-      return nil
-    }
-
-    return observations
-      .compactMap { $0.topCandidates(1).first?.string }
-      .joined(separator: "\n")
   }
 }

@@ -12,6 +12,9 @@
 		B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */; };
 		B9ACD419E2F67A01C5D85003 /* ScreenshotAnnotationCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */; };
 		B9ACD419E2F67A01C5D85005 /* ScreenshotAnnotationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */; };
+		C0FFEE120000000000000001 /* ScreenshotAnnotationToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE120000000000000002 /* ScreenshotAnnotationToolbar.swift */; };
+		C0FFEE120000000000000003 /* ScreenshotAnnotationRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE120000000000000004 /* ScreenshotAnnotationRecognition.swift */; };
+		C0FFEE120000000000000005 /* TextRecognition.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE120000000000000006 /* TextRecognition.swift */; };
 		B9ACD419E2F67A01C5D85007 /* ScreenshotAnnotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */; };
 		B9ACD419E2F67A01C5D84011 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */; };
 		B9ACD419E2F67A01C5D84013 /* LanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */; };
@@ -76,6 +79,9 @@
 		AC1811260000000000000001 /* ScreenshotCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811260000000000000002 /* ScreenshotCaptureTests.swift */; };
 		AC1811180000000000000003 /* ScreenshotPreviewWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */; };
 		AC1811180000000000000005 /* ScreenshotSelectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000006 /* ScreenshotSelectionController.swift */; };
+		C0FFEE120000000000000007 /* ScreenshotSelectionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE120000000000000008 /* ScreenshotSelectionWindow.swift */; };
+		C0FFEE120000000000000009 /* ScreenshotSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE12000000000000000A /* ScreenshotSelectionView.swift */; };
+		C0FFEE12000000000000000B /* ScreenshotElementDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE12000000000000000C /* ScreenshotElementDetection.swift */; };
 		AC1811180000000000000007 /* ScreenshotSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000008 /* ScreenshotSelectionTests.swift */; };
 		A601FB1F645F0D91D796D9CE /* PinnedScreenshotWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */; };
 		DA0EE7B9204657830025FC60 /* MaccyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0EE7B8204657830025FC60 /* MaccyUITests.swift */; };
@@ -221,6 +227,9 @@
 		B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationDocument.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationCanvas.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationWindow.swift; sourceTree = "<group>"; };
+		C0FFEE120000000000000002 /* ScreenshotAnnotationToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationToolbar.swift; sourceTree = "<group>"; };
+		C0FFEE120000000000000004 /* ScreenshotAnnotationRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationRecognition.swift; sourceTree = "<group>"; };
+		C0FFEE120000000000000006 /* TextRecognition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextRecognition.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettingsView.swift; sourceTree = "<group>"; };
@@ -330,6 +339,9 @@
 		AC1811260000000000000002 /* ScreenshotCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotCaptureTests.swift; sourceTree = "<group>"; };
 		AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotPreviewWindow.swift; sourceTree = "<group>"; };
 		AC1811180000000000000006 /* ScreenshotSelectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionController.swift; sourceTree = "<group>"; };
+		C0FFEE120000000000000008 /* ScreenshotSelectionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionWindow.swift; sourceTree = "<group>"; };
+		C0FFEE12000000000000000A /* ScreenshotSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionView.swift; sourceTree = "<group>"; };
+		C0FFEE12000000000000000C /* ScreenshotElementDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotElementDetection.swift; sourceTree = "<group>"; };
 		AC1811180000000000000008 /* ScreenshotSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionTests.swift; sourceTree = "<group>"; };
 	2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedScreenshotWindow.swift; sourceTree = "<group>"; };
 		DA0FFA292C8D0FEC00A66C97 /* ModifierFlags+Description.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModifierFlags+Description.swift"; sourceTree = "<group>"; };
@@ -939,6 +951,9 @@
 				B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */,
 				B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */,
 				B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */,
+				C0FFEE120000000000000002 /* ScreenshotAnnotationToolbar.swift */,
+				C0FFEE120000000000000004 /* ScreenshotAnnotationRecognition.swift */,
+				C0FFEE120000000000000006 /* TextRecognition.swift */,
 				B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */,
 				2FB5BC9F2CD8F73C008B33F4 /* ApplicationImage.swift */,
 				DA555F072CF0F98F009608BD /* ApplicationImageCache.swift */,
@@ -948,6 +963,9 @@
 				2F5C8A03001A0F9D00BEEF00 /* ScreenshotCaptureSession.swift */,
 				AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */,
 				AC1811180000000000000006 /* ScreenshotSelectionController.swift */,
+				C0FFEE120000000000000008 /* ScreenshotSelectionWindow.swift */,
+				C0FFEE12000000000000000A /* ScreenshotSelectionView.swift */,
+				C0FFEE12000000000000000C /* ScreenshotElementDetection.swift */,
 			2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */,
 				DAE284FF232257D20080E394 /* ColorImage.swift */,
 				2F8A0DBD303A1F9D004BA51F /* ConcatenatedCollection.swift */,
@@ -1274,10 +1292,16 @@
 				B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */,
 				B9ACD419E2F67A01C5D85003 /* ScreenshotAnnotationCanvas.swift in Sources */,
 				B9ACD419E2F67A01C5D85005 /* ScreenshotAnnotationWindow.swift in Sources */,
+				C0FFEE120000000000000001 /* ScreenshotAnnotationToolbar.swift in Sources */,
+				C0FFEE120000000000000003 /* ScreenshotAnnotationRecognition.swift in Sources */,
+				C0FFEE120000000000000005 /* TextRecognition.swift in Sources */,
 				B9ACD419E2F67A01C5D84013 /* LanguageSettingsView.swift in Sources */,
 				B9ACD419E2F67A01C5D83F13 /* ScreenCapturePermission.swift in Sources */,
 				AC1811180000000000000003 /* ScreenshotPreviewWindow.swift in Sources */,
 				AC1811180000000000000005 /* ScreenshotSelectionController.swift in Sources */,
+				C0FFEE120000000000000007 /* ScreenshotSelectionWindow.swift in Sources */,
+				C0FFEE120000000000000009 /* ScreenshotSelectionView.swift in Sources */,
+				C0FFEE12000000000000000B /* ScreenshotElementDetection.swift in Sources */,
 				A601FB1F645F0D91D796D9CE /* PinnedScreenshotWindow.swift in Sources */,
 				DA3F1B452C90084600267632 /* Sauce+KeyboardShortcuts.swift in Sources */,
 				DA689FCC2C1D1D510009B887 /* MenuIcon.swift in Sources */,

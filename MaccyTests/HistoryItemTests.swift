@@ -85,6 +85,20 @@ extension SharedStateTests {
       #expect(item.title == "Hello Maccy")
     }
 
+    @Test("Clipboard OCR recognizes both image data and a local image file")
+    func clipboardRecognitionInputs() async throws {
+      let data = try #require(textImage("Hello Maccy").tiffRepresentation)
+      let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString).appendingPathExtension("tiff")
+      defer { try? FileManager.default.removeItem(at: url) }
+      try data.write(to: url)
+
+      let dataResult = await TextRecognition.recognizeClipboardImage(imageData: data, fileURL: nil)
+      let fileResult = await TextRecognition.recognizeClipboardImage(imageData: nil, fileURL: url)
+      #expect(dataResult == "Hello Maccy")
+      #expect(fileResult == dataResult)
+    }
+
     @Test("Title for file", arguments: ["/tmp/foo.bar", "/tmp/产品培训/产品培训.txt"])
     func file(path: String) {
       let url = URL(fileURLWithPath: path)

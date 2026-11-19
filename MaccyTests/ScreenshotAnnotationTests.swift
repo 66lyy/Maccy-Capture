@@ -479,7 +479,7 @@ struct ScreenshotAnnotationTests {
     }
     let document = try #require(ScreenshotAnnotationDocument(image: image))
     let source = try #require(document.renderedImage())
-    let result = try ScreenshotTextRecognition.recognize(source)
+    let result = try TextRecognition.recognizeScreenshot(source)
     #expect(result.contains("截图测试"))
     #expect(result.contains("SAMPLE 42"))
   }
@@ -496,7 +496,7 @@ struct ScreenshotAnnotationTests {
     context.setFillColor(NSColor.white.cgColor)
     context.fill(CGRect(x: 20, y: 4, width: 12, height: 5))
     let source = try #require(context.makeImage())
-    let padded = try #require(ScreenshotTextRecognition.paddedNarrowImage(source))
+    let padded = try #require(TextRecognition.paddedNarrowImage(source))
     #expect(source.width == 52 && source.height == 13)
     #expect(padded.width == 228 && padded.height == 111)
     let bitmap = NSBitmapImageRep(cgImage: padded)
@@ -520,7 +520,7 @@ struct ScreenshotAnnotationTests {
     ])
     NSGraphicsContext.restoreGraphicsState()
     let image = try #require(context.makeImage())
-    let result = try ScreenshotTextRecognition.recognize(image)
+    let result = try TextRecognition.recognizeScreenshot(image)
     #expect(result.contains("截图测试"))
     #expect(result.contains("SAMPLE"))
   }
@@ -538,12 +538,12 @@ struct ScreenshotAnnotationTests {
     }
     let document = try #require(ScreenshotAnnotationDocument(image: image))
     let source = try #require(document.renderedImage())
-    #expect(try ScreenshotTextRecognition.recognize(source).contains("SAMPLE 42"))
+    #expect(try TextRecognition.recognizeScreenshot(source).contains("SAMPLE 42"))
     document.append(.init(
       tool: .redact, points: [.zero, NSPoint(x: document.imageSize.width, y: document.imageSize.height)], color: .white
     ))
     let covered = try #require(document.renderedImage())
-    #expect(try ScreenshotTextRecognition.recognize(covered).isEmpty)
+    #expect(try TextRecognition.recognizeScreenshot(covered).isEmpty)
   }
 
   @Test("Toolbar copy and pin export only a flattened result", arguments: [false, true])
@@ -813,7 +813,7 @@ nonisolated private final class SlowRecognition: @unchecked Sendable {
   let events: AsyncStream<Int>
   private let continuation: AsyncStream<Int>.Continuation
   private let lock = NSLock()
-  private var cancellation: ScreenshotTextRecognition.Cancellation?
+  private var cancellation: TextRecognition.Cancellation?
   private var runs = 0
   private var active = 0
   private var peak = 0
@@ -830,7 +830,7 @@ nonisolated private final class SlowRecognition: @unchecked Sendable {
     }
   }
 
-  func recognize(_ image: CGImage, cancellation: ScreenshotTextRecognition.Cancellation) throws -> String {
+  func recognize(_ image: CGImage, cancellation: TextRecognition.Cancellation) throws -> String {
     let run = lock.withLock {
       self.cancellation = cancellation
       runs += 1
