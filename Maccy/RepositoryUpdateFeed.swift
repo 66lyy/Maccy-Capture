@@ -77,7 +77,7 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
       throw Failure.invalidRelease
     }
     return Resolved(
-      feedURL: feed.url,
+      feedURL: URL(string: "https://github.com/\(repository)/releases/download/\(Self.tag)/\(Self.feedName)")!,
       archives: Dictionary(uniqueKeysWithValues: packages.map { ($0.url, $0.size) })
     )
   }

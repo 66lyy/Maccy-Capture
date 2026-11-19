@@ -158,7 +158,8 @@ bash script/package_release.sh
 `SoftwareUpdater` 使用应用生命周期内唯一的 Sparkle 实例，在正常启动后开启。
 自动检查由本机偏好控制，仅在启动时执行一次，仍可手动检查。
 检查时以匿名请求解析本仓库公开的 `capture-latest`；
-每次重新解析 `capture-appcast.xml` 的当前附件 ID，不永久缓存滚动发布的旧地址。
+每次确认 `capture-appcast.xml` 附件存在后，从公开下载地址读取。
+Sparkle 请求 RSS 时，GitHub 附件 API 可能返回附件元数据 JSON，而不是文件内容。
 后台检查会避开正在进行的截图与标注，不并发叠加检查。
 关闭 Sparkle 自身独立定时器及退出时静默安装；用户确认安装后重启当前这份应用并立即生效，
 不按名称查找原版。更新重启与原有内部重启一样，不执行「退出时清空历史」。

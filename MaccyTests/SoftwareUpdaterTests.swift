@@ -22,7 +22,8 @@ struct SoftwareUpdaterTests {
   @Test("A rolling prerelease resolves its exact feed and allowed archive assets")
   func validRelease() throws {
     let resolved = try feed.resolve(data: releaseData(), response: response())
-    #expect(resolved.feedURL.absoluteString == assetURL(10))
+    #expect(resolved.feedURL.absoluteString ==
+      "https://github.com/fixture/capture/releases/download/capture-latest/capture-appcast.xml")
     #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
     #expect(!resolved.permits(URL(string: assetURL(11)), length: 199))
     #expect(!resolved.permits(URL(string: assetURL(12)), length: 200))

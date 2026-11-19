@@ -230,7 +230,8 @@ official releases over customized features.
 `SoftwareUpdater` is a single application-lifetime Sparkle controller started after normal launch.
 The application's own preference controls a single automatic check at launch. Manual checks remain available.
 Each check resolves this repository's public `capture-latest` release without authentication.
-Each check resolves the current `capture-appcast.xml` asset ID, so a rolling release is not cached forever.
+Each check confirms `capture-appcast.xml` exists and loads it from the public download URL.
+Sparkle requests RSS; the GitHub asset API can respond with JSON instead of the file to that request.
 Background discovery is skipped during capture or annotation; repeated checks cannot overlap.
 Sparkle's independent scheduler and automatic installation-on-quit are disabled.
 The user confirms installation, which then restarts the running host bundle at its existing path.
