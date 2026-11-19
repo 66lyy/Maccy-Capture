@@ -130,7 +130,7 @@ struct ScreenshotAnnotationTests {
     let window = try editor()
     defer { window.close() }
     window.contentView?.layoutSubtreeIfNeeded()
-    let canvas = window.canvas
+    let canvas = try #require(window.canvas)
     canvas.tool = .text
     let point = NSPoint(x: canvas.bounds.midX, y: canvas.bounds.midY)
     canvas.beginMark(at: point)
@@ -247,7 +247,7 @@ struct ScreenshotAnnotationTests {
   func paletteAndSize() throws {
     let window = try editor()
     defer { window.close() }
-    let canvas = window.canvas
+    let canvas = try #require(window.canvas)
     window.swatches[3].performClick(nil)
     window.toolButtons[5].performClick(nil)
     #expect(canvas.tool == .redact)
@@ -268,6 +268,52 @@ struct ScreenshotAnnotationTests {
     #expect(canvas.lineWidth == 15)
     window.toolButtons[0].performClick(nil)
     #expect(window.styleSlider.doubleValue == 15)
+    window.colorWell.color = NSColor(srgbRed: 0.1, green: 0.4, blue: 0.7, alpha: 0.5)
+    window.colorWell.sendAction(window.colorWell.action, to: window.colorWell.target)
+    #expect(canvas.color == window.colorWell.color && canvas.color.alphaComponent == 1)
+    #expect(window.swatches.allSatisfy { !$0.isChosen })
+    window.toolButtons[5].performClick(nil)
+    #expect(canvas.color == window.colorWell.color)
+  }
+
+  @Test("OCR results remain attached to the selection and are selectable without changing the image")
+  func recognitionResults() throws {
+    let window = try editor()
+    defer { window.close() }
+    let contents = try #require(window.contentView)
+    let sample = Array(repeating: "示例文字 Sample 42", count: 40).joined(separator: "\n")
+    window.showRecognizedText(sample, message: nil)
+    contents.layoutSubtreeIfNeeded()
+    let result = try #require(window.recognitionResults)
+    #expect(result.superview === contents)
+    #expect(contents.bounds.contains(result.frame))
+    #expect(!result.frame.intersects(window.annotationToolbar.frame))
+    #expect(result.textView.string == sample)
+    #expect(result.textView.isSelectable && !result.textView.isEditable)
+    #expect(result.textView.enclosingScrollView?.hasVerticalScroller == true)
+    #expect(result.copyButton.isEnabled)
+    window.cancelOperation(nil)
+    #expect(window.recognitionResults == nil)
+    #expect(window.canvas.superview === contents)
+  }
+
+  @Test("Vision recognizes small Simplified Chinese and English text in a synthetic selection")
+  func recognitionOfSmallText() throws {
+    let image = NSImage(size: NSSize(width: 350, height: 75), flipped: false) { rect in
+      NSColor.white.setFill()
+      rect.fill()
+      let style: [NSAttributedString.Key: Any] = [
+        .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.black
+      ]
+      ("截图测试" as NSString).draw(at: NSPoint(x: 12, y: 44), withAttributes: style)
+      ("SAMPLE 42" as NSString).draw(at: NSPoint(x: 12, y: 14), withAttributes: style)
+      return true
+    }
+    let document = try #require(ScreenshotAnnotationDocument(image: image))
+    let source = try #require(document.renderedImage())
+    let result = try ScreenshotTextRecognition.recognize(source)
+    #expect(result.contains("截图测试"))
+    #expect(result.contains("SAMPLE 42"))
   }
 
   @Test("Vision reads synthetic text locally and does not see text behind a solid cover")

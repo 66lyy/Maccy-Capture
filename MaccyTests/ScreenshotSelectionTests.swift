@@ -38,9 +38,12 @@ struct ScreenshotSelectionTests {
     #expect(ScreenshotSelectionController.captureRectangle(
       screen.offsetBy(dx: -above.frame.minX, dy: -above.frame.minY), display: above
     ) == capture)
+    #expect(ScreenshotCaptureSession.sourceRectangle(
+      capture, displayFrame: above.captureFrame
+    ) == NSRect(x: 10, y: 689, width: 101, height: 81))
   }
 
-  @Test("Annotation or dedicated pinning starts after every overlay closes",
+  @Test("Copy and dedicated pinning close every overlay without capturing for edit",
         arguments: [false, true])
   func releaseActions(pinToScreen: Bool) async throws {
     let controller = controller()
@@ -59,11 +62,11 @@ struct ScreenshotSelectionTests {
     view.endSelection(at: NSPoint(x: 110, y: 80))
     if !pinToScreen {
       #expect(controller.isSelecting)
-      view.annotateSelection()
+      view.captureSelection(pinToScreen: false)
     }
     let result = try #require(try await task.value)
     #expect(result.pinToScreen == pinToScreen)
-    #expect(result.annotate == !pinToScreen)
+    #expect(result.renderedData == nil)
     #expect(result.captureRect == NSRect(x: 10, y: 520, width: 100, height: 60))
     #expect(result.anchor == NSPoint(x: 60, y: 50))
     #expect(result.screenRect == NSRect(x: 10, y: 20, width: 100, height: 60))
@@ -88,22 +91,69 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
-  @Test("A normal region stays editable and does not copy the original before annotation")
-  func annotateSelection() async throws {
+  @Test("One click on a drawing tool starts editing in the same selection window")
+  func editInSelection() async throws {
     let controller = controller()
+    defer { controller.cancel() }
     let task = Task { try await controller.select(pinImmediately: false) }
     try await waitForSelection(controller)
     let windows = controller.windows
-    let view = try #require(windows.first?.selectionView)
+    let window = try #require(windows.first)
+    let view = window.selectionView
     view.beginSelection(at: NSPoint(x: 20, y: 30))
     view.endSelection(at: NSPoint(x: 220, y: 180))
     #expect(controller.isSelecting)
-    view.annotateSelection()
+    #expect(!window.annotationToolbar.isHidden && window.canvas == nil)
+    let toolbarFrame = window.annotationToolbar.frame
+    window.swatches[3].performClick(nil)
+    #expect(window.canvas == nil)
+    window.toolButtons[1].performClick(nil)
+    for _ in 0..<100 {
+      if window.canvas != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let canvas = try #require(window.canvas)
+    #expect(window.canvas.superview === view)
+    #expect(controller.windows.first === window)
+    #expect(window.annotationToolbar.frame == toolbarFrame)
+    #expect(canvas.frame == view.selectedRect)
+    #expect(canvas.tool == .rectangle && canvas.color == .systemGreen)
+    canvas.beginMark(at: NSPoint(x: 20, y: 30))
+    canvas.endMark(at: NSPoint(x: 100, y: 100))
+    #expect(canvas.document.canUndo)
+    window.copyButton.performClick(nil)
     let result = try #require(try await task.value)
-    #expect(result.annotate)
+    #expect(result.renderedData != nil)
     #expect(!result.pinToScreen)
     #expect(controller.windows.isEmpty)
-    #expect(windows.allSatisfy { !$0.isVisible && $0.selectionView.onAnnotate == nil })
+    #expect(windows.allSatisfy { !$0.isVisible && $0.loadSelectionImage == nil })
+  }
+
+  @Test("OCR opens readable results on the same panel without confirming annotation first")
+  func recognizeInSelection() async throws {
+    let controller = controller()
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 30))
+    window.selectionView.endSelection(at: NSPoint(x: 370, y: 160))
+    #expect(window.canvas == nil)
+    window.recognitionButton.performClick(nil)
+    for _ in 0..<200 {
+      if window.recognitionResults != nil { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let results = try #require(window.recognitionResults)
+    #expect(results.superview === window.selectionView)
+    #expect(results.textView.string.contains("SAMPLE 42"))
+    #expect(results.copyButton.isEnabled)
+    #expect(controller.isSelecting)
+    window.cancelOperation(nil)
+    #expect(window.recognitionResults == nil)
+    #expect(controller.isSelecting)
+    controller.cancel()
+    #expect(try await task.value == nil)
   }
 
   @Test("An existing selection can move, resize and nudge without capturing")
@@ -319,7 +369,17 @@ struct ScreenshotSelectionTests {
           captureFrame: NSRect(x: -800, y: 0, width: 800, height: 600), scale: 1
         )
       ]
-    }, presentWindow: { _ in })
+    }, presentWindow: { _ in }, captureRegion: { display, rectangle, _ in
+      #expect(display.frame.size == NSSize(width: 800, height: 600))
+      return NSImage(size: rectangle.size, flipped: false) { bounds in
+        NSColor.white.setFill()
+        bounds.fill()
+        ("SAMPLE 42" as NSString).draw(at: NSPoint(x: 15, y: 20), withAttributes: [
+          .font: NSFont.systemFont(ofSize: 24), .foregroundColor: NSColor.black
+        ])
+        return true
+      }
+    })
   }
 
   private func waitForSelection(_ controller: ScreenshotSelectionController) async throws {

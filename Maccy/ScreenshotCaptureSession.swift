@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import ScreenCaptureKit
 
 @MainActor
 final class ScreenshotCaptureSession {
@@ -54,6 +55,33 @@ final class ScreenshotCaptureSession {
   ) {
     self.temporaryRoot = temporaryRoot
     self.processFactory = processFactory
+  }
+
+  static func sourceRectangle(_ rectangle: NSRect, displayFrame: NSRect) -> NSRect {
+    rectangle.intersection(displayFrame).offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
+  }
+
+  static func captureSelection(
+    on display: ScreenshotSelectionController.Display, rectangle: NSRect, excluding overlayIDs: Set<CGWindowID>
+  ) async throws -> NSImage {
+    let source = sourceRectangle(rectangle, displayFrame: display.captureFrame)
+    guard source.width >= 3, source.height >= 3, !overlayIDs.isEmpty else { throw Failure.captureFailed }
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    try Task.checkCancellation()
+    guard let screen = content.displays.first(where: { $0.displayID == display.displayID }) else {
+      throw Failure.captureFailed
+    }
+    let overlays = content.windows.filter { overlayIDs.contains($0.windowID) }
+    guard Set(overlays.map(\.windowID)) == overlayIDs else { throw Failure.captureFailed }
+    let filter = SCContentFilter(display: screen, excludingWindows: overlays)
+    let configuration = SCStreamConfiguration()
+    configuration.sourceRect = source
+    configuration.width = Int((source.width * display.scale).rounded())
+    configuration.height = Int((source.height * display.scale).rounded())
+    configuration.showsCursor = false
+    let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+    try Task.checkCancellation()
+    return NSImage(cgImage: image, size: source.size)
   }
 
   func capture(mode: Mode, timeout: Duration = .seconds(120)) async throws -> Data {

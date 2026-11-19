@@ -48,8 +48,9 @@ Arrow keys move the pointer before selection, or the box after selection, by one
 hold Shift to move by ten. Hold Option over a window to preview its bounds;
 with Accessibility permission, Option-Tab moves to a parent and Option-Shift-Tab returns to a finer hovered element.
 Click the highlighted element to select it. Apps without accessible elements fall back to their window.
-Select **Annotate** or press E to open the inline toolbar, which offers drawing, undo/redo, OCR,
-Cancel, Copy, Pin, and Save PNG.
+Releasing the selection shows drawing, undo/redo, OCR, Cancel, Copy, Pin, and Save PNG on one toolbar.
+Click a drawing tool to start in the same selection, or press E to select the arrow.
+Move or resize the selection before choosing a tool.
 Press Enter or ⌘C to copy, P to pin, or ⌘S to save; press Esc or ⌘W to cancel.
 Right-click cancels; while entering text, Esc first discards that text.
 The toolbar is placed below the image when space allows, above it near the screen edge,
@@ -57,12 +58,14 @@ or inside the available display area for full-screen captures. It is never part 
 Drag its grip or empty background to move it away from content you want to annotate.
 The Capture and Pin shortcut captures and pins immediately when you release the mouse.
 
-After closing all selection windows, the app waits 120 milliseconds and silently captures
-the selected rectangle with `/usr/sbin/screencapture -R... -x`.
-It does not launch the system's interactive screenshot interface.
+Editing, OCR, or saving captures the selected region in memory with ScreenCaptureKit, excluding the selection windows.
+When copying or pinning directly without editing, the app first closes all selection windows, waits 120 milliseconds,
+then silently captures the selected rectangle with `/usr/sbin/screencapture -R... -x`.
+Neither path launches the system's interactive screenshot interface.
 Each display uses its Core Graphics coordinates, including secondary displays above or to the left
 of the main display. Only one capture can run at a time.
-A selection with no interaction is canceled after 120 seconds; quitting also terminates the task.
+An unfinished selection expires after 120 seconds; once the editing image is ready, that timer stops.
+Quitting terminates the task.
 The selection controller strongly retains its windows.
 They use the `.floating` level and draw only a 12% shadow outside the selection,
 not the `.screenSaver` level or an opaque black background.
@@ -318,8 +321,9 @@ shortcut conflicts, and selection interactions.
 
 All annotation entry points use a borderless in-place overlay, not a separate editor window:
 
-- Confirm Annotate after selecting a region, or capture the main display. Selection windows close before capture;
-  the original remains in memory without first entering the clipboard or history.
+- Choose a drawing tool right beside the selected region, or capture the main display.
+  Region editing keeps the original selection window and the toolbar in place.
+  The original remains in memory without first entering the clipboard or history.
 - Click the pencil button in the 2-second preview after copying. The inline overlay opens and the preview closes
   immediately; its original automatic timeout is not extended.
 - Right-click a pinned image and choose Annotate…, or press ⌘E while it has keyboard focus.
@@ -328,7 +332,7 @@ All annotation entry points use a borderless in-place overlay, not a separate ed
 
 Tools include arrows, rectangles, ellipses, a freehand brush, single-line text,
 and opaque solid-color covers.
-Click a swatch to set the color for new marks, including covers. Drag the size slider
+Click a swatch or open the adjacent color picker to set the color for new marks, including covers. Drag the size slider
 to adjust stroke width (1–40 pt) or, with the text tool selected, font size (10–120 pt).
 Click to enter text, press Enter to confirm, or Esc to cancel the current text.
 Undo and redo support ⌘Z / ⇧⌘Z.
@@ -358,8 +362,10 @@ Export creates a new flattened PNG without embedding the original or removable c
 Covers use the selected color at full opacity, align to whole pixels, and are drawn after all other annotations.
 Changing color opacity or adding text later cannot reveal the image beneath a cover.
 The text-recognition button runs Vision on the **flattened** image, including covers, with support for
-English and available Chinese models. Results are previewed locally; only an explicit Copy Text action
-writes to the clipboard. This is not automatic redaction. No image or recognized text is sent to a
+English and available Chinese models. If the first pass finds no text, the app retries with enlarged pixels
+when possible and without language correction. Results stay next to the toolbar in a scrollable card.
+Select and copy a passage or click **Copy All Text**; nothing is copied automatically.
+This is not automatic redaction. No image or recognized text is sent to a
 server, network API, or training service.
 
 The original behind a capture preview or pinned image may already be in the clipboard and history.

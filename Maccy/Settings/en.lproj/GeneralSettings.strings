@@ -72,6 +72,11 @@
 "AnnotationNoText" = "No text found.";
 "AnnotationRecognitionFailed" = "Could not recognize text.";
 "AnnotationCopyText" = "Copy Text";
+"AnnotationCopyAllText" = "Copy All Text";
+"AnnotationCloseResults" = "Close results";
+"AnnotationPreparingSelection" = "Preparing the selected image…";
+"AnnotationRecognitionResults" = "Recognized Text";
+"AnnotationTextCopied" = "Copied";
 "ScreenshotSelectionPinInstructions" = "Drag to select · Release to pin · Esc cancels";
 "ScreenshotClipboardHint" = "Float an image already on the clipboard, without taking a new screenshot.";
 "ScreenshotSound" = "Play a sound after a successful capture";

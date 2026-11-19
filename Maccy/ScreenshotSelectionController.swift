@@ -8,13 +8,15 @@ final class ScreenshotSelectionController {
     let frame: NSRect
     let captureFrame: NSRect
     let scale: CGFloat
+    var displayID: CGDirectDisplayID = 0
+    var visibleFrame: NSRect?
   }
 
   struct Selection: Equatable {
     let captureRect: NSRect
     let anchor: NSPoint
     let pinToScreen: Bool
-    var annotate = false
+    var renderedData: Data?
 
     var screenRect: NSRect {
       NSRect(
@@ -29,6 +31,7 @@ final class ScreenshotSelectionController {
 
   private let displays: @MainActor () -> [Display]
   private let presentWindow: @MainActor (ScreenshotSelectionWindow) -> Void
+  private let captureRegion: @MainActor (Display, NSRect, Set<CGWindowID>) async throws -> NSImage
   private var continuation: CheckedContinuation<Selection?, any Error>?
   private var timeoutTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
@@ -40,7 +43,8 @@ final class ScreenshotSelectionController {
           return nil
         }
         return Display(
-          frame: screen.frame, captureFrame: CGDisplayBounds(number.uint32Value), scale: screen.backingScaleFactor
+          frame: screen.frame, captureFrame: CGDisplayBounds(number.uint32Value), scale: screen.backingScaleFactor,
+          displayID: number.uint32Value, visibleFrame: screen.visibleFrame
         )
       }
     },
@@ -49,10 +53,14 @@ final class ScreenshotSelectionController {
       if window.frame.contains(NSEvent.mouseLocation) {
         window.makeKeyAndOrderFront(nil)
       }
+    },
+    captureRegion: @escaping @MainActor (Display, NSRect, Set<CGWindowID>) async throws -> NSImage = {
+      try await ScreenshotCaptureSession.captureSelection(on: $0, rectangle: $1, excluding: $2)
     }
   ) {
     self.displays = displays
     self.presentWindow = presentWindow
+    self.captureRegion = captureRegion
   }
 
   func select(pinImmediately: Bool, timeout: Duration = .seconds(120)) async throws -> Selection? {
@@ -109,7 +117,10 @@ final class ScreenshotSelectionController {
   }
 
   private func makeWindow(display: Display, pinImmediately: Bool) -> ScreenshotSelectionWindow {
-    let window = ScreenshotSelectionWindow(frame: display.frame, scale: display.scale, pinImmediately: pinImmediately)
+    let window = ScreenshotSelectionWindow(
+      frame: display.frame, visibleFrame: display.visibleFrame ?? display.frame,
+      scale: display.scale, pinImmediately: pinImmediately
+    )
     window.onCancel = { [weak self] in self?.cancel() }
     window.selectionView.movePointer = { point in
       CGWarpMouseCursorPosition(CGPoint(
@@ -128,23 +139,41 @@ final class ScreenshotSelectionController {
         other.selectionView.clearSelection()
       }
     }
-    window.selectionView.onCapture = { [weak self] rectangle, pinToScreen in
-      let captureRect = Self.captureRectangle(rectangle, display: display)
-      let screenRect = Self.screenRectangle(captureRect, display: display)
-      self?.finish(Selection(
-        captureRect: captureRect,
-        anchor: NSPoint(x: screenRect.midX, y: screenRect.midY),
-        pinToScreen: pinToScreen
-      ))
+    window.selectionView.canAdjustSelection = { [weak self] in
+      self?.windows.allSatisfy { $0.canvas == nil && !$0.isPreparingImage } ?? false
     }
-    window.selectionView.onAnnotate = { [weak self] rectangle in
+    func selection(_ rectangle: NSRect, pinToScreen: Bool, data: Data? = nil) -> Selection {
       let captureRect = Self.captureRectangle(rectangle, display: display)
       let screenRect = Self.screenRectangle(captureRect, display: display)
-      self?.finish(Selection(
+      return Selection(
         captureRect: captureRect,
         anchor: NSPoint(x: screenRect.midX, y: screenRect.midY),
-        pinToScreen: false, annotate: true
-      ))
+        pinToScreen: pinToScreen, renderedData: data
+      )
+    }
+    window.selectionView.onCapture = { [weak self] rectangle, pinToScreen in
+      self?.finish(selection(rectangle, pinToScreen: pinToScreen))
+    }
+    window.loadSelectionImage = { [weak self, weak window] in
+      guard let self, let window, let rectangle = window.selectionView.selectedRect else { throw CancellationError() }
+      let captureRect = Self.captureRectangle(rectangle, display: display)
+      let globalFrame = Self.screenRectangle(captureRect, display: display)
+      let overlayIDs = Set(windows.filter {
+        $0.isVisible && $0.frame.intersects(window.frame)
+      }.compactMap { CGWindowID(exactly: $0.windowNumber) })
+      let image = try await captureRegion(display, captureRect, overlayIDs)
+      return (image, globalFrame.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY))
+    }
+    window.onCanvasReady = { [weak self, weak window] in
+      guard let self, let window else { return }
+      timeoutTask?.cancel()
+      timeoutTask = nil
+      for other in windows where other !== window { other.orderOut(nil) }
+      window.invalidateCursorRects(for: window.selectionView)
+    }
+    window.onOutput = { [weak self, weak window] data, _, action in
+      guard let self, let rectangle = window?.selectionView.selectedRect else { throw CancellationError() }
+      finish(selection(rectangle, pinToScreen: action == .pin, data: data))
     }
     return window
   }
@@ -170,63 +199,44 @@ final class ScreenshotSelectionController {
 }
 
 @MainActor
-final class ScreenshotSelectionWindow: NSPanel, NSWindowDelegate {
+final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
   var onCancel: (() -> Void)?
   let selectionView: ScreenshotSelectionView
 
-  init(frame: NSRect, scale: CGFloat, pinImmediately: Bool) {
+  init(frame: NSRect, visibleFrame: NSRect, scale: CGFloat, pinImmediately: Bool) {
     selectionView = ScreenshotSelectionView(
       frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately
     )
-    super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-    delegate = self
-    isReleasedWhenClosed = false
-    level = .floating
-    backgroundColor = .clear
-    isOpaque = false
-    hasShadow = false
-    hidesOnDeactivate = false
-    acceptsMouseMovedEvents = true
-    becomesKeyOnlyIfNeeded = false
-    collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    super.init(display: frame, visibleFrame: visibleFrame)
     contentView = selectionView
     initialFirstResponder = selectionView
-    selectionView.onCancel = { [weak self] in self?.onCancel?() }
+    selectionView.onCancel = { [weak self] in self?.cancelOperation(nil) }
+    selectionView.onValidSelection = { [weak self] rectangle in self?.showToolbar(beside: rectangle) }
+    selectionView.onChooseDrawingTool = { [weak self] in self?.chooseTool(.arrow) }
   }
 
-  override var canBecomeKey: Bool { true }
-  override var canBecomeMain: Bool { false }
-
-  override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
-    frameRect
-  }
-
-  override func cancelOperation(_ sender: Any?) {
-    onCancel?()
+  override func complete(_ action: OutputAction) {
+    if canvas != nil {
+      super.complete(action)
+    } else if !isPreparingImage {
+      selectionView.captureSelection(pinToScreen: action == .pin)
+    }
   }
 
   override func keyDown(with event: NSEvent) {
-    if event.keyCode == 53 {
+    if canvas != nil || isPreparingImage {
+      super.keyDown(with: event)
+    } else if event.keyCode == 53 {
       onCancel?()
     } else {
       selectionView.keyDown(with: event)
     }
   }
 
-  override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-      switch event.charactersIgnoringModifiers?.lowercased() {
-      case "w": onCancel?(); return true
-      case "c": selectionView.captureSelection(pinToScreen: false); return true
-      default: break
-      }
-    }
-    return super.performKeyEquivalent(with: event)
-  }
-
-  func windowWillClose(_ notification: Notification) {
+  override func windowWillClose(_ notification: Notification) {
     let handler = onCancel
     onCancel = nil
+    super.windowWillClose(notification)
     handler?()
   }
 }
@@ -235,7 +245,9 @@ final class ScreenshotSelectionWindow: NSPanel, NSWindowDelegate {
 final class ScreenshotSelectionView: NSView {
   var onBegin: (() -> Void)?
   var onCapture: ((NSRect, Bool) -> Void)?
-  var onAnnotate: ((NSRect) -> Void)?
+  var onChooseDrawingTool: (() -> Void)?
+  var onValidSelection: ((NSRect?) -> Void)?
+  var canAdjustSelection: (() -> Bool)?
   var onCancel: (() -> Void)?
   var movePointer: ((NSPoint) -> Void)?
   var findElements: (@Sendable (NSPoint) -> [NSRect])?
@@ -257,14 +269,12 @@ final class ScreenshotSelectionView: NSView {
   private var probing = false
   private var wantsSnapping = false
   private var elementTask: Task<Void, Never>?
-  private let actions = NSVisualEffectView()
 
   init(frame: NSRect, scale: CGFloat, pinImmediately: Bool) {
     self.scale = scale
     self.pinImmediately = pinImmediately
     super.init(frame: frame)
     setAccessibilityLabel(localized("ScreenshotSelectionHint"))
-    configureActions()
   }
 
   required init?(coder: NSCoder) { nil }
@@ -280,7 +290,9 @@ final class ScreenshotSelectionView: NSView {
         addCursorRect(NSRect(x: corner.x - 6, y: corner.y - 6, width: 12, height: 12), cursor: .crosshair)
       }
     }
-    if !actions.isHidden { addCursorRect(actions.frame, cursor: .arrow) }
+    if let toolbar = (window as? ScreenshotSelectionWindow)?.annotationToolbar, !toolbar.isHidden {
+      addCursorRect(toolbar.frame, cursor: .arrow)
+    }
   }
 
   override func updateTrackingAreas() {
@@ -308,6 +320,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func mouseDown(with event: NSEvent) {
+    guard canAdjustSelection?() != false else { return }
     window?.makeKey()
     window?.makeFirstResponder(self)
     let point = convert(event.locationInWindow, from: nil)
@@ -348,6 +361,10 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func keyDown(with event: NSEvent) {
+    guard canAdjustSelection?() != false else {
+      super.keyDown(with: event)
+      return
+    }
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     switch event.keyCode {
     case 53:
@@ -379,6 +396,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func beginSelection(at point: NSPoint) {
+    guard canAdjustSelection?() != false else { return }
     if let selectedRect, !pinImmediately {
       let corners = Self.corners(of: selectedRect)
       if let index = corners.firstIndex(where: { hypot($0.x - point.x, $0.y - point.y) <= 8 }) {
@@ -435,13 +453,16 @@ final class ScreenshotSelectionView: NSView {
     elementTask = nil
     onBegin = nil
     onCapture = nil
-    onAnnotate = nil
+    onChooseDrawingTool = nil
+    onValidSelection = nil
+    canAdjustSelection = nil
     onCancel = nil
     movePointer = nil
     findElements = nil
   }
 
   func nudge(dx: CGFloat, dy: CGFloat) {
+    guard canAdjustSelection?() != false else { return }
     if drag != nil {
       let point = pointer ?? window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
       guard let point else { return }
@@ -457,67 +478,21 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func captureSelection(pinToScreen: Bool) {
-    guard let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else { return }
+    guard canAdjustSelection?() != false,
+          let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else { return }
     onCapture?(selectedRect, pinToScreen)
   }
 
-  @objc func annotateSelection() {
-    guard let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else { return }
-    onAnnotate?(selectedRect)
-  }
-
-  @objc private func copySelection() { captureSelection(pinToScreen: false) }
-  @objc private func pinSelection() { captureSelection(pinToScreen: true) }
-  @objc private func cancelSelection() { onCancel?() }
-
-  private func configureActions() {
-    actions.appearance = NSAppearance(named: .darkAqua)
-    actions.material = .hudWindow
-    actions.blendingMode = .withinWindow
-    actions.state = .active
-    actions.wantsLayer = true
-    actions.layer?.cornerRadius = 9
-    actions.layer?.masksToBounds = true
-    let edit = NSButton(title: localized("ScreenshotEditSelection"), target: self, action: #selector(annotateSelection))
-    edit.bezelStyle = .rounded
-    let buttons: [(String, String, Selector)] = [
-      ("AnnotationCopy", "doc.on.doc", #selector(copySelection)),
-      ("ScreenshotPinImage", "pin.fill", #selector(pinSelection)),
-      ("ScreenshotCancel", "xmark", #selector(cancelSelection))
-    ]
-    let controls = buttons.map { key, symbol, selector in
-      let button = ScreenshotToolbarButton(frame: .zero)
-      button.isBordered = false
-      button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: localized(key))
-      button.contentTintColor = .white
-      button.toolTip = localized(key)
-      button.setAccessibilityLabel(localized(key))
-      button.target = self
-      button.action = selector
-      button.widthAnchor.constraint(equalToConstant: 28).isActive = true
-      button.heightAnchor.constraint(equalToConstant: 28).isActive = true
-      return button
-    }
-    let stack = NSStackView(views: [edit as NSView] + controls.map { $0 as NSView })
-    stack.spacing = 4
-    stack.translatesAutoresizingMaskIntoConstraints = false
-    actions.addSubview(stack)
-    NSLayoutConstraint.activate([
-      stack.centerXAnchor.constraint(equalTo: actions.centerXAnchor),
-      stack.centerYAnchor.constraint(equalTo: actions.centerYAnchor)
-    ])
-    actions.isHidden = true
-    addSubview(actions)
+  private func annotateSelection() {
+    guard !pinImmediately, drag == nil, let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else { return }
+    onChooseDrawingTool?()
   }
 
   private func updateControls() {
     if let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3, drag == nil, !pinImmediately {
-      actions.frame = ScreenshotAnnotationWindow.toolbarFrame(
-        beside: selectedRect, bounds: bounds, size: NSSize(width: 210, height: 38)
-      )
-      actions.isHidden = false
+      onValidSelection?(selectedRect)
     } else {
-      actions.isHidden = true
+      onValidSelection?(nil)
     }
     window?.invalidateCursorRects(for: self)
     needsDisplay = true

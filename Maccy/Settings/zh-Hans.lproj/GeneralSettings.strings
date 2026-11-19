@@ -67,6 +67,11 @@
 "AnnotationNoText" = "未识别到文字。";
 "AnnotationRecognitionFailed" = "无法识别文字。";
 "AnnotationCopyText" = "复制文字";
+"AnnotationCopyAllText" = "复制全部文字";
+"AnnotationCloseResults" = "关闭识别结果";
+"AnnotationPreparingSelection" = "正在准备选区图像…";
+"AnnotationRecognitionResults" = "识别结果";
+"AnnotationTextCopied" = "已复制";
 "ScreenshotSelectionPinInstructions" = "拖动框选 · 松开即贴屏 · Esc 取消";
 "ScreenshotClipboardHint" = "将剪贴板中已有的图片悬浮显示，不会重新截屏。";
 "ScreenshotSound" = "截图成功时播放提示音";

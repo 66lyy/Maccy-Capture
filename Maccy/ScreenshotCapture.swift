@@ -81,25 +81,29 @@ final class ScreenshotCapture {
       defer { captureTask = nil }
       do {
         try await Task.sleep(for: .milliseconds(180))
-        let captureMode: ScreenshotCaptureSession.Mode
+        let data: Data
         var shouldPin = pinToScreen
         var pinAnchor: NSPoint?
-        var shouldAnnotate = true
+        let shouldAnnotate: Bool
         var imageFrame: NSRect?
         switch mode {
         case .mainDisplay:
-          captureMode = .mainDisplay
           imageFrame = NSScreen.screens.first?.frame
+          shouldAnnotate = true
+          data = try await session.capture(mode: .mainDisplay)
         case .selection:
           guard let selection = try await selectionController.select(pinImmediately: pinToScreen) else { return }
           shouldPin = selection.pinToScreen
-          shouldAnnotate = selection.annotate
+          shouldAnnotate = false
           pinAnchor = selection.anchor
           imageFrame = selection.screenRect
-          captureMode = .region(selection.captureRect)
-          try await Task.sleep(for: .milliseconds(120))
+          if let rendered = selection.renderedData {
+            data = rendered
+          } else {
+            try await Task.sleep(for: .milliseconds(120))
+            data = try await session.capture(mode: .region(selection.captureRect))
+          }
         }
-        let data = try await session.capture(mode: captureMode)
         try Task.checkCancellation()
         guard let image = NSImage(data: data), image.isValid else {
           throw ScreenshotCaptureSession.Failure.invalidImage
