@@ -1,9 +1,36 @@
 import AppKit
 import Darwin
+import ImageIO
 import ScreenCaptureKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class ScreenshotCaptureSession {
+  nonisolated struct ValidatedImage: Sendable {
+    let data: Data
+    let image: CGImage
+
+    nonisolated static func validate(
+      _ data: Data, maximumPixels: Int = ScreenshotImageLimits.maximumPixels
+    ) throws -> Self {
+      guard data.suffix(12).elementsEqual([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]),
+            let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+            CGImageSourceGetType(source) == UTType.png.identifier as CFString,
+            CGImageSourceGetCount(source) > 0,
+            CGImageSourceGetStatus(source) == .statusComplete,
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? Int,
+            let height = properties[kCGImagePropertyPixelHeight] as? Int,
+            width > 0, height > 0, width <= maximumPixels / height,
+            let image = CGImageSourceCreateImageAtIndex(source, 0, [
+              kCGImageSourceShouldCacheImmediately: true
+            ] as CFDictionary),
+            CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+            image.width == width, image.height == height else { throw Failure.invalidImage }
+      return Self(data: data, image: image)
+    }
+  }
+
   enum Mode: Equatable {
     case mainDisplay
     case region(NSRect)
@@ -84,7 +111,7 @@ final class ScreenshotCaptureSession {
     return NSImage(cgImage: image, size: source.size)
   }
 
-  func capture(mode: Mode, timeout: Duration = .seconds(120)) async throws -> Data {
+  func capture(mode: Mode, timeout: Duration = .seconds(120)) async throws -> ValidatedImage {
     guard !isCapturing else { throw Failure.alreadyCapturing }
     try Task.checkCancellation()
     isCapturing = true
@@ -144,12 +171,12 @@ final class ScreenshotCaptureSession {
     try Task.checkCancellation()
     let exists = FileManager.default.fileExists(atPath: output.path)
     guard status == 0, exists else { throw Failure.captureFailed }
-    let data = try Data(contentsOf: output)
-    guard data.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]),
-          NSBitmapImageRep(data: data) != nil else {
-      throw Failure.invalidImage
-    }
-    return data
+    let result = try await Task.detached(priority: .userInitiated) {
+      try ValidatedImage.validate(Data(contentsOf: output))
+    }.value
+    try Task.checkCancellation()
+    if wasCancelled { throw CancellationError() }
+    return result
   }
 
   func cancel() {

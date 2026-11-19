@@ -5,12 +5,13 @@ import Vision
 
 @MainActor
 class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
-  enum OutputAction {
+  nonisolated enum OutputAction: Sendable {
     case copy, pin, apply
   }
 
   var onClose: (() -> Void)?
-  var onOutput: ((Data, NSImage, OutputAction) throws -> Void)?
+  var onOutput: ((Data?, NSImage, OutputAction) throws -> Void)?
+  private(set) var exportTask: Task<Void, Never>?
   var loadSelectionImage: (() async throws -> (NSImage, NSRect))?
   var onCanvasReady: (() -> Void)?
   private(set) var canvas: ScreenshotAnnotationCanvas!
@@ -36,7 +37,10 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   private var imageTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
   private var savePanel: NSSavePanel?
-  private var recognitionTask: Task<Void, Never>?
+  private(set) var recognitionTask: Task<Void, Never>?
+  var recognitionOperation: ScreenshotTextRecognition.Operation = { image, cancellation in
+    try ScreenshotTextRecognition.recognize(image, cancellation: cancellation)
+  }
   private(set) var recognitionResults: ScreenshotRecognitionResults?
   private(set) var recognitionButton: NSButton!
   private var recognizedText = ""
@@ -236,6 +240,8 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   func windowWillClose(_ notification: Notification) {
     guard !isFinished else { return }
     isFinished = true
+    exportTask?.cancel()
+    exportTask = nil
     imageTask?.cancel()
     imageTask = nil
     loadSelectionImage = nil
@@ -260,17 +266,25 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   func complete(_ action: OutputAction) {
-    guard !isFinished, let onOutput, let canvas else { return }
+    guard !isFinished, exportTask == nil, savePanel == nil, let onOutput, let canvas else { return }
     canvas.commitText()
-    guard let data = canvas.document.pngData(), let image = NSImage(data: data) else {
-      showOutputError()
-      return
-    }
-    do {
-      try onOutput(data, image, action)
-      if !isFinished { close() }
-    } catch {
-      showOutputError()
+    let snapshot = canvas.document.renderSnapshot()
+    exportTask = Task { [weak self] in
+      let result = await Task.detached(priority: .userInitiated) {
+        guard let image = snapshot.render() else { return nil as (CGImage, Data?)? }
+        if action == .apply { return (image, nil) }
+        guard let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return nil }
+        return (image, data)
+      }.value
+      guard let self, !isFinished, !Task.isCancelled else { return }
+      defer { exportTask = nil }
+      guard let (rendered, data) = result else { showOutputError(); return }
+      do {
+        try onOutput(data, NSImage(cgImage: rendered, size: .zero), action)
+        if !isFinished { close() }
+      } catch {
+        showOutputError()
+      }
     }
   }
 
@@ -528,20 +542,21 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     withCanvas { [weak self] canvas in self?.startRecognition(in: canvas) }
   }
 
-  private func startRecognition(in canvas: ScreenshotAnnotationCanvas) {
+  func startRecognition(in canvas: ScreenshotAnnotationCanvas) {
     guard recognitionTask == nil, !isFinished else { return }
     clearRecognition()
     canvas.commitText()
-    let document = canvas.document
-    guard let image = document.marks.isEmpty ? document.sourceImage : document.renderedImage() else {
-      showOutputError()
-      return
-    }
+    let snapshot = canvas.document.renderSnapshot()
     recognitionButton.isEnabled = false
     statusLabel.stringValue = text("AnnotationRecognizingText")
+    let operation = recognitionOperation
     recognitionTask = Task { [weak self] in
-      let worker = Task.detached(priority: .userInitiated) { try ScreenshotTextRecognition.recognize(image) }
-      let result = await withTaskCancellationHandler { await worker.result } onCancel: { worker.cancel() }
+      let result: Result<String, Error>
+      do {
+        result = .success(try await ScreenshotTextRecognition.run(snapshot, operation: operation))
+      } catch {
+        result = .failure(error)
+      }
       guard !Task.isCancelled, let self, !isFinished else { return }
       recognitionTask = nil
       recognitionButton.isEnabled = true
@@ -556,7 +571,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     }
   }
 
-  private func clearRecognition() {
+  func clearRecognition() {
     recognitionTask?.cancel()
     recognitionTask = nil
     recognitionButton.isEnabled = true
@@ -613,9 +628,8 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   private func presentSavePanel(for canvas: ScreenshotAnnotationCanvas) {
-    guard !isFinished, savePanel == nil else { return }
+    guard !isFinished, savePanel == nil, exportTask == nil else { return }
     canvas.commitText()
-    guard let data = canvas.document.pngData() else { showOutputError(); return }
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.png]
     panel.nameFieldStringValue = "Screenshot.png"
@@ -625,10 +639,19 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       guard let self else { return }
       self.savePanel = nil
       guard !self.isFinished, response == .OK, let url = panel.url else { return }
-      do {
-        try data.write(to: url, options: .atomic)
-      } catch {
-        self.showOutputError()
+      let snapshot = canvas.document.renderSnapshot()
+      self.exportTask = Task { [weak self] in
+        let result = await Task.detached(priority: .userInitiated) {
+          Result {
+            guard let image = snapshot.render(),
+                  let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image)
+            else { throw ScreenshotExportFailure.render }
+            try data.write(to: url, options: .atomic)
+          }
+        }.value
+        guard let self, !isFinished, !Task.isCancelled else { return }
+        exportTask = nil
+        if case .failure = result { showOutputError() }
       }
     }
   }
@@ -643,9 +666,65 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 }
 
+private enum ScreenshotExportFailure: Error {
+  case render
+}
+
 enum ScreenshotTextRecognition {
-  nonisolated static func recognize(_ image: CGImage) throws -> String {
-    try Task.checkCancellation()
+  typealias Operation = @Sendable (CGImage, Cancellation) throws -> String
+  nonisolated private static let queue = DispatchQueue(label: "local.maccy.capture.ocr", qos: .userInitiated)
+
+  nonisolated final class Cancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    private var request: VNRequest?
+
+    func checkCancellation() throws {
+      lock.lock()
+      defer { lock.unlock() }
+      if cancelled { throw CancellationError() }
+    }
+
+    func install(_ request: VNRequest?) throws {
+      lock.lock()
+      defer { lock.unlock() }
+      if cancelled { request?.cancel(); throw CancellationError() }
+      self.request = request
+    }
+
+    func cancel() {
+      lock.lock()
+      defer { lock.unlock() }
+      cancelled = true
+      request?.cancel()
+      request = nil
+    }
+  }
+
+  nonisolated static func run(
+    _ snapshot: ScreenshotAnnotationDocument.RenderSnapshot, operation: @escaping Operation
+  ) async throws -> String {
+    let cancellation = Cancellation()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        queue.async {
+          continuation.resume(with: Result {
+            try cancellation.checkCancellation()
+            guard let image = snapshot.render() else { throw ScreenshotExportFailure.render }
+            try cancellation.checkCancellation()
+            let value = try operation(image, cancellation)
+            try cancellation.checkCancellation()
+            return value
+          })
+        }
+      }
+    } onCancel: {
+      cancellation.cancel()
+    }
+  }
+
+  nonisolated static func recognize(_ image: CGImage, cancellation: Cancellation = Cancellation()) throws -> String {
+    try cancellation.checkCancellation()
     let request = VNRecognizeTextRequest()
     request.recognitionLevel = .accurate
     let supported = try request.supportedRecognitionLanguages()
@@ -654,7 +733,7 @@ enum ScreenshotTextRecognition {
     request.automaticallyDetectsLanguage = true
     request.minimumTextHeight = 0
     let input = paddedNarrowImage(image) ?? image
-    let text = try recognize(input, request: request)
+    let text = try recognize(input, request: request, cancellation: cancellation)
     guard text.isEmpty else { return text }
 
     let retry = VNRecognizeTextRequest()
@@ -662,13 +741,16 @@ enum ScreenshotTextRecognition {
     retry.minimumTextHeight = 0
     retry.usesLanguageCorrection = false
     if !languages.isEmpty { retry.recognitionLanguages = languages }
-    return try recognize(enlargedImage(image) ?? image, request: retry)
+    return try recognize(enlargedImage(image) ?? image, request: retry, cancellation: cancellation)
   }
 
-  nonisolated private static func recognize(_ image: CGImage, request: VNRecognizeTextRequest) throws -> String {
-    try Task.checkCancellation()
+  nonisolated private static func recognize(
+    _ image: CGImage, request: VNRecognizeTextRequest, cancellation: Cancellation
+  ) throws -> String {
+    try cancellation.install(request)
+    defer { try? cancellation.install(nil) }
     try VNImageRequestHandler(cgImage: image, orientation: .up).perform([request])
-    try Task.checkCancellation()
+    try cancellation.checkCancellation()
     return (request.results ?? []).compactMap { observation in
       observation.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines)
     }.filter { !$0.isEmpty }.joined(separator: "\n")

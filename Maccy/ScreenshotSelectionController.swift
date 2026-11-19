@@ -183,7 +183,7 @@ final class ScreenshotSelectionController {
       window.invalidateCursorRects(for: window.selectionView)
     }
     window.onOutput = { [weak self, weak window] data, _, action in
-      guard let self, let rectangle = window?.selectionView.selectedRect else { throw CancellationError() }
+      guard let self, let data, let rectangle = window?.selectionView.selectedRect else { throw CancellationError() }
       finish(selection(rectangle, pinToScreen: action == .pin, data: data))
     }
     return window

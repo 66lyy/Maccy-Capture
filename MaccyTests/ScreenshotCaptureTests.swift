@@ -7,6 +7,111 @@ import Testing
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Pin estimates reject oversized, empty and overflowing pixel dimensions")
+  func pinPixelLimits() {
+    #expect(PinnedImageBudget.estimatedBytes(pixelWidth: 10_000, pixelHeight: 10_000) == 400_000_000)
+    #expect(PinnedImageBudget.estimatedBytes(pixelWidth: 10_001, pixelHeight: 10_000) == nil)
+    #expect(PinnedImageBudget.estimatedBytes(pixelWidth: Int.max, pixelHeight: Int.max) == nil)
+    #expect(PinnedImageBudget.estimatedBytes(pixelWidth: 0, pixelHeight: 100) == nil)
+    #expect(PinnedImageBudget.estimatedBytes(pixelWidth: 100, pixelHeight: -1) == nil)
+    var budget = PinnedImageBudget()
+    #expect(!budget.canAdd(400_000_004))
+    let oversizedAdded = budget.add(UUID(), bytes: 400_000_004)
+    #expect(!oversizedAdded)
+    #expect(!budget.canAdd(0))
+    #expect(budget.total == 0)
+  }
+
+  @Test("Pin budget reaches the aggregate limit and removing pins frees capacity")
+  func aggregatePinBudget() {
+    var budget = PinnedImageBudget()
+    let first = UUID()
+    let second = UUID()
+    let third = UUID()
+    let firstAdded = budget.add(first, bytes: 400_000_000)
+    let secondAdded = budget.add(second, bytes: 400_000_000)
+    #expect(firstAdded && secondAdded)
+    let remaining = PinnedImageBudget.maximumBytes - budget.total
+    #expect(budget.canAdd(remaining))
+    let thirdAdded = budget.add(third, bytes: remaining)
+    #expect(thirdAdded)
+    #expect(budget.total == PinnedImageBudget.maximumBytes)
+    #expect(!budget.canAdd(4))
+    let overflowAdded = budget.add(UUID(), bytes: 4)
+    #expect(!overflowAdded)
+    budget.remove(first)
+    budget.remove(first)
+    #expect(budget.total == PinnedImageBudget.maximumBytes - 400_000_000)
+    #expect(budget.canAdd(400_000_000))
+    let thirdUpdated = budget.add(third, bytes: 4)
+    #expect(thirdUpdated)
+    #expect(budget.total == 400_000_004)
+    budget.remove(second)
+    budget.remove(third)
+    #expect(budget.total == 0)
+  }
+
+  @Test("Pin estimates use the largest bitmap pixels rather than Retina points")
+  func retinaPinEstimate() throws {
+    let retina = try #require(NSBitmapImageRep(data: generatedPNG()))
+    retina.size = NSSize(width: 4, height: 4)
+    let small = try #require(NSBitmapImageRep(
+      bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8,
+      samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+      bytesPerRow: 0, bitsPerPixel: 0
+    ))
+    let image = NSImage(size: NSSize(width: 4, height: 4))
+    image.addRepresentation(small)
+    image.addRepresentation(retina)
+    #expect(PinnedImageBudget.estimatedBytes(for: image) == 8 * 8 * 4)
+  }
+
+  @Test("Pinned image context menus route close-all through the coordinator callback")
+  func closeAllPinnedAction() throws {
+    let window = pinnedZoomWindow()
+    defer { window.close() }
+    var calls = 0
+    window.onCloseAll = { calls += 1 }
+    let imageView = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
+    let menu = try #require(imageView.menu)
+    let item = try #require(menu.items.last)
+    #expect(item.action == #selector(PinnedScreenshotWindow.closeAllImages))
+    #expect(item.target === window)
+    window.perform(item.action)
+    #expect(calls == 1)
+    window.close()
+    #expect(window.onCloseAll == nil)
+  }
+
+  @Test("PNG validation decodes one full-resolution image off-main")
+  func validatedImage() async throws {
+    let data = try generatedPNG()
+    let result = try await Task.detached {
+      try ScreenshotCaptureSession.ValidatedImage.validate(data)
+    }.value
+    #expect(result.data == data)
+    #expect(result.image.width == 8 && result.image.height == 8)
+  }
+
+  @Test("PNG validation rejects truncated and non-image data")
+  func malformedImageData() throws {
+    let data = try generatedPNG()
+    for invalid in [Data(), Data("not an image".utf8), Data(data.prefix(24)), Data(data.dropLast(20))] {
+      #expect(throws: ScreenshotCaptureSession.Failure.invalidImage) {
+        try ScreenshotCaptureSession.ValidatedImage.validate(invalid)
+      }
+    }
+  }
+
+  @Test("PNG validation rejects images exceeding the pixel limit before decoding")
+  func oversizedImageData() throws {
+    let data = try generatedPNG()
+    #expect(throws: ScreenshotCaptureSession.Failure.invalidImage) {
+      try ScreenshotCaptureSession.ValidatedImage.validate(data, maximumPixels: 63)
+    }
+    #expect(try ScreenshotCaptureSession.ValidatedImage.validate(data, maximumPixels: 64).image.width == 8)
+  }
+
   @Test("A history save failure does not block screenshot output", arguments: [false, true])
   func deliverWithHistoryResult(historyFails: Bool) throws {
     let data = try generatedPNG()
@@ -123,7 +228,9 @@ struct ScreenshotCaptureTests {
       permissions = attributes?[.posixPermissions] as? Int
       return process("/bin/cp", arguments: [fixture.path, output.path])
     }
-    #expect(try await session.capture(mode: .mainDisplay) == data)
+    let result = try await session.capture(mode: .mainDisplay)
+    #expect(result.data == data)
+    #expect(result.image.width == 8 && result.image.height == 8)
     #expect(permissions == 0o700)
     #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == ["generated.png"])
   }

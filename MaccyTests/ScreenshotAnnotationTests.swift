@@ -5,6 +5,94 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotAnnotationTests {
+  @Test("Snapshot text rendering matches the original AppKit drawing", arguments: ["Sample 42", "First line\n第二行"])
+  func textRenderingParity(text: String) async throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let mark = ScreenshotAnnotationDocument.Mark(
+      tool: .text, points: [CGPoint(x: 20, y: 30)], color: .red, text: text
+    )
+    document.append(mark)
+    let snapshot = document.renderSnapshot()
+    let actual = try #require(await Task.detached { snapshot.render() }.value)
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(CGContext(
+      data: nil, width: 240, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
+      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    context.clip(to: CGRect(x: 0, y: 0, width: 240, height: 160))
+    context.interpolationQuality = .high
+    context.draw(document.sourceImage, in: CGRect(x: 0, y: 0, width: 240, height: 160))
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    (mark.text as NSString).draw(at: mark.points[0], withAttributes: [
+      .font: mark.textFont, .foregroundColor: mark.color
+    ])
+    NSGraphicsContext.restoreGraphicsState()
+    let expected = try #require(context.makeImage())
+    #expect(actual.dataProvider?.data == expected.dataProvider?.data)
+  }
+
+  @Test("Cancelling or closing OCR cancels the running operation and discards late results", arguments: [false, true])
+  func recognitionCancellation(close: Bool) async throws {
+    let window = try editor()
+    defer { window.close() }
+    let probe = SlowRecognition()
+    window.recognitionOperation = { try probe.recognize($0, cancellation: $1) }
+    var events = probe.events.makeAsyncIterator()
+    window.startRecognition(in: window.canvas)
+    let task = try #require(window.recognitionTask)
+    #expect(await events.next() == 1)
+    if close { window.close() } else { window.clearRecognition() }
+    #expect(probe.isCancelled)
+    probe.release.signal()
+    await task.value
+    #expect(window.recognitionResults == nil)
+  }
+
+  @Test("Restarted OCR waits for the cancelled operation to finish")
+  func recognitionRestart() async throws {
+    let window = try editor()
+    defer { window.close() }
+    let probe = SlowRecognition()
+    window.recognitionOperation = { try probe.recognize($0, cancellation: $1) }
+    var events = probe.events.makeAsyncIterator()
+    window.startRecognition(in: window.canvas)
+    let first = try #require(window.recognitionTask)
+    #expect(await events.next() == 1)
+    window.clearRecognition()
+    #expect(probe.isCancelled)
+    window.startRecognition(in: window.canvas)
+    let second = try #require(window.recognitionTask)
+    probe.release.signal()
+    #expect(await events.next() == 2)
+    await first.value
+    await second.value
+    #expect(probe.maximumActive == 1)
+    #expect(window.recognitionResults?.textView.string == "Result 2")
+  }
+
+  @Test("Sendable render snapshots reuse unchanged pixels and encode annotated images off-main")
+  func renderSnapshot() async throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let unchanged = document.renderSnapshot()
+    document.append(.init(tool: .rectangle, points: [CGPoint(x: 20, y: 20), CGPoint(x: 100, y: 100)]))
+    let annotated = document.renderSnapshot()
+    let result = await Task.detached { () -> (CGImage?, CGImage?, Data?) in
+      let original = unchanged.render()
+      let rendered = annotated.render()
+      return (original, rendered, rendered.flatMap(ScreenshotAnnotationDocument.RenderSnapshot.pngData))
+    }.value
+    let original = try #require(result.0)
+    let rendered = try #require(result.1)
+    #expect(original === document.sourceImage)
+    #expect(original.width == 240 && original.height == 160)
+    #expect(rendered.dataProvider?.data != original.dataProvider?.data)
+    let data = try #require(result.2)
+    let bitmap = try #require(NSBitmapImageRep(data: data))
+    #expect(bitmap.pixelsWide == rendered.width && bitmap.pixelsHigh == rendered.height)
+    #expect(try color(bitmap, x: 20, y: 100).redComponent > 0.9)
+  }
+
   @Test("Export preserves source pixels, resolution and orientation, including Retina image sizes")
   func sourcePreservation() throws {
     let image = try fixture()
@@ -225,19 +313,25 @@ struct ScreenshotAnnotationTests {
         arguments: [
           ScreenshotAnnotationWindow.OutputAction.copy, .pin, .apply
         ])
-  func editorCompletion(action: ScreenshotAnnotationWindow.OutputAction) throws {
+  func editorCompletion(action: ScreenshotAnnotationWindow.OutputAction) async throws {
     let window = try editor()
     var outputs = 0
     var closes = 0
     window.onClose = { closes += 1 }
     window.onOutput = { data, image, receivedAction in
       #expect(receivedAction == action)
-      #expect(NSBitmapImageRep(data: data)?.pixelsWide == 240)
+      if action == .apply {
+        #expect(data == nil)
+      } else {
+        let data = try #require(data)
+        #expect(NSBitmapImageRep(data: data)?.pixelsWide == 240)
+      }
       #expect(image.isValid)
       outputs += 1
     }
     window.complete(action)
     window.complete(action)
+    await window.exportTask?.value
     window.close()
     #expect(outputs == 1 && closes == 1)
   }
@@ -255,7 +349,7 @@ struct ScreenshotAnnotationTests {
   }
 
   @Test("A failed export destination keeps the editor and undo history available")
-  func failedDestination() throws {
+  func failedDestination() async throws {
     enum Failure: Error { case simulated }
     let window = try editor()
     defer { window.close() }
@@ -266,6 +360,7 @@ struct ScreenshotAnnotationTests {
       tool: .text, points: [NSPoint(x: 20, y: 20)], text: "Value"
     ))
     window.complete(.copy)
+    await window.exportTask?.value
     #expect(!closed)
     #expect(window.canvas.document.canUndo)
   }
@@ -452,7 +547,7 @@ struct ScreenshotAnnotationTests {
   }
 
   @Test("Toolbar copy and pin export only a flattened result", arguments: [false, true])
-  func inlineOutputButtons(pin: Bool) throws {
+  func inlineOutputButtons(pin: Bool) async throws {
     let window = try editor()
     defer { window.close() }
     var outputs = 0
@@ -461,15 +556,17 @@ struct ScreenshotAnnotationTests {
     ))
     window.onOutput = { data, _, action in
       #expect(action == (pin ? .pin : .copy))
+      let data = try #require(data)
       #expect(NSBitmapImageRep(data: data)?.pixelsWide == 240)
       outputs += 1
     }
     (pin ? window.pinButton : window.copyButton)?.performClick(nil)
+    await window.exportTask?.value
     #expect(outputs == 1)
   }
 
   @Test("Pinned editing applies in place without creating a second pinned image")
-  func inlinePinnedOutput() throws {
+  func inlinePinnedOutput() async throws {
     let window = try #require(ScreenshotAnnotationWindow(
       image: fixture(), visibleFrame: NSRect(x: 0, y: 0, width: 1000, height: 800),
       imageFrame: NSRect(x: 100, y: 200, width: 240, height: 160), editingPin: true
@@ -478,6 +575,7 @@ struct ScreenshotAnnotationTests {
     var actions: [ScreenshotAnnotationWindow.OutputAction] = []
     window.onOutput = { _, _, action in actions.append(action) }
     window.pinButton.performClick(nil)
+    await window.exportTask?.value
     #expect(actions == [.apply])
   }
 
@@ -616,7 +714,7 @@ struct ScreenshotAnnotationTests {
 
   @Test("Inline Enter, P, and Command-C route directly to completion",
         arguments: ["\r", "p", "c"])
-  func inlineKeyboardOutput(key: String) throws {
+  func inlineKeyboardOutput(key: String) async throws {
     let window = try editor()
     defer { window.close() }
     var actions: [ScreenshotAnnotationWindow.OutputAction] = []
@@ -632,6 +730,7 @@ struct ScreenshotAnnotationTests {
     } else {
       window.canvas.keyDown(with: event)
     }
+    await window.exportTask?.value
     #expect(actions == [key == "p" ? .pin : .copy])
   }
 
@@ -706,5 +805,42 @@ struct ScreenshotAnnotationTests {
     }
     let data = try #require(representation.representation(using: .png, properties: [:]))
     return try #require(NSImage(data: data))
+  }
+}
+
+nonisolated private final class SlowRecognition: @unchecked Sendable {
+  let release = DispatchSemaphore(value: 0)
+  let events: AsyncStream<Int>
+  private let continuation: AsyncStream<Int>.Continuation
+  private let lock = NSLock()
+  private var cancellation: ScreenshotTextRecognition.Cancellation?
+  private var runs = 0
+  private var active = 0
+  private var peak = 0
+
+  init() {
+    (events, continuation) = AsyncStream.makeStream(of: Int.self)
+  }
+
+  var maximumActive: Int { lock.withLock { peak } }
+  var isCancelled: Bool {
+    lock.withLock {
+      guard let cancellation else { return false }
+      do { try cancellation.checkCancellation(); return false } catch { return true }
+    }
+  }
+
+  func recognize(_ image: CGImage, cancellation: ScreenshotTextRecognition.Cancellation) throws -> String {
+    let run = lock.withLock {
+      self.cancellation = cancellation
+      runs += 1
+      active += 1
+      peak = max(peak, active)
+      return runs
+    }
+    defer { lock.withLock { active -= 1 } }
+    continuation.yield(run)
+    if run == 1 { release.wait() }
+    return "Result \(run)"
   }
 }

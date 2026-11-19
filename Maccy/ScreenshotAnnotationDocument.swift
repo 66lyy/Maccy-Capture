@@ -1,8 +1,10 @@
 import AppKit
+import ImageIO
+import UniformTypeIdentifiers
 
 @MainActor
 final class ScreenshotAnnotationDocument {
-  enum Tool: Int, CaseIterable {
+  nonisolated enum Tool: Int, CaseIterable, Sendable {
     case arrow, rectangle, ellipse, pen, text, redact
 
     var titleKey: String {
@@ -53,7 +55,7 @@ final class ScreenshotAnnotationDocument {
   init?(image: NSImage) {
     guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
           source.width > 0, source.height > 0,
-          source.width <= 100_000_000 / source.height else { return nil }
+          source.width <= ScreenshotImageLimits.maximumPixels / source.height else { return nil }
     sourceImage = source
   }
 
@@ -128,17 +130,65 @@ final class ScreenshotAnnotationDocument {
 
   func pngData() -> Data? {
     guard let image = renderedImage() else { return nil }
-    return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+    return RenderSnapshot.pngData(image)
   }
 
   func renderedImage() -> CGImage? {
-    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-          let context = CGContext(
-            data: nil, width: sourceImage.width, height: sourceImage.height, bitsPerComponent: 8,
-            bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-          ) else { return nil }
-    draw(in: context)
-    return context.makeImage()
+    renderSnapshot().render()
+  }
+
+  func renderSnapshot() -> RenderSnapshot {
+    RenderSnapshot(source: sourceImage, marks: marks.map { RenderMark($0) })
+  }
+
+  nonisolated struct RenderMark: Sendable {
+    let tool: Tool
+    let points: [CGPoint]
+    let color: CGColor
+    let lineWidth: CGFloat
+    let text: String
+    let fontName: String
+    let fontSize: CGFloat
+    let shapeBounds: CGRect
+
+    @MainActor init(_ mark: Mark) {
+      tool = mark.tool
+      points = mark.points
+      color = (mark.color.usingColorSpace(.sRGB) ?? .red).withAlphaComponent(1).cgColor
+      lineWidth = mark.lineWidth
+      text = mark.text
+      fontName = mark.textFont.fontName
+      fontSize = mark.fontSize
+      shapeBounds = mark.shapeBounds
+    }
+  }
+
+  nonisolated struct RenderSnapshot: Sendable {
+    let source: CGImage
+    let marks: [RenderMark]
+
+    nonisolated static func pngData(_ image: CGImage) -> Data? {
+      let data = NSMutableData()
+      guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
+      else { return nil }
+      CGImageDestinationAddImage(destination, image, nil)
+      guard CGImageDestinationFinalize(destination) else { return nil }
+      return data as Data
+    }
+
+    nonisolated func render() -> CGImage? {
+      guard !marks.isEmpty else { return source }
+      guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+              data: nil, width: source.width, height: source.height, bitsPerComponent: 8,
+              bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return nil }
+      context.interpolationQuality = .high
+      context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))
+      for mark in marks where mark.tool != .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, in: context) }
+      for mark in marks where mark.tool == .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, in: context) }
+      return context.makeImage()
+    }
   }
 
   func draw(in context: CGContext, preview: Mark? = nil, movingText: (index: Int, position: NSPoint)? = nil) {
@@ -165,12 +215,16 @@ final class ScreenshotAnnotationDocument {
   }
 
   private func draw(_ mark: Mark, in context: CGContext) {
+    Self.drawRenderedMark(RenderMark(mark), in: context)
+  }
+
+  nonisolated private static func drawRenderedMark(_ mark: RenderMark, in context: CGContext) {
     guard let first = mark.points.first else { return }
     let last = mark.points.last ?? first
     context.saveGState()
     defer { context.restoreGState() }
-    let color = (mark.color.usingColorSpace(.sRGB) ?? .red).withAlphaComponent(1)
-    context.setStrokeColor(color.cgColor)
+    let color = mark.color
+    context.setStrokeColor(color)
     context.setLineWidth(mark.lineWidth)
     context.setLineCap(.round)
     context.setLineJoin(.round)
@@ -195,14 +249,17 @@ final class ScreenshotAnnotationDocument {
       context.addLines(between: mark.points)
       context.strokePath()
     case .text:
+      NSGraphicsContext.saveGraphicsState()
+      defer { NSGraphicsContext.restoreGraphicsState() }
+      NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
       (mark.text as NSString).draw(at: first, withAttributes: [
-        .font: mark.textFont,
-        .foregroundColor: color
+        .font: NSFont(name: mark.fontName, size: mark.fontSize) ?? .systemFont(ofSize: mark.fontSize, weight: .semibold),
+        .foregroundColor: NSColor(cgColor: color) ?? .red
       ])
     case .redact:
       context.setShouldAntialias(false)
       context.setBlendMode(.copy)
-      context.setFillColor(color.cgColor)
+      context.setFillColor(color)
       context.fill(mark.shapeBounds.integral)
     }
   }

@@ -144,6 +144,9 @@
 "ScreenshotCancel" = "Cancel";
 "ScreenshotErrorTitle" = "Screenshot could not be completed";
 "ScreenshotClipboardEmpty" = "The clipboard does not contain an image. Copy an image first, or use Capture and pin.";
+"PinnedImageTooLarge" = "This image is too large to pin. Choose an image with no more than 100 million pixels.";
+"PinnedImageMemoryLimit" = "Pinned images have reached the memory limit. Close some pinned images and try again.";
+"ScreenshotCloseAllPinned" = "Close All Pinned Images";
 "ScreenshotAlreadyCapturing" = "A capture is already in progress. Finish it or press Esc to cancel.";
 "ScreenshotCaptureFailed" = "The system could not complete the capture. Check screen recording permission, then try again.";
 "ScreenshotInvalidImage" = "The capture did not produce a valid PNG image. Nothing was added to history.";

@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   var onClose: (() -> Void)?
+  var onCloseAll: (() -> Void)?
   var onAnnotate: ((NSImage) -> Void)?
 
   private(set) var image: NSImage
@@ -70,6 +71,11 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     let closeItem = NSMenuItem(title: localized("ScreenshotClose"), action: #selector(closeImage), keyEquivalent: "")
     closeItem.target = self
     menu.addItem(closeItem)
+    let closeAllItem = NSMenuItem(
+      title: localized("ScreenshotCloseAllPinned"), action: #selector(closeAllImages), keyEquivalent: ""
+    )
+    closeAllItem.target = self
+    menu.addItem(closeAllItem)
     imageView.menu = menu
     contentView = container
     initialFirstResponder = imageView
@@ -124,6 +130,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     onAnnotate = nil
+    onCloseAll = nil
     let handler = onClose
     onClose = nil
     handler?()
@@ -208,6 +215,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
 
   @objc private func closeImage() {
     close()
+  }
+
+  @objc func closeAllImages() {
+    onCloseAll?()
   }
 
   @objc private func copyImage() {

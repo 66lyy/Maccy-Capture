@@ -139,6 +139,9 @@
 "ScreenshotCancel" = "取消";
 "ScreenshotErrorTitle" = "未能完成截图";
 "ScreenshotClipboardEmpty" = "剪贴板里没有图片。请先复制图片，或使用「截图并贴屏」。";
+"PinnedImageTooLarge" = "这张图片太大，无法贴到屏幕。请选择不超过 1 亿像素的图片。";
+"PinnedImageMemoryLimit" = "贴图已达到内存上限。请关闭部分贴图后重试。";
+"ScreenshotCloseAllPinned" = "关闭所有贴图";
 "ScreenshotAlreadyCapturing" = "已有截屏正在进行，请先完成选区，或按 Esc 取消。";
 "ScreenshotCaptureFailed" = "系统未能完成截屏。请检查屏幕录制权限后重试。";
 "ScreenshotInvalidImage" = "未获得有效的 PNG 图片，没有添加历史记录。";

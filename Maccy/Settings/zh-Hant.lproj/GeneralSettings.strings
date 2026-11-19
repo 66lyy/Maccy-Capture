@@ -81,6 +81,9 @@
 "ScreenshotCancel" = "取消";
 "ScreenshotErrorTitle" = "無法完成截圖";
 "ScreenshotClipboardEmpty" = "剪貼簿中沒有圖片。請先複製圖片，或使用「截圖並貼在螢幕」。";
+"PinnedImageTooLarge" = "這張圖片太大，無法貼在螢幕上。請選擇不超過 1 億像素的圖片。";
+"PinnedImageMemoryLimit" = "貼圖已達到記憶體上限。請關閉部分貼圖後再試。";
+"ScreenshotCloseAllPinned" = "關閉所有貼圖";
 "ScreenshotAlreadyCapturing" = "已有截圖正在進行，請先完成選取，或按 Esc 取消。";
 "ScreenshotCaptureFailed" = "系統無法完成截圖。請檢查螢幕錄製權限後重試。";
 "ScreenshotInvalidImage" = "未取得有效的 PNG 圖片，沒有加入歷史記錄。";

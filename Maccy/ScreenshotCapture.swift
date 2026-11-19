@@ -2,6 +2,55 @@ import AppKit
 import CoreGraphics
 import Defaults
 
+nonisolated enum ScreenshotImageLimits {
+  static let maximumPixels = 100_000_000
+}
+
+nonisolated struct PinnedImageBudget {
+  static let maximumBytes = 1_073_741_824
+  private var estimates: [UUID: Int] = [:]
+  private(set) var total = 0
+
+  static func estimatedBytes(pixelWidth: Int, pixelHeight: Int) -> Int? {
+    guard pixelWidth > 0, pixelHeight > 0,
+          pixelWidth <= ScreenshotImageLimits.maximumPixels / pixelHeight else { return nil }
+    return pixelWidth * pixelHeight * 4
+  }
+
+  @MainActor static func estimatedBytes(for image: NSImage) -> Int? {
+    let bitmaps = image.representations.compactMap { $0 as? NSBitmapImageRep }
+    if !bitmaps.isEmpty {
+      var largest = 0
+      for bitmap in bitmaps {
+        guard let bytes = estimatedBytes(pixelWidth: bitmap.pixelsWide, pixelHeight: bitmap.pixelsHigh)
+        else { return nil }
+        largest = max(largest, bytes)
+      }
+      return largest
+    }
+    guard let image = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+    return estimatedBytes(pixelWidth: image.width, pixelHeight: image.height)
+  }
+
+  func canAdd(_ bytes: Int) -> Bool {
+    bytes > 0 && bytes <= ScreenshotImageLimits.maximumPixels * 4 && bytes <= Self.maximumBytes - total
+  }
+
+  @discardableResult
+  mutating func add(_ id: UUID, bytes: Int) -> Bool {
+    let previous = estimates[id] ?? 0
+    guard bytes > 0, bytes <= ScreenshotImageLimits.maximumPixels * 4,
+          bytes <= Self.maximumBytes - (total - previous) else { return false }
+    estimates[id] = bytes
+    total += bytes - previous
+    return true
+  }
+
+  mutating func remove(_ id: UUID) {
+    total -= estimates.removeValue(forKey: id) ?? 0
+  }
+}
+
 @MainActor
 final class ScreenshotCapture {
   static let shared = ScreenshotCapture()
@@ -16,6 +65,7 @@ final class ScreenshotCapture {
   private let selectionController = ScreenshotSelectionController()
   private var captureTask: Task<Void, Never>?
   private var pinnedWindows: [UUID: PinnedScreenshotWindow] = [:]
+  private var pinnedImageBudget = PinnedImageBudget()
   private var previewWindow: ScreenshotPreviewWindow?
   private var annotationWindows: [UUID: ScreenshotAnnotationWindow] = [:]
   private var annotationSources: [ObjectIdentifier: UUID] = [:]
@@ -53,9 +103,7 @@ final class ScreenshotCapture {
     for window in Array(annotationWindows.values) {
       window.close()
     }
-    for window in Array(pinnedWindows.values) {
-      window.close()
-    }
+    closeAllPinnedImages()
   }
 
   private func startCapture(mode: CaptureMode, pinToScreen: Bool) {
@@ -81,7 +129,7 @@ final class ScreenshotCapture {
       defer { captureTask = nil }
       do {
         try await Task.sleep(for: .milliseconds(180))
-        let data: Data
+        let result: ScreenshotCaptureSession.ValidatedImage
         var shouldPin = pinToScreen
         var pinAnchor: NSPoint?
         let shouldAnnotate: Bool
@@ -90,7 +138,7 @@ final class ScreenshotCapture {
         case .mainDisplay:
           imageFrame = NSScreen.screens.first?.frame
           shouldAnnotate = true
-          data = try await session.capture(mode: .mainDisplay)
+          result = try await session.capture(mode: .mainDisplay)
         case .selection:
           guard let selection = try await selectionController.select(pinImmediately: pinToScreen) else { return }
           shouldPin = selection.pinToScreen
@@ -98,16 +146,17 @@ final class ScreenshotCapture {
           pinAnchor = selection.anchor
           imageFrame = selection.screenRect
           if let rendered = selection.renderedData {
-            data = rendered
+            result = try await Task.detached(priority: .userInitiated) {
+              try ScreenshotCaptureSession.ValidatedImage.validate(rendered)
+            }.value
           } else {
             try await Task.sleep(for: .milliseconds(120))
-            data = try await session.capture(mode: .region(selection.captureRect))
+            result = try await session.capture(mode: .region(selection.captureRect))
           }
         }
         try Task.checkCancellation()
-        guard let image = NSImage(data: data), image.isValid else {
-          throw ScreenshotCaptureSession.Failure.invalidImage
-        }
+        let data = result.data
+        let image = NSImage(cgImage: result.image, size: .zero)
         if shouldAnnotate {
           annotateImage(image, imageFrame: imageFrame, originalWasCopied: false)
         } else {
@@ -165,11 +214,20 @@ final class ScreenshotCapture {
   }
 
   private func pinImage(_ image: NSImage, anchor: NSPoint? = nil) {
+    guard let bytes = PinnedImageBudget.estimatedBytes(for: image) else {
+      showError("PinnedImageTooLarge")
+      return
+    }
+    guard pinnedImageBudget.canAdd(bytes) else {
+      showError("PinnedImageMemoryLimit")
+      return
+    }
     let pointer = anchor ?? NSEvent.mouseLocation
     guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else {
       return
     }
     let identifier = UUID()
+    guard pinnedImageBudget.add(identifier, bytes: bytes) else { return }
     let window = PinnedScreenshotWindow(image: image, visibleFrame: screen.visibleFrame, anchor: pointer)
     let sourceID = ObjectIdentifier(window)
     window.onAnnotate = { [weak self, weak window] image in
@@ -181,9 +239,17 @@ final class ScreenshotCapture {
         self?.annotationWindows[editorID]?.close()
       }
       self?.pinnedWindows.removeValue(forKey: identifier)
+      self?.pinnedImageBudget.remove(identifier)
     }
+    window.onCloseAll = { [weak self] in self?.closeAllPinnedImages() }
     pinnedWindows[identifier] = window
     window.makeKeyAndOrderFront(nil)
+  }
+
+  private func closeAllPinnedImages() {
+    for window in Array(pinnedWindows.values) { window.close() }
+    pinnedWindows.removeAll()
+    pinnedImageBudget = PinnedImageBudget()
   }
 
   private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil) {
@@ -233,6 +299,7 @@ final class ScreenshotCapture {
       guard let self else { return }
       switch action {
       case .copy:
+        guard let data else { throw CancellationError() }
         try deliverScreenshot(data) {
           source?.replaceImage(rendered)
           if source == nil {
@@ -240,6 +307,7 @@ final class ScreenshotCapture {
           }
         }
       case .pin:
+        guard let data else { throw CancellationError() }
         try deliverScreenshot(data) {
           pinImage(rendered, anchor: anchor)
         }
