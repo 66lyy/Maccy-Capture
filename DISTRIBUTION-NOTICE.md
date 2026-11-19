@@ -1,37 +1,49 @@
-# Maccy Capture — 非官方修改版分发说明
+# Maccy Capture — Unofficial Distribution Notice
 
-## 来源与版权
+**English** | [简体中文](DISTRIBUTION-NOTICE.zh-CN.md)
 
-本软件基于 https://github.com/p0deje/Maccy 修改。
-原项目的版权声明和 MIT License 完整保留在随附的 `LICENSE` 中；
-修改版新增代码亦按 MIT License 提供。不以本修改版署名替换原作者的版权声明。
+## Source and Copyright
 
-新增功能包括截图、贴图、滚轮和触控板缩放、本地图片标注、语言设置、
-独立应用标识及修改版构建流程。原项目作者不负责本修改版的功能、质量或支持。
-本修改版不是官方发布，也不表示得到原作者的赞助、认可或背书。
+This software is a modified version of [p0deje/Maccy](https://github.com/p0deje/Maccy).
+The original copyright notice and complete MIT License remain unchanged in the accompanying `LICENSE`.
+New code in this version is also provided under MIT.
+Attribution for this modified version does not replace the original author's copyright notice.
 
-Maccy 名称仅用于标明来源；本项目不主张对上游名称、商标或图标拥有专有权。
-代码许可证不应被当作对所有品牌、图标或其他素材的授权证明；
-公开推广前应单独核查这些权利，并优先使用独立名称和自行制作的图标。
-本说明不是法律意见，也不保证没有其他权利争议。
+Added features include capture, pinned images, wheel and trackpad zoom, local image annotation,
+language settings, a separate application identifier, and a customized build process.
+The upstream author is not responsible for this version's features, quality, or support.
+This is not an official release and does not imply sponsorship, approval, or endorsement
+by the upstream author.
 
-## 随包保留的文件
+The Maccy name identifies the upstream source; this project claims no exclusive rights
+to the upstream name, trademarks, or icons.
+The code license should not be treated as authorization to use all branding, icons, or other assets.
+Review those rights separately before public promotion, and prefer an independent name and original icons.
+This notice is not legal advice and does not guarantee the absence of other rights disputes.
 
-自动打包生成的 ZIP 和 DMG 均附带：
+## Included Files
 
-- `LICENSE`：未修改的上游 MIT 版权与许可全文。
-- `DISTRIBUTION-NOTICE.md`：本说明。
-- `ThirdPartyLicenses/`：按 `Package.resolved` 收集的第三方许可、通知及来源记录。
+Automatically generated ZIP and DMG packages include:
 
-以上文件亦放入 `Maccy Capture.app/Contents/Resources/`，
-将应用单独拖入 Applications 后仍然保留。不得在再次分发时删除适用的版权、许可及通知。
-第三方组件适用各自的许可证，随附其许可不表示这些组件全都采用 MIT。
-依赖或素材发生变更时仍需重新检查相应要求。
+- `LICENSE`: the unmodified upstream MIT copyright notice and full license text.
+- `DISTRIBUTION-NOTICE.md`: this notice in English.
+- `DISTRIBUTION-NOTICE.zh-CN.md`: this notice in Simplified Chinese.
+- `ThirdPartyLicenses/`: third-party licenses, notices, and source records collected from `Package.resolved`.
 
-## 签名与本地数据
+These files are also included in `Maccy Capture.app/Contents/Resources/`,
+so they remain with the app after it is dragged into Applications.
+Do not remove applicable copyright, license, or notice files when redistributing.
+Third-party components retain their own licenses; including those licenses does not mean
+every component is MIT licensed.
+Review the applicable requirements again whenever dependencies or assets change.
 
-自动构建使用 ad-hoc 签名，不使用原作者签名，也不附带本机自签证书私钥。
-ad-hoc 签名不等于 Apple Developer ID 签名、公证或 App Store 审核。
+## Signing and Local Data
 
-源码与分发包不得包含真实剪贴板历史、截图、个人信息、数据库、密钥或证书私钥。
-回归测试只使用程序生成的图片和模拟输入；不以真实用户数据进行测试、训练或上传第三方。
+Automated builds are ad-hoc signed. They do not use the upstream author's signing identity
+or include the local self-signing private key.
+Ad-hoc signing is not Apple Developer ID signing, notarization, or App Store review.
+
+Source and distribution packages must not include real clipboard history, screenshots,
+personal information, databases, keys, or certificate private keys.
+Regression tests use only generated images and simulated input;
+real user data must not be used for testing, training, or uploads to third parties.

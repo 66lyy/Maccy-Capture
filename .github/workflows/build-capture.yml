@@ -4,7 +4,23 @@ on:
   push:
     branches: [master, main]
     tags: ["capture-v*"]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE*"
+      - ".gitignore"
+      - ".gitattributes"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/PULL_REQUEST_TEMPLATE*"
+      - ".gitignore"
+      - ".gitattributes"
   workflow_dispatch:
 
 permissions:
@@ -89,3 +105,34 @@ jobs:
             ${{ env.MACCY_DERIVED_DATA }}/maccy-release-build.log
           if-no-files-found: ignore
           retention-days: 7
+
+  publish:
+    name: Update rolling test release
+    needs: build
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out publishing script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Download verified application packages
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: Maccy-Capture-macOS-universal-${{ github.run_number }}
+          path: ${{ runner.temp }}/MaccyCapture-dist
+
+      - name: Publish or update test release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MACCY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          MACCY_DIST_DIR: ${{ runner.temp }}/MaccyCapture-dist
+        run: bash script/publish_prerelease.sh

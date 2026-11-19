@@ -1,139 +1,222 @@
-# 截图与贴屏本地开发
+# Capture, Pinning, and Local Development
 
-设置 → 通用顶部提供「语言」选项，可选择跟随系统、简体中文、English、繁體中文，
-以及应用已经包含翻译的其他语言。选择只保存到修改版自己的 `AppleLanguages` 偏好，
-不会改变 macOS 全局语言或原版 Maccy 设置。语言名称按其自身文字显示，方便在外语界面中切回中文。
-更改后点击「重启以应用」，菜单、设置和截图提示会在重新启动后统一切换。
-此内部重启保留历史，但会关闭仅保存在内存中的临时贴图。
+**English** | [简体中文](SCREENSHOT-DEVELOPMENT.zh-CN.md)
 
-设置 → 通用中支持自定义主屏截图、区域截图、截图并贴屏、贴出剪贴板图片的快捷键。
-每项都有直接操作按钮，便于区分快捷键冲突与截屏权限问题。贴出剪贴板图片默认不分配快捷键，
-可自行设置。请先退出原版 Maccy，再运行本地版本，避免多个版本争抢同一快捷键。
-应用启动时也会检查另一个版本是否运行，若检测到重复则提示并退出此次启动，不清空历史。
+## Language and Shortcuts
 
-历史列表底部的「截屏」菜单也提供区域截图、主屏截图、截图并贴屏和贴出剪贴板图片入口，
-分别配有裁剪、显示器、图钉和图片图标。通用设置中每项都包含操作说明和快捷键录制器，
-截图项目可点击「立即截图」，剪贴板项目可点击「贴到屏幕」。
+The Language option at the top of Settings → General supports System Default,
+Simplified Chinese, English, Traditional Chinese, and the other translations included in the app.
+The selection is saved only in this version's own `AppleLanguages` preference.
+It does not change the macOS language or the original Maccy's settings.
+Language names appear in their native scripts so you can switch back from an unfamiliar language.
+After making a selection, click Restart to Apply to update menus, settings, and capture messages.
+This internal restart preserves clipboard history but closes temporary pinned images held only in memory.
 
-截图写入剪贴板和历史成功后，目标屏幕右下角显示实际图片的紧凑缩略图，最大 220 × 150 点。
-缩略图以图片为主体，提供关闭、标注和贴屏小按钮，不再使用大段文字提示卡片。
-预览不抢键盘焦点，2 秒后自动收起，鼠标停留不会延长显示时间。
-点击缩略图的图钉按钮可转为持久贴图。截图并贴屏成功时直接保留贴图，不再额外显示缩略图。
-开始下一次截图前会先关闭旧预览，避免把预览截入新图。预览只存在于内存中。
-成功提示音可在通用设置中关闭；选区取消和失败不会播放成功提示音。
+Settings → General lets you customize shortcuts for capturing the main display,
+capturing a region, capturing and pinning, and pinning a clipboard image.
+Each action has a button to help distinguish shortcut conflicts from screen recording permission issues.
+Pinning a clipboard image has no shortcut by default; assign one if needed.
+Quit the original Maccy before running this version to avoid competing shortcuts.
+At startup, this version checks whether another copy is running and exits with a message
+if it detects one, without clearing history.
 
-区域截图使用应用自己的十字准星和选区，拖动框选后显示「取消 / 复制图片 / 贴到屏幕 / 标注」操作条，
-Enter 复制、P 贴屏、E 标注，按 Esc、⌘W 或右键取消。可以重新拖动选择区域。
-「截图并贴屏」快捷键会在松开鼠标时直接截图并贴屏，无需再点击按钮。
-选区窗口全部关闭后，等待 120 毫秒再用 `/usr/sbin/screencapture -R... -x` 静默抓取选定矩形，
-不调用系统的交互截图界面。使用每块显示器的 Core Graphics 坐标，处理上方和左侧的副屏。
-同一时刻只允许一个截屏任务，120 秒无操作会取消；退出应用也会终止任务。
-选区控制器强持有窗口；窗口使用 `.floating` 层级且仅绘制 12% 的选区外阴影，
-不使用 `.screenSaver` 层级或不透明黑色背景。完成、取消、超时、屏幕配置改变和退出时均关闭所有选区窗口。
+The Capture menu at the bottom of the history list provides the same four actions,
+with crop, display, pin, and image icons.
+General settings include an explanation and a shortcut recorder for each action,
+plus Capture Now or Pin to Screen buttons.
 
-截图经本机临时目录暂存，目录权限为 `0700`，完成、取消、失败后均清理。
-成功后写入剪贴板和 Maccy 本地历史；贴屏窗口只保留在内存中。
-图片与识别文本不发送到网络服务。
+## Capture Previews and Region Selection
 
-贴图支持拖动、鼠标滚轮和触控板双指捏合缩放，不添加缩放按钮。
-滚轮向上放大、向下缩小，不受系统自然滚动方向设置影响；精细滚动降低灵敏度，
-忽略惯性滚动，避免手指松开后继续缩放。操作只作用于指针下的贴图，无需全局事件监听或额外权限。
-缩放保持图片比例，优先围绕指针位置，靠近屏幕边缘时调整位置以保留整张图片；
-最大不超过原图逻辑尺寸的 5 倍或当前屏幕可用区域。缩放只改变显示，不重采样原图或写入剪贴板。
-保留右键复制、关闭按钮、双击关闭，以及窗口获得键盘焦点后的 Esc / ⌘W 关闭和 ⌘C 复制。
-贴图初始大小限制在当前屏幕可用区域内。
+After a screenshot is successfully copied to the clipboard and history, a compact preview of the
+actual image appears in the lower-right corner of the target display, up to 220 × 150 points.
+It includes small close, annotation, and pin buttons instead of a large text notification.
+The preview does not take keyboard focus and disappears after 2 seconds, even while hovered.
+Click its pin button to keep the image on screen.
+Capture and Pin creates a pinned image directly, without an additional preview.
+Starting another capture first closes the old preview so it is not included in the next screenshot.
+Previews are held only in memory.
+The success sound can be disabled in General settings; canceled and failed captures do not play it.
 
-本地版本目前不启用 App Sandbox，因为截屏后端需要启动系统 `screencapture` 工具。
-这不意味着全局快捷键必须关闭沙盒；之前将快捷键故障直接归因于沙盒没有证据。
-以后若适配 App Store，需要另行实现符合沙盒要求的截屏后端。
+Region capture uses the app's own crosshair and selection overlay.
+After dragging a region, a toolbar offers Cancel, Copy Image, Pin to Screen, and Annotate.
+Press Enter to copy, P to pin, or E to annotate; press Esc, ⌘W, or right-click to cancel.
+Drag again to change the selection.
+The Capture and Pin shortcut captures and pins immediately when you release the mouse.
 
-## 构建
+After closing all selection windows, the app waits 120 milliseconds and silently captures
+the selected rectangle with `/usr/sbin/screencapture -R... -x`.
+It does not launch the system's interactive screenshot interface.
+Each display uses its Core Graphics coordinates, including secondary displays above or to the left
+of the main display. Only one capture can run at a time.
+A selection with no interaction is canceled after 120 seconds; quitting also terminates the task.
+The selection controller strongly retains its windows.
+They use the `.floating` level and draw only a 12% shadow outside the selection,
+not the `.screenSaver` level or an opaque black background.
+All selection windows close on completion, cancellation, timeout, display changes, or app exit.
+
+Captures are temporarily stored locally in a directory with `0700` permissions.
+Temporary files are cleaned up on completion, cancellation, and failure.
+Successful captures are written to the clipboard and local Maccy history;
+pinned windows keep their images only in memory.
+Images and recognized text are not sent to network services.
+
+## Pinned Images and Zoom
+
+Pinned images support dragging, mouse-wheel zoom, and two-finger trackpad pinch gestures,
+without zoom buttons.
+Scrolling up enlarges the image and scrolling down reduces it, regardless of Natural Scrolling.
+Precise scrolling has reduced sensitivity, and momentum scrolling is ignored
+so zoom stops when you lift your fingers.
+Only the image under the pointer receives these events; no global event monitor or extra permission is used.
+
+Zoom preserves the aspect ratio and tries to keep the pointer position fixed.
+Near a display edge, the image is repositioned to keep it fully visible.
+Its maximum size is limited by both five times the original logical image size
+and the current display's visible area.
+Zoom changes only the display size; it does not resample the source image or rewrite the clipboard.
+Pinned images retain right-click Copy, a close button, double-click to close,
+and Esc / ⌘W to close or ⌘C to copy when the window has keyboard focus.
+The initial pinned size also fits within the current display's visible area.
+
+This local version currently does not enable App Sandbox because its capture backend launches
+the system `screencapture` tool.
+This does not mean global shortcuts require the sandbox to be disabled;
+there was no evidence for the earlier assumption that sandboxing caused shortcut failures.
+An App Store version would need a separate sandbox-compatible capture backend.
+
+## Build Locally
 
 ```sh
 bash script/setup_local_signing.sh
 ./script/build_and_run.sh --build-only
 ```
 
-首次执行签名设置会在登录钥匙串中创建可重复使用的 `Maccy Capture Local Signing` 自签身份，
-仅在当前用户下信任其代码签名用途，不用于网站信任或公开分发；私钥不会上传。
-后续构建复用此身份，不再默认使用每次变化的 ad-hoc 签名，也不需要原作者的私钥。
-如需使用自己的开发者签名，可通过 `MACCY_SIGNING_IDENTITY` 指定已有身份。
-`MACCY_SIGNING_IDENTITY=-` 仅用于临时测试，不建议用于日常安装版本。
-本机自签没有 Apple Team ID，不能满足 Hardened Runtime 的同团队动态库验证要求。
-因此脚本仅对本机自签和 ad-hoc 调试构建关闭 Hardened Runtime；项目的正式构建配置不变，
-使用 Apple 开发者签名的构建保留 Hardened Runtime。本机自签不等同于开发者 ID 签名或公证。
-构建输出：
-`/private/tmp/MaccyDerivedData/Build/Products/Debug/Maccy.app`。
-`MACCY_DERIVED_DATA` 可覆盖构建目录。直接运行脚本会构建、备份旧修改版，
-再安装到源码目录旁的 `../Maccy.app` 并从此固定路径启动，
-不修改 `/Applications/Maccy.app`。
-发现其他路径的 Maccy 仍在运行时，会提示退出，避免再次同时运行两个版本。
+The signing setup creates a reusable self-signed identity named `Maccy Capture Local Signing`
+in the login keychain. It is trusted only for code signing by the current user,
+not for website trust or public distribution. Its private key is not uploaded.
+Subsequent builds reuse this identity rather than defaulting to a new ad-hoc signature.
+The upstream author's private key is not needed.
+To use your own existing developer identity, set `MACCY_SIGNING_IDENTITY`.
+Use `MACCY_SIGNING_IDENTITY=-` only for temporary tests, not everyday installed builds.
 
-## GitHub Actions 自动打包
+A local self-signed identity has no Apple Team ID and cannot satisfy Hardened Runtime's
+same-team library validation.
+The script therefore disables Hardened Runtime only for local self-signed and ad-hoc debug builds.
+The project's distribution settings are unchanged; builds signed with an Apple developer identity
+retain Hardened Runtime.
+Local self-signing is not Developer ID signing or notarization.
 
-工作流位于 `.github/workflows/build-capture.yml`，在推送到 `master` / `main`、
-推送 `capture-v*` 标签、提交 Pull Request 或手动触发时运行。工作流只有读取源码的权限，
-不会自动发布 Release 或修改仓库内容。仓库可保持私有。
+Build output:
+`/private/tmp/MaccyDerivedData/Build/Products/Debug/Maccy.app`.
+Override the build directory with `MACCY_DERIVED_DATA`.
+Running the build script without `--build-only` builds the app, backs up the old modified version,
+installs it beside the source directory at `../Maccy.app`, and launches it from that fixed path.
+It does not modify `/Applications/Maccy.app`.
+If another Maccy is running from a different path, the script asks you to quit it
+instead of running two versions together.
 
-流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的五组回归测试，
-只使用生成图片和模拟输入，不读取开发者机器上的桌面、剪贴板、历史或钥匙串。
-已在该运行器上观察到 Apple Swift 6.3.3 的 Release 优化器在原项目
-`FloatingPanel` 析构函数内崩溃，`arm64` 与 `x86_64` 均受影响。
-打包脚本仅检测到这一编译器版本时，通过构建参数对两种架构统一使用 `-Onone`；
-其他编译器版本保留项目原有优化级别。此兼容设置可能降低应用性能，构建信息中会明确记录；
-不通过删除功能、修改窗口生命周期或降低权限检查来规避编译器问题。
-通过后使用 `script/package_release.sh` 构建 Release 通用架构应用，检查代码签名、修改版标识
-和 `arm64` / `x86_64` 架构，然后生成：
+## GitHub Actions Packaging
 
-- `Maccy-Capture-版本-提交号-universal.zip`：包含 `Maccy Capture.app` 和许可文件。
-- 同名 `.dmg`：包含应用、Applications 快捷方式和许可文件。
-- `SHA256SUMS.txt`：上述包和构建信息的 SHA-256。
-- `BUILD-INFO.txt`：版本、源码提交、架构和签名限制。
+The workflow is `.github/workflows/build-capture.yml`.
+It runs on pushes to `master` / `main`, `capture-v*` tags, pull requests, and manual dispatch.
+The build job has read-only source permissions.
+After a successful default-branch build, a separate publishing job updates the
+`capture-latest` prerelease. Only that publishing job can write repository contents.
+Pull requests never publish, and the repository can remain private.
 
-ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、`DISTRIBUTION-NOTICE.md` 和第三方许可目录；
-打包会逐项读取锁定依赖，缺少相应 checkout 或许可全文时直接失败，不静默省略。
-来源记录包含依赖仓库和锁定提交。复制资源后重新执行 ad-hoc 签名并校验，
-不会把本机稳定自签私钥加入包内，也不修改已安装的应用。
+Branch pushes and pull requests that change only Markdown, `docs/`, `LICENSE`,
+issue or pull request templates, `.gitignore`, or `.gitattributes` do not trigger builds.
+Changes that also affect code still trigger a build.
+Version tags and manual dispatch are not subject to this documentation filter.
 
-成功运行的 Artifacts 保留 14 天，失败诊断保留 7 天；长期分发需要另外发布 Release。
-仓库首页的 Actions → Build Maccy Capture 可查看运行和下载，Run workflow 可手动构建。
-GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度与计费以该账号设置为准。
+The pipeline uses Xcode 26.6 on GitHub's hosted `macos-26` runner.
+It first runs the five regression suites listed below using generated images and simulated input,
+without accessing the developer's desktop, clipboard, history, or keychain.
+On this runner, Apple Swift 6.3.3's Release optimizer has been observed to crash
+in the upstream `FloatingPanel` deinitializer on both `arm64` and `x86_64`.
+Only when that compiler version is detected, the packaging script passes `-Onone`
+for both architectures.
+Other compiler versions retain the project's default optimization settings.
+This workaround may reduce application performance and is recorded in the build information.
+It does not remove features, change window lifecycles, or weaken permission checks.
 
-CI 不访问或上传本机自签证书、私钥，也不需要 Apple 开发者账号或仓库 Secrets。
-产物默认使用 ad-hoc 签名，没有 Developer ID 签名或公证，不能保证下载后直接双击运行；
-不同构建的签名身份可能变化，录屏和辅助功能权限也可能需要重新授权。
-此流程不会替换当前机器上已安装的持久自签应用。正式对外分发需另行配置自己的
-Developer ID 签名、公证与凭据管理，不能使用原作者证书或上传开发者本机私钥来冒充原版。
+After tests pass, `script/package_release.sh` builds a universal Release application
+and verifies its signature, modified bundle identifier, and `arm64` / `x86_64` architectures.
+It produces:
 
-本地只构建可下载包，不安装、不重启应用：
+- `Maccy-Capture-VERSION-REVISION-universal.zip`: `Maccy Capture.app` and license files.
+- A matching `.dmg`: the app, an Applications shortcut, and license files.
+- `SHA256SUMS.txt`: SHA-256 checksums for both packages and the build information.
+- `BUILD-INFO.txt`: version, source revision, architectures, and signing limitations.
+
+The ZIP, DMG, and app itself retain the original upstream `LICENSE`,
+`DISTRIBUTION-NOTICE.md` in English, `DISTRIBUTION-NOTICE.zh-CN.md` in Simplified Chinese,
+and the third-party license directory.
+Packaging checks each locked dependency and fails if its checkout or full license text is missing,
+rather than silently omitting it.
+Source records include dependency repositories and locked revisions.
+After copying these resources, the staged app is re-signed ad-hoc and verified.
+The process does not include the local signing private key or modify the installed app.
+
+Successful artifacts are retained for 14 days and failure diagnostics for 7 days.
+Successful default-branch builds also update Releases → Latest test build (`capture-latest`)
+with the ZIP, DMG, `SHA256SUMS.txt`, and `BUILD-INFO.txt`.
+Old test packages are cleaned up only after the new packages pass checksum verification and upload.
+This is a rolling test release, not an official upstream release or a fixed-version stable release.
+Create a separate versioned Release for long-term fixed distribution.
+
+Open Actions → Build Maccy Capture in this repository to view runs and download artifacts;
+select Run workflow to build manually.
+Manual builds on the default branch also update the test release;
+other branches, version tags, and pull requests provide artifacts only.
+Private-repository macOS builds may count against GitHub Actions usage;
+consult your account's current limits and billing settings.
+
+CI does not access or upload local certificates or private keys,
+and requires neither an Apple developer account nor repository Secrets.
+Packages are ad-hoc signed, not Developer ID signed or notarized,
+so downloading and double-clicking is not guaranteed to launch them.
+Signing identities may change between builds, and screen recording or accessibility permissions
+may need to be granted again.
+This workflow does not replace the locally installed app with its persistent self-signed identity.
+Public distribution requires your own Developer ID signing, notarization, and credential management;
+do not use the upstream author's certificate or upload local private keys to impersonate an official build.
+
+To create downloadable packages locally without installing or restarting the app:
 
 ```sh
 bash script/package_release.sh
 ```
 
-默认生成在源码目录下的 `dist/`，中间文件在 `build/ReleaseDerivedData/`。
-可通过 `MACCY_DIST_DIR`、`MACCY_DERIVED_DATA` 覆盖目录。
-依赖版本锁定在 `Maccy.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`，
-两个第三方 GitHub Actions 均固定到经核对的完整提交号。
-`.codex/`、构建产物、环境变量文件和常见证书/私钥格式已加入 `.gitignore`；
-不要把真实截图、剪贴板数据库、个人信息或签名材料提交到源码仓库。
+Output defaults to `dist/` within the source directory, with intermediates in `build/ReleaseDerivedData/`.
+Override these with `MACCY_DIST_DIR` and `MACCY_DERIVED_DATA`.
+Dependencies are locked in `Maccy.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
+Third-party GitHub Actions are pinned to verified full commit hashes.
+`.codex/`, build output, environment files, and common certificate or private-key formats
+are excluded by `.gitignore`.
+Do not commit real screenshots, clipboard databases, personal information, or signing materials.
 
-## 应用身份与权限
+## Application Identity and Permissions
 
-修改版在系统中显示为 `Maccy Capture`，使用独立应用标识 `local.maccy.capture`，
-避免与原版共享标识后，系统的重启或启动定位到另一份应用。
-首次启动会在本机迁移原版偏好设置，保留已有的新版本设置，不删除原版偏好；
-历史仍使用原有的本地 Maccy 数据库。
-修改版禁用官方自动更新，避免更新后覆盖定制功能。
+This version appears as `Maccy Capture` and uses the separate bundle identifier `local.maccy.capture`.
+It avoids sharing the original identifier, which could cause macOS to relaunch the wrong application.
+On first launch, the app locally migrates upstream preferences without overwriting existing
+preferences in this version or deleting the originals.
+History continues to use the existing local Maccy database.
+The official automatic updater is disabled so it cannot overwrite customized features.
 
-更换应用标识后，需要为 `Maccy Capture` 重新授予屏幕录制和需要的辅助功能权限。
-一次进程内最多主动请求一次录屏授权；首次请求后不再紧接着弹出应用自己的权限说明。
-之后再次触发截图且权限仍未生效时，才显示设置入口。
-设置中的「重启此版本」会等待当前进程退出，再按当前应用的完整路径启动，
-不按名称或原版标识查找应用，内部重启也不执行「退出时清空历史」。
-稳定的本机签名不能保证系统永远不再提示权限；系统策略、签名或安装路径变化仍需实际验证。
+After the bundle identifier changes, grant screen recording and any required accessibility permissions
+to `Maccy Capture` again.
+The app actively requests screen recording permission at most once per process.
+The first request is not immediately followed by the app's own permission explanation.
+The settings prompt appears only on a later capture attempt if permission is still unavailable.
+Restart This Version waits for the current process to exit and then launches the current app's full path,
+not an app found by name or by the upstream identifier.
+An internal restart does not run Clear History on Quit.
+A persistent local signature cannot guarantee that macOS will never request permission again;
+system policy, signature changes, and installation paths still require real-device validation.
 
-## 回归测试
+## Regression Tests
 
 ```sh
 xcodebuild -project Maccy.xcodeproj -scheme Maccy -configuration Debug \
@@ -147,49 +230,85 @@ xcodebuild -project Maccy.xcodeproj -scheme Maccy -configuration Debug \
   ENABLE_HARDENED_RUNTIME=NO test
 ```
 
-测试使用程序生成的 PNG 和模拟进程，覆盖取消、启动失败、无效文件、临时目录权限与清理、
-超时、无响应进程、重复触发、任务取消、负坐标显示器放置和贴图关闭清理。
-不会启动真实截屏，也不会读取或修改用户剪贴板。
-贴图缩放测试使用生成图片、模拟滚轮/捏合事件及虚拟屏幕矩形，覆盖实际图片视图的事件转发、
-自然滚动方向、缩放中心、比例、大小上限、负坐标与极端长宽比、惯性与无效输入过滤；
-不展示测试窗口、不调用全局输入事件、不读取桌面内容。真实触控板手感仍需手动确认。
-预览测试覆盖默认 2 秒收起、实际图片绑定、图钉回调、非激活窗口及多显示器边界。
-选区测试使用虚拟显示器和不展示窗口的注入回调，覆盖拖选、坐标转换、复制与贴屏按钮、
-松手贴屏、键盘动作、空选区、重复触发、取消、超时及屏幕变化清理，不读取桌面内容。
-身份与权限测试使用模拟授权回调和独立的虚拟偏好域，覆盖请求去重、重入保护、外部授权生效、
-设置迁移、独立应用标识、禁用官方更新和完整路径重启参数。
-测试使用 ad-hoc 签名；测试完成后，日常使用前应再运行构建脚本恢复持久身份签名。
-这些测试不能替代实际机器上的录屏授权、快捷键冲突和选区交互验证。
+Tests use generated PNGs and simulated processes to cover cancellation, launch failures, invalid files,
+temporary directory permissions and cleanup, timeouts, unresponsive processes, repeated triggers,
+task cancellation, negative-coordinate displays, and pinned-window cleanup.
+They do not start a real capture or read or modify the user's clipboard.
 
-## 图片标注
+Zoom tests use generated images, simulated wheel and pinch events, and virtual display rectangles.
+They cover actual image-view event forwarding, Natural Scrolling, zoom anchors, aspect ratios,
+size limits, negative coordinates, extreme aspect ratios, and rejection of momentum or invalid input.
+They do not show test windows, send global input events, or read the desktop.
+Real trackpad behavior still needs manual verification.
 
-提供三个本地编辑入口：
+Preview tests cover the default 2-second timeout, actual image binding, pin callbacks,
+non-activating windows, and multiple-display bounds.
+Selection tests use virtual displays and injected callbacks without showing windows.
+They cover dragging, coordinate conversion, Copy and Pin buttons, pinning on mouse release,
+keyboard actions, empty selections, repeated triggers, cancellation, timeouts,
+and cleanup after display changes, without reading the desktop.
+Identity and permission tests use simulated authorization callbacks and an isolated preference domain.
+They cover request deduplication, reentrancy, externally granted permissions, preference migration,
+the separate identifier, disabled official updates, and full-path restart arguments.
 
-- 区域框选后点击「标注」或按 E：先关闭选区窗口并截图，原图暂存内存，不先复制或加入历史。
-- 截图成功后的 2 秒缩略图中点击铅笔按钮：进入编辑器，缩略图立即关闭，不改变原有自动收起时间。
-- 已钉贴图右键 →「标注…」，或在贴图获得焦点后按 ⌘E：编辑当前图片，同一贴图只打开一个编辑器。
+Tests use ad-hoc signing. Before everyday local use after testing,
+run the local build script again to restore the persistent signing identity.
+These tests do not replace real-machine checks for screen recording permissions,
+shortcut conflicts, and selection interactions.
 
-工具包括箭头、方框、圆形、画笔、单行文字和不透明黑色实心遮盖。
-颜色、线宽、字号可调；文字点击输入后按回车确认，Esc 取消当前文字。
-支持撤销/重做及 ⌘Z / ⇧⌘Z。线宽和字号按当前画布显示大小设置，标记保存在原图像素坐标中，
-编辑窗口尺寸改变不会丢失已有标记或降低导出分辨率。
+## Image Annotation
 
-「复制并完成」只把合成 PNG 写入本机剪贴板和历史；如果正在编辑贴图，也会更新该贴图。
-新截图编辑器中的「贴到屏幕」导出合成图、加入本地历史并创建贴图；
-已有贴图编辑器中的「应用到当前贴图」只更新内存中的这张贴图，不自动覆盖剪贴板。
-「保存 PNG」通过本机文件选择面板写入用户指定位置，⌘S 同样可用；取消保存不会关闭编辑器。
-取消或关闭编辑器不覆盖原图片；关闭来源贴图也会关闭其编辑器，避免在失效对象上应用修改。
-重新编辑已完成的贴图以合成图为新的底图，不跨编辑会话保留可撤销的图层。
+There are three local editor entry points:
 
-渲染直接使用原始 CGImage 像素尺寸，PNG 为重新生成的平面位图，不附带原图或可移除的遮盖图层。
-实心遮盖强制不透明黑色、整像素填充，并在其他标注之后绘制，不能通过颜色透明度或后加文字漏出底图。
-这不是自动识别或自动脱敏；遮盖位置仍需用户确认。所有图片和文字均在本机内存中处理，
-不调用 OCR、云端识别、网络接口或训练服务。
-已有截图缩略图和已钉图片的原图可能已经进入剪贴板和本地历史，后加遮盖不会追溯删除原图；
-需要先遮盖再进入历史时，使用「区域框选 → 标注 → 复制/贴屏/保存」流程，或仅保存到本地。
-取消「先标注」会话会丢弃该会话，成功截图产生的临时磁盘文件仍由原捕获会话清理。
+- After selecting a region, click Annotate or press E. Selection windows close before capture;
+  the original remains in memory without first entering the clipboard or history.
+- Click the pencil button in the 2-second capture preview. The editor opens and the preview closes
+  immediately; its original automatic timeout is not extended.
+- Right-click a pinned image and choose Annotate…, or press ⌘E while it has keyboard focus.
+  Only one editor opens for each pinned image.
 
-标注测试仅用生成的色块图和虚拟窗口，覆盖 PNG 分辨率与方向、所有工具、不透明遮盖像素、
-撤销/重做、无效输入、画布坐标与文字输入、注入导出回调、取消与失败保留、缩略图和贴图入口、
-选区标注分支与窗口清理。测试不会读取真实剪贴板、历史或桌面；
-编辑器布局预览仅从未显示的测试窗口视图生成到 `/private/tmp/maccy-annotation-editor-synthetic.png`。
+Tools include arrows, rectangles, ellipses, a freehand brush, single-line text,
+and opaque solid-black covers.
+Color, line width, and text size are adjustable.
+Click to enter text, press Enter to confirm, or Esc to cancel the current text.
+Undo and redo support ⌘Z / ⇧⌘Z.
+Line width and text size are chosen relative to the displayed canvas,
+while annotations are stored in original-image pixel coordinates.
+Resizing the editor does not discard annotations or reduce export resolution.
+
+Copy and Finish writes only the flattened PNG to the local clipboard and history;
+when editing a pinned image, it also updates that image.
+For a new capture, Pin to Screen exports the flattened image, adds it to local history,
+and creates a pinned image.
+For an existing pinned image, Apply to Current Pin updates only that image in memory
+without overwriting the clipboard.
+Save PNG opens a local save panel; ⌘S is also supported.
+Canceling the save does not close the editor.
+Canceling or closing the editor leaves the original unchanged.
+Closing its source pin also closes the editor so edits cannot be applied to an invalid target.
+Reopening a completed pinned image uses the flattened result as the new base;
+editable undo layers do not persist across sessions.
+
+Rendering uses the original `CGImage` pixel dimensions.
+Export creates a new flattened PNG without embedding the original or removable cover layers.
+Covers are forced to opaque black, aligned to whole pixels, and drawn after all other annotations.
+Changing color opacity or adding text later cannot reveal the image beneath a cover.
+This is not automatic recognition or redaction; users must check cover placement themselves.
+All image and text processing stays in local memory, without OCR, cloud recognition,
+network APIs, or training services.
+
+The original behind a capture preview or pinned image may already be in the clipboard and history.
+Adding a cover later does not retroactively delete that original.
+To cover sensitive content before it enters history, use Region Selection → Annotate → Copy / Pin / Save,
+or save only to a local file.
+Canceling an annotate-first session discards it; its temporary capture files are still cleaned up
+by the original capture session.
+
+Annotation tests use only generated color-block images and virtual windows.
+They cover PNG resolution and orientation, all tools, opaque cover pixels, undo and redo,
+invalid input, canvas coordinates and text entry, injected export callbacks,
+preserving edits after cancellation or failure, preview and pin entry points,
+the selection annotation branch, and window cleanup.
+Tests do not read the real clipboard, history, or desktop.
+The editor layout preview is rendered only from a hidden test window
+to `/private/tmp/maccy-annotation-editor-synthetic.png`.

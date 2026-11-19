@@ -57,6 +57,7 @@ trap 'rm -rf "$WORKSPACE"' EXIT
 ditto "$APP_BUNDLE" "$WORKSPACE/Maccy Capture.app"
 ditto "$PROJECT_ROOT/LICENSE" "$WORKSPACE/LICENSE"
 ditto "$PROJECT_ROOT/DISTRIBUTION-NOTICE.md" "$WORKSPACE/DISTRIBUTION-NOTICE.md"
+ditto "$PROJECT_ROOT/DISTRIBUTION-NOTICE.zh-CN.md" "$WORKSPACE/DISTRIBUTION-NOTICE.zh-CN.md"
 mkdir -p "$WORKSPACE/ThirdPartyLicenses"
 RESOLVED_PACKAGES="$PROJECT_ROOT/Maccy.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
 PACKAGE_INDEX=0
@@ -100,6 +101,7 @@ fi
 APP_RESOURCES="$WORKSPACE/Maccy Capture.app/Contents/Resources"
 ditto "$WORKSPACE/LICENSE" "$APP_RESOURCES/LICENSE"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.md"
+ditto "$WORKSPACE/DISTRIBUTION-NOTICE.zh-CN.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.zh-CN.md"
 ditto "$WORKSPACE/ThirdPartyLicenses" "$APP_RESOURCES/ThirdPartyLicenses"
 codesign --force --sign - --timestamp=none --preserve-metadata=entitlements,flags \
   "$WORKSPACE/Maccy Capture.app"

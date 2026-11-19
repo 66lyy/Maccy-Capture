@@ -11,12 +11,17 @@
 
 提交到 `master` / `main` 后，GitHub Actions 自动运行合成图片回归测试，并构建
 Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-256 校验文件。
-在仓库的 **Actions → Build Maccy Capture → 成功的运行 → Artifacts** 下载；
-也可以在该工作流页点击 **Run workflow** 手动打包。
+默认分支构建成功后，在仓库的 **Releases → Latest test build**（`capture-latest`）下载，
+也可以在 **Actions → Build Maccy Capture → 成功的运行 → Artifacts** 下载；
+在该工作流页点击 **Run workflow** 可手动打包。
+在默认分支上手动构建也会更新测试版 Release；其他分支、版本标签和 Pull Request 只提供 Artifacts。
 
 自动构建产物使用 ad-hoc 签名，不包含本机证书私钥，也不是 Apple 开发者 ID 签名或公证的正式发行包。
 首次启动可能被 Gatekeeper 拦截，升级后可能需要重新授权录屏。日常本机使用仍建议复用现有本机自签证书。
-详细说明见 [截图、贴图与标注开发文档](SCREENSHOT-DEVELOPMENT.md)。
+详细说明见 [截图、贴图与标注开发文档](SCREENSHOT-DEVELOPMENT.zh-CN.md)。
+
+分支推送和 Pull Request 仅修改文档时不触发自动构建或发布；代码、构建配置和应用资源改动仍会构建。
+版本标签和手动构建不受文档过滤影响。
 
 ## 上游来源与许可
 
@@ -30,7 +35,7 @@ Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-
   并优先采用独立名称与自行制作的图标。
 - 所用第三方组件仍适用各自许可证，不能仅凭本仓库的 MIT 标识忽略其要求。
   自动打包会收集锁定依赖的许可和通知文件，并放入应用的 `Contents/Resources/ThirdPartyLicenses/`。
-  分发说明见 [DISTRIBUTION-NOTICE.md](DISTRIBUTION-NOTICE.md)。
+  分发说明见 [分发说明](DISTRIBUTION-NOTICE.zh-CN.md)。
 
 署名和免责声明不能保证不存在其他权利争议；本说明不是法律意见。
 

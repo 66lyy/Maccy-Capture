@@ -13,15 +13,22 @@ Screenshots and annotations are processed locally, without cloud recognition or 
 Pushing to `master` / `main` runs synthetic-image regression tests in GitHub Actions
 and builds a universal Release `.app` for Apple Silicon and Intel, packaged as ZIP and DMG
 with SHA-256 checksums. Download the packages from
-**Actions → Build Maccy Capture → a successful run → Artifacts**.
+**Releases → Latest test build** (`capture-latest`) after a successful default-branch build,
+or **Actions → Build Maccy Capture → a successful run → Artifacts**.
 You can also select **Run workflow** on the workflow page to build manually.
+Manual builds on the default branch also update the test release;
+other branches, version tags, and pull requests provide artifacts only.
 
 Automated builds are ad-hoc signed. They do not contain local signing private keys,
 are not Developer ID signed, and are not notarized by Apple.
 Gatekeeper may block the first launch, and updates may require screen recording permission again.
 For everyday local use, reuse your existing local signing identity.
 See the [capture, pinning, and annotation development guide](SCREENSHOT-DEVELOPMENT.md)
-(Simplified Chinese) for details.
+for details.
+
+Documentation-only branch pushes and pull requests do not trigger automatic builds or releases.
+Code, build configuration, and application resource changes still trigger builds.
+Version tags and manual builds are not subject to the documentation filter.
 
 ## Upstream Attribution and Licensing
 
@@ -40,7 +47,7 @@ See the [capture, pinning, and annotation development guide](SCREENSHOT-DEVELOPM
 - Third-party components remain subject to their own licenses; this repository's MIT label
   does not replace those obligations. Packaging collects license and notice files for locked
   dependencies into the application's `Contents/Resources/ThirdPartyLicenses/` directory.
-  See [DISTRIBUTION-NOTICE.md](DISTRIBUTION-NOTICE.md) (Simplified Chinese).
+  See the [distribution notice](DISTRIBUTION-NOTICE.md).
 
 Attribution and disclaimers do not guarantee the absence of other rights disputes.
 This documentation is not legal advice.
