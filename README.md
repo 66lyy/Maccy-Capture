@@ -13,7 +13,8 @@ Screenshots and annotations are processed locally, without cloud recognition or 
 Pushing to `master` / `main` runs synthetic-image regression tests in GitHub Actions
 and builds a universal Release `.app` for Apple Silicon and Intel, packaged as ZIP and DMG
 with SHA-256 checksums. Download the packages from
-**Releases → Latest test build** (`capture-latest`) after a successful default-branch build,
+**[Releases → Latest test build](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**
+(`capture-latest`) after a successful default-branch build,
 or **Actions → Build Maccy Capture → a successful run → Artifacts**.
 You can also select **Run workflow** on the workflow page to build manually.
 Manual builds on the default branch also update the test release;

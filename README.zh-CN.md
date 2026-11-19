@@ -11,7 +11,9 @@
 
 提交到 `master` / `main` 后，GitHub Actions 自动运行合成图片回归测试，并构建
 Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-256 校验文件。
-默认分支构建成功后，在仓库的 **Releases → Latest test build**（`capture-latest`）下载，
+默认分支构建成功后，在仓库的
+**[Releases → Latest test build](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**
+（`capture-latest`）下载，
 也可以在 **Actions → Build Maccy Capture → 成功的运行 → Artifacts** 下载；
 在该工作流页点击 **Run workflow** 可手动打包。
 在默认分支上手动构建也会更新测试版 Release；其他分支、版本标签和 Pull Request 只提供 Artifacts。
