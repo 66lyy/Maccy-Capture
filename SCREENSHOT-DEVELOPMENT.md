@@ -231,6 +231,7 @@ official releases over customized features.
 The application's own preference controls a single automatic check at launch. Manual checks remain available.
 Each check resolves this repository's public `capture-latest` release without authentication.
 Each check confirms `capture-appcast.xml` exists and loads it from the public download URL.
+The attachment ID varies the download URL when a new release replaces the file, avoiding a stale cached redirect.
 Sparkle requests RSS; the GitHub asset API can respond with JSON instead of the file to that request.
 Background discovery is skipped during capture or annotation; repeated checks cannot overlap.
 Sparkle's independent scheduler and automatic installation-on-quit are disabled.

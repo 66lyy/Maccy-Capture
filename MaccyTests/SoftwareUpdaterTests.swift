@@ -23,11 +23,20 @@ struct SoftwareUpdaterTests {
   func validRelease() throws {
     let resolved = try feed.resolve(data: releaseData(), response: response())
     #expect(resolved.feedURL.absoluteString ==
-      "https://github.com/fixture/capture/releases/download/capture-latest/capture-appcast.xml")
+      "https://github.com/fixture/capture/releases/download/capture-latest/capture-appcast.xml?asset=10")
     #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
     #expect(!resolved.permits(URL(string: assetURL(11)), length: 199))
     #expect(!resolved.permits(URL(string: assetURL(12)), length: 200))
     #expect(!resolved.permits(nil, length: 200))
+  }
+
+  @Test("Replacing the appcast changes its download URL")
+  func replacedAppcast() throws {
+    let nextFeed = try feed.resolve(
+      data: releaseData(["assets": [asset(20, "capture-appcast.xml", 100), asset(11, packageName, 200)]]),
+      response: response()
+    )
+    #expect(nextFeed.feedURL.query == "asset=20")
   }
 
   @Test("Failed release discovery reports update unavailability")

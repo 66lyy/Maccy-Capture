@@ -76,8 +76,9 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     guard !packages.isEmpty, Set(packages.map(\.url)).count == packages.count else {
       throw Failure.invalidRelease
     }
+    let downloadPage = "https://github.com/\(repository)/releases/download/\(Self.tag)"
     return Resolved(
-      feedURL: URL(string: "https://github.com/\(repository)/releases/download/\(Self.tag)/\(Self.feedName)")!,
+      feedURL: URL(string: "\(downloadPage)/\(Self.feedName)?asset=\(feed.id)")!,
       archives: Dictionary(uniqueKeysWithValues: packages.map { ($0.url, $0.size) })
     )
   }
