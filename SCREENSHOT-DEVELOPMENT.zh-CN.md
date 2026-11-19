@@ -79,8 +79,9 @@ bash script/setup_local_signing.sh
 构建输出：
 `/private/tmp/MaccyDerivedData/Build/Products/Debug/Maccy.app`。
 `MACCY_DERIVED_DATA` 可覆盖构建目录。直接运行脚本会构建、备份旧修改版，
-再安装到源码目录旁的 `../Maccy.app` 并从此固定路径启动，
-不修改 `/Applications/Maccy.app`。
+再安装到 `/Applications/Maccy Capture.app` 并从此固定路径启动，不修改 `/Applications/Maccy.app`。
+本地调试可用 `MACCY_INSTALL_BUNDLE` 覆盖安装路径，也可用 `--build-only` 仅构建、不替换已安装的应用。
+日常升级请在应用的软件更新设置中点击「立即检查」。
 发现其他路径的 Maccy 仍在运行时，会提示退出，避免再次同时运行两个版本。
 
 ## GitHub Actions 自动打包

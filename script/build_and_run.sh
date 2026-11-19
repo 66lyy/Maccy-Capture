@@ -5,7 +5,7 @@ MODE="${1:-run}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED_DATA="${MACCY_DERIVED_DATA:-/private/tmp/MaccyDerivedData}"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Debug/Maccy.app"
-INSTALLED_APP="${MACCY_INSTALL_BUNDLE:-$PROJECT_ROOT/../Maccy.app}"
+INSTALLED_APP="${MACCY_INSTALL_BUNDLE:-/Applications/Maccy Capture.app}"
 INSTALLED_APP="$(cd "$(dirname "$INSTALLED_APP")" && pwd -P)/$(basename "$INSTALLED_APP")"
 BUILD_LOG="$DERIVED_DATA/maccy-local-build.log"
 

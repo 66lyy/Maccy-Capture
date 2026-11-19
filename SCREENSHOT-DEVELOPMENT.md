@@ -124,7 +124,10 @@ Build output:
 `/private/tmp/MaccyDerivedData/Build/Products/Debug/Maccy.app`.
 Override the build directory with `MACCY_DERIVED_DATA`.
 Running the build script without `--build-only` builds the app, backs up the old modified version,
-installs it beside the source directory at `../Maccy.app`, and launches it from that fixed path.
+installs it at `/Applications/Maccy Capture.app`, and launches it from that fixed path.
+Set `MACCY_INSTALL_BUNDLE` to override the install path for local debugging.
+Use `--build-only` to leave the installed app untouched, and use **Check Now** in the app's
+software update settings for routine updates.
 It does not modify `/Applications/Maccy.app`.
 If another Maccy is running from a different path, the script asks you to quit it
 instead of running two versions together.

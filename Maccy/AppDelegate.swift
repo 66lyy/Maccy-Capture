@@ -42,6 +42,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
        let iconURL = Bundle.main.url(forResource: "CaptureIcon", withExtension: "icns"),
        let icon = NSImage(contentsOf: iconURL) {
       NSApp.applicationIconImage = icon
+      let iconName = NSImage.applicationIconName
+      NSImage(named: iconName)?.setName(nil)
+      icon.setName(iconName)
     }
     if !Self.isTesting, AppIdentity.isCustomizedBuild {
       AppIdentity.migratePreferences()
