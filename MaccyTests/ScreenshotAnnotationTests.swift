@@ -316,27 +316,45 @@ struct ScreenshotAnnotationTests {
     #expect(result.contains("SAMPLE 42"))
   }
 
-  @Test("Vision reads small text in a tight dark crop without relying on cut-off characters",
-        arguments: [false, true])
-  func recognitionOfTightDarkCrop(clipped: Bool) throws {
+  @Test("Extremely thin dark crops get background-colored margins and scaled content for OCR")
+  func narrowCropPreprocessing() throws {
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
     let context = try #require(CGContext(
-      data: nil, width: clipped ? 128 : 52, height: clipped ? 12 : 13, bitsPerComponent: 8, bytesPerRow: 0,
+      data: nil, width: 52, height: 13, bitsPerComponent: 8, bytesPerRow: 0,
+      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ))
+    context.setFillColor(NSColor.black.cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    context.setFillColor(NSColor.white.cgColor)
+    context.fill(CGRect(x: 20, y: 4, width: 12, height: 5))
+    let source = try #require(context.makeImage())
+    let padded = try #require(ScreenshotTextRecognition.paddedNarrowImage(source))
+    #expect(source.width == 52 && source.height == 13)
+    #expect(padded.width == 228 && padded.height == 111)
+    let bitmap = NSBitmapImageRep(cgImage: padded)
+    #expect(try color(bitmap, x: 10, y: 10).redComponent < 0.02)
+    #expect(try color(bitmap, x: 114, y: 55).redComponent > 0.98)
+  }
+
+  @Test("Vision reads visible Chinese and English text in a tight dark crop with clipped strokes")
+  func recognitionOfTightDarkCrop() throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(CGContext(
+      data: nil, width: 128, height: 12, bitsPerComponent: 8, bytesPerRow: 0,
       space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
     ))
     context.setFillColor(NSColor.black.cgColor)
     context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-    let sample = clipped ? "截图测试 SAMPLE 42" : "截图测试"
-    (sample as NSString).draw(at: NSPoint(x: 0, y: clipped ? -3 : 0), withAttributes: [
-      .font: NSFont.systemFont(ofSize: clipped ? 15 : 11), .foregroundColor: NSColor.white
+    ("截图测试 SAMPLE 42" as NSString).draw(at: NSPoint(x: 0, y: -3), withAttributes: [
+      .font: NSFont.systemFont(ofSize: 15), .foregroundColor: NSColor.white
     ])
     NSGraphicsContext.restoreGraphicsState()
     let image = try #require(context.makeImage())
     let result = try ScreenshotTextRecognition.recognize(image)
     #expect(result.contains("截图测试"))
-    if clipped { #expect(result.contains("SAMPLE")) }
+    #expect(result.contains("SAMPLE"))
   }
 
   @Test("Vision reads synthetic text locally and does not see text behind a solid cover")

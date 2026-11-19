@@ -645,7 +645,7 @@ enum ScreenshotTextRecognition {
     }.filter { !$0.isEmpty }.joined(separator: "\n")
   }
 
-  nonisolated private static func paddedNarrowImage(_ image: CGImage) -> CGImage? {
+  nonisolated static func paddedNarrowImage(_ image: CGImage) -> CGImage? {
     let margin = 36
     let maxContentSize = 3840 - 2 * margin
     let longestSide = max(image.width, image.height)
