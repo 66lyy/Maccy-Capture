@@ -35,7 +35,19 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/p0deje/Maccy/master/appcast.xml</string>
+	<string>https://github.com/66lyy/Maccy-Capture/releases/download/capture-latest/capture-appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>cGTYVqu7YZzh8xCn1nbHaJdiUPp1w0q/LVQIGfTeoVI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<false/>
+	<key>SUAllowsAutomaticUpdates</key>
+	<false/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUShowReleaseNotes</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 	<dict>

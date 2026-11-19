@@ -33,6 +33,29 @@ Documentation-only branch pushes and pull requests do not trigger automatic buil
 Code, build configuration, and application resource changes still trigger builds.
 Version tags and manual builds are not subject to the documentation filter.
 
+## In-App Updates
+
+Settings → General → Repository updates checks **this repository's `capture-latest` test release**,
+at launch and every six hours, with an option to disable automatic checks or check manually.
+Update ZIPs are verified against this app's dedicated Ed25519 public key before extraction.
+Confirm **Install Update** to replace and restart the exact running modified app; changes take effect
+after that restart, without manually quitting and reopening it. Save annotations first:
+temporary pinned images close, but clipboard history is preserved.
+
+For this private repository, expand **Private repository access** and save a fine-grained GitHub token
+limited to this repository with **Contents: Read-only**. The token stays in this Mac's Keychain,
+is not included in the application or CI artifacts, and is sent only to `api.github.com` for updates.
+Do not paste tokens into issues or chat. Public repositories do not need a token.
+Checks send no clipboard, screenshots, history, system profile, or analytics.
+Expired credentials and incomplete releases leave the installed application unchanged.
+Existing versions without this updater need one manual upgrade first.
+
+The separate update-signing key is held in the maintainer's Keychain and the repository's
+`SPARKLE_PRIVATE_KEY` Actions Secret; it is **not** the local application-signing certificate.
+Only trusted default-branch builds receive that secret; pull requests do not.
+Archive signing does not confer Apple Developer ID signing or notarization, nor preserve recording grants
+when the installed code-signing identity changes. See the [development guide](SCREENSHOT-DEVELOPMENT.md#repository-updates).
+
 ## Upstream Attribution and Licensing
 
 - Original project and source: **[p0deje/Maccy](https://github.com/p0deje/Maccy)**.

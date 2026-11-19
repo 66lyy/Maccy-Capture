@@ -90,7 +90,7 @@ bash script/setup_local_signing.sh
 `.gitignore` 或 `.gitattributes` 时不触发构建；混合代码改动仍会构建。
 版本标签与手动触发不受此文档过滤影响。
 
-流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的五组回归测试，
+流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的六组回归测试，
 只使用生成图片和模拟输入，不读取开发者机器上的桌面、剪贴板、历史或钥匙串。
 已在该运行器上观察到 Apple Swift 6.3.3 的 Release 优化器在原项目
 `FloatingPanel` 析构函数内崩溃，`arm64` 与 `x86_64` 均受影响。
@@ -100,10 +100,11 @@ bash script/setup_local_signing.sh
 通过后使用 `script/package_release.sh` 构建 Release 通用架构应用，检查代码签名、修改版标识
 和 `arm64` / `x86_64` 架构，然后生成：
 
-- `Maccy-Capture-版本-提交号-universal.zip`：包含 `Maccy Capture.app` 和许可文件。
+- `Maccy-Capture-版本-build构建号-提交号-universal.zip`：包含 `Maccy Capture.app` 和许可文件。
 - 同名 `.dmg`：包含应用、Applications 快捷方式和许可文件。
 - `SHA256SUMS.txt`：上述包和构建信息的 SHA-256。
 - `BUILD-INFO.txt`：版本、源码提交、架构和签名限制。
+- `UPDATE-METADATA.json`：默认分支更新的归档大小、校验和、构建号与公开 Ed25519 签名，不含私钥。
 
 ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 `DISTRIBUTION-NOTICE.md`（英文）、`DISTRIBUTION-NOTICE.zh-CN.md`（简体中文）和第三方许可目录；
@@ -113,13 +114,16 @@ ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 
 成功运行的 Artifacts 保留 14 天，失败诊断保留 7 天。
 主分支成功构建后还会更新 Releases 中的 `capture-latest` 测试版，
-附带 ZIP、DMG、`SHA256SUMS.txt` 和 `BUILD-INFO.txt`；新包校验和上传成功后清理旧测试包。
+附带 ZIP、DMG、`SHA256SUMS.txt`、`BUILD-INFO.txt` 及更新元数据；
+新包和支持文件上传成功后才启用 `capture-appcast.xml`，保留最近三组 ZIP/DMG 供进行中的更新使用。
 这是滚动测试版，不是上游官方版本或固定版本的正式发行；长期固定分发仍需另建版本 Release。
 仓库首页的 Actions → Build Maccy Capture 可查看运行和下载，Run workflow 可手动构建；
 在默认分支上手动构建也会更新测试版 Release，其他分支、版本标签及 Pull Request 只提供 Artifacts。
 GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度与计费以该账号设置为准。
 
-CI 不访问或上传本机自签证书、私钥，也不需要 Apple 开发者账号或仓库 Secrets。
+CI 不访问本机应用自签证书及其私钥，不需要 Apple 开发者账号。
+默认分支更新使用经明确授权单独配置的 `SPARKLE_PRIVATE_KEY` 仓库 Secret，
+仅传给打包后的签名步骤，不传给 PR、Xcode 构建、测试或产物。
 产物默认使用 ad-hoc 签名，没有 Developer ID 签名或公证，不能保证下载后直接双击运行；
 不同构建的签名身份可能变化，录屏和辅助功能权限也可能需要重新授权。
 此流程不会替换当前机器上已安装的持久自签应用。正式对外分发需另行配置自己的
@@ -146,6 +150,36 @@ bash script/package_release.sh
 历史仍使用原有的本地 Maccy 数据库。
 修改版禁用官方自动更新，避免更新后覆盖定制功能。
 
+## 本仓库更新
+
+`SoftwareUpdater` 使用应用生命周期内唯一的 Sparkle 实例，在正常启动后开启。
+启动时及每 6 小时通过 GitHub API 解析本仓库 `capture-latest`；
+每次重新解析 `capture-appcast.xml` 的当前附件 ID，不永久缓存滚动发布的旧地址。
+后台检查会避开正在进行的截图与标注，不并发叠加检查。
+关闭 Sparkle 自身独立定时器及退出时静默安装；用户确认安装后重启当前这份应用并立即生效，
+不按名称查找原版。更新重启与原有内部重启一样，不执行「退出时清空历史」。
+临时贴图和未保存标注不会跨重启保留，请先保存。
+
+私有仓库使用细粒度 GitHub 令牌，仅选择本仓库、Contents: Read-only。
+用户在设置内输入，不在聊天或源码内提供。令牌是本设备独有、不参与同步的钥匙串项，
+不写入偏好设置、日志、包内元数据、CI 变量或截图，仅向固定 GitHub API 发送。
+发布发现请求拒绝重定向；Sparkle 只允许安装本次仓库发布返回的精确附件 URL 和大小。
+下载跨域重定向由系统网络栈剥离 Authorization 请求头，禁用外部发行说明和系统概况上报。
+授权失效、发布错误、附件不匹配、验签失败时不替换现有应用。
+代码签名身份变化后，手动「立即检查」可能需要重新允许钥匙串访问。
+
+更新 ZIP 在完成全部打包修改后，使用独立 Ed25519 密钥签名。
+Info.plist 固定 `SUPublicEDKey` 并启用 `SUVerifyUpdateBeforeExtraction`，
+发布前还会以固定公钥独立验证签名。更新密钥的本机 Sparkle 钥匙串账户为
+`local.maccy.capture.updates`，仅这把专用密钥另存于仓库 `SPARKLE_PRIVATE_KEY` Secret。
+不要随意轮换：已安装的客户端信任旧公钥。原有 `Maccy Capture Local Signing` 证书及私钥只留本机。
+更新包验签不等于 Developer ID 签名或公证，代码签名变化仍可能触发录屏重新授权。
+
+CI 构建号使用 `1000 + GITHUB_RUN_NUMBER`，再加运行尝试次数，如 `1042.1`、`1042.2`。
+即使展示版本同为 `2.8.0`，也能检测后续构建。请保持该工作流计数递增，不重置计数或复用构建号。
+本地开发默认构建号为 `1000`，打包时可用 `MACCY_BUILD_VERSION` 覆盖。
+保留的上游 `appcast.xml` 不作为修改版更新源；不带本更新器的旧客户端需先手动安装一次。
+
 更换应用标识后，需要为 `Maccy Capture` 重新授予屏幕录制和需要的辅助功能权限。
 一次进程内最多主动请求一次录屏授权；首次请求后不再紧接着弹出应用自己的权限说明。
 之后再次触发截图且权限仍未生效时，才显示设置入口。
@@ -159,6 +193,7 @@ bash script/package_release.sh
 xcodebuild -project Maccy.xcodeproj -scheme Maccy -configuration Debug \
   -destination 'platform=macOS' -derivedDataPath /private/tmp/MaccyCaptureAgentTests \
   -only-testing:MaccyTests/AppIdentityTests \
+  -only-testing:MaccyTests/SoftwareUpdaterTests \
   -only-testing:MaccyTests/AppLanguageTests \
   -only-testing:MaccyTests/ScreenshotCaptureTests \
   -only-testing:MaccyTests/ScreenshotAnnotationTests \

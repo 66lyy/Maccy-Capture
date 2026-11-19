@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B9ACD419E2F67A01C5D86001 /* RepositoryUpdateFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */; };
+		B9ACD419E2F67A01C5D86003 /* RepositoryUpdateCredential.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86004 /* RepositoryUpdateCredential.swift */; };
+		B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */; };
 		B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */; };
 		B9ACD419E2F67A01C5D85003 /* ScreenshotAnnotationCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */; };
 		B9ACD419E2F67A01C5D85005 /* ScreenshotAnnotationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */; };
@@ -214,6 +217,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryUpdateFeed.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D86004 /* RepositoryUpdateCredential.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryUpdateCredential.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdaterTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationDocument.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationCanvas.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationWindow.swift; sourceTree = "<group>"; };
@@ -823,6 +829,7 @@
 				AC1811260000000000000002 /* ScreenshotCaptureTests.swift */,
 				AC1811180000000000000008 /* ScreenshotSelectionTests.swift */,
 				B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */,
+				B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */,
 				B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */,
 				B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */,
 				DA360DB21E3DF137005C6F6B /* HistoryTests.swift */,
@@ -961,6 +968,8 @@
 				2F1A79BF2C6DFB7800C98EBD /* SearchVisibility.swift */,
 				2F0EC77C2E773314003E2EA9 /* Selection.swift */,
 				DAA5ACC92C1BEE8A00B58513 /* SoftwareUpdater.swift */,
+				B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */,
+				B9ACD419E2F67A01C5D86004 /* RepositoryUpdateCredential.swift */,
 				DA696BCD240177E800DE80CF /* Sorter.swift */,
 				DA243D132C2F66DD0012A27F /* Storage.swift */,
 				DA81D673252A056B009977BC /* Throttler.swift */,
@@ -1187,6 +1196,7 @@
 				DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */,
 				4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */,
 				B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */,
+				B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */,
 				B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */,
 				B9ACD419E2F67A01C5D85007 /* ScreenshotAnnotationTests.swift in Sources */,
 				DA1EDE432045B35300479723 /* HistoryDecoratorTests.swift in Sources */,
@@ -1252,6 +1262,8 @@
 				DA9C3C652C211B5F0056795D /* AdvancedSettingsPane.swift in Sources */,
 				2FA81FE02E43D9B700C12F92 /* Dictionary+RemoveItem.swift in Sources */,
 				DAA5ACCA2C1BEE8A00B58513 /* SoftwareUpdater.swift in Sources */,
+				B9ACD419E2F67A01C5D86001 /* RepositoryUpdateFeed.swift in Sources */,
+				B9ACD419E2F67A01C5D86003 /* RepositoryUpdateCredential.swift in Sources */,
 				2F9B42F12F1A499D006548E5 /* ToolbarView.swift in Sources */,
 				DAA5ACB22C1B3F8800B58513 /* GeneralSettingsPane.swift in Sources */,
 				DA1969122C3F0DD200258481 /* HistoryItemView.swift in Sources */,
@@ -1921,7 +1933,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 63;
+				CURRENT_PROJECT_VERSION = 1000;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = MN3X4648SC;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1957,7 +1969,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 63;
+				CURRENT_PROJECT_VERSION = 1000;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = MN3X4648SC;
 				ENABLE_HARDENED_RUNTIME = YES;

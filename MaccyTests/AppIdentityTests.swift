@@ -60,7 +60,12 @@ struct AppIdentityTests {
     #expect(AppIdentity.customizedIdentifier != AppIdentity.originalIdentifier)
     #expect(Bundle.main.bundleIdentifier == AppIdentity.customizedIdentifier)
     #expect(AppIdentity.isCustomizedBuild)
-    #expect(!SoftwareUpdater().isAvailable)
+    #expect(SoftwareUpdater().isAvailable)
+    #expect(
+      (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)?
+        .contains(RepositoryUpdateFeed.repository) == true
+    )
+    #expect(Bundle.main.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true)
   }
 
   @Test("Preference migration is local, preserves custom settings, and runs only once")

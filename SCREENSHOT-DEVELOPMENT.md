@@ -139,7 +139,7 @@ Changes that also affect code still trigger a build.
 Version tags and manual dispatch are not subject to this documentation filter.
 
 The pipeline uses Xcode 26.6 on GitHub's hosted `macos-26` runner.
-It first runs the five regression suites listed below using generated images and simulated input,
+It first runs the six regression suites listed below using generated images and simulated input,
 without accessing the developer's desktop, clipboard, history, or keychain.
 On this runner, Apple Swift 6.3.3's Release optimizer has been observed to crash
 in the upstream `FloatingPanel` deinitializer on both `arm64` and `x86_64`.
@@ -153,10 +153,12 @@ After tests pass, `script/package_release.sh` builds a universal Release applica
 and verifies its signature, modified bundle identifier, and `arm64` / `x86_64` architectures.
 It produces:
 
-- `Maccy-Capture-VERSION-REVISION-universal.zip`: `Maccy Capture.app` and license files.
+- `Maccy-Capture-VERSION-buildBUILD-REVISION-universal.zip`: `Maccy Capture.app` and license files.
 - A matching `.dmg`: the app, an Applications shortcut, and license files.
 - `SHA256SUMS.txt`: SHA-256 checksums for both packages and the build information.
 - `BUILD-INFO.txt`: version, source revision, architectures, and signing limitations.
+- `UPDATE-METADATA.json`: archive length, SHA-256, build version, and public Ed25519 signature
+  for default-branch updates; never a signing secret.
 
 The ZIP, DMG, and app itself retain the original upstream `LICENSE`,
 `DISTRIBUTION-NOTICE.md` in English, `DISTRIBUTION-NOTICE.zh-CN.md` in Simplified Chinese,
@@ -170,7 +172,8 @@ The process does not include the local signing private key or modify the install
 Successful artifacts are retained for 14 days and failure diagnostics for 7 days.
 Successful default-branch builds also update Releases → Latest test build (`capture-latest`)
 with the ZIP, DMG, `SHA256SUMS.txt`, and `BUILD-INFO.txt`.
-Old test packages are cleaned up only after the new packages pass checksum verification and upload.
+The `capture-appcast.xml` update feed is activated only after the signed ZIP and supporting files upload.
+The newest three ZIP/DMG pairs are retained for in-flight updates.
 This is a rolling test release, not an official upstream release or a fixed-version stable release.
 Create a separate versioned Release for long-term fixed distribution.
 
@@ -181,8 +184,10 @@ other branches, version tags, and pull requests provide artifacts only.
 Private-repository macOS builds may count against GitHub Actions usage;
 consult your account's current limits and billing settings.
 
-CI does not access or upload local certificates or private keys,
-and requires neither an Apple developer account nor repository Secrets.
+CI does not access the local application-signing certificate or its private key,
+and does not require an Apple developer account. Default-branch update signing uses the separate,
+explicitly configured `SPARKLE_PRIVATE_KEY` repository Secret. This secret is given only to the
+post-build signing step, never to pull requests, Xcode builds, tests, or package artifacts.
 Packages are ad-hoc signed, not Developer ID signed or notarized,
 so downloading and double-clicking is not guaranteed to launch them.
 Signing identities may change between builds, and screen recording or accessibility permissions
@@ -212,7 +217,46 @@ It avoids sharing the original identifier, which could cause macOS to relaunch t
 On first launch, the app locally migrates upstream preferences without overwriting existing
 preferences in this version or deleting the originals.
 History continues to use the existing local Maccy database.
-The official automatic updater is disabled so it cannot overwrite customized features.
+The official automatic updater remains disabled; the separate repository updater cannot install
+official releases over customized features.
+
+## Repository Updates
+
+`SoftwareUpdater` is a single application-lifetime Sparkle controller started after normal launch.
+Automatic checks use the application's own preference and resolve this repository's `capture-latest`
+release through the GitHub API at launch and every six hours.
+Each check resolves the current `capture-appcast.xml` asset ID, so a rolling release is not cached forever.
+Background discovery is skipped during capture or annotation; repeated checks cannot overlap.
+Sparkle's independent scheduler and automatic installation-on-quit are disabled.
+The user confirms installation, which then restarts the running host bundle at its existing path.
+That restart bypasses Clear History on Quit, just like the existing internal restart.
+Temporary pins and unsaved annotations do not survive restart.
+
+The private-repository credential is a fine-grained token restricted to this repository with
+Contents: Read-only. Users enter it in General settings, not in chat or source code.
+It is a device-only, nonsynchronizing Keychain item; it is never stored in preferences, logs,
+package metadata, CI variables, or screenshots. Only the pinned GitHub API receives the token.
+Repository discovery refuses redirects; Sparkle's archive URLs must exactly match asset IDs and lengths
+from the resolved repository release. Cross-host download redirects use the system networking
+stack's authorization-header stripping. External release notes and system profiling are disabled.
+An expired token, invalid release, wrong package host, or signature failure leaves the existing app intact.
+After a code-signing identity change, a manual Check Now may require Keychain authorization again.
+
+The update archive is signed after all packaging modifications with a dedicated Ed25519 key.
+`SUPublicEDKey` is committed in the app's Info.plist, and `SUVerifyUpdateBeforeExtraction` is enabled.
+The signing script independently verifies the signature with that pinned public key before publishing.
+The local update key uses Sparkle Keychain account `local.maccy.capture.updates`;
+only this dedicated key is also stored as the repository's `SPARKLE_PRIVATE_KEY` Actions Secret.
+Do not rotate it casually: already-installed clients trust the original public key.
+The existing `Maccy Capture Local Signing` certificate and private key stay on the local Mac.
+Update authentication does not turn an ad-hoc app into a Developer ID signed or notarized app.
+
+CI assigns `CFBundleVersion` as `1000 + GITHUB_RUN_NUMBER`, followed by the run attempt.
+For example `1042.1` and `1042.2` are different upgradable builds even when the marketing version remains `2.8.0`.
+Local developer builds default to build `1000`; `MACCY_BUILD_VERSION` can override packaged build numbers.
+Keep the workflow's build counter monotonic; do not reset it or reuse the same version for different archives.
+The unsigned legacy upstream `appcast.xml` is not used by this modified app.
+Clients without the new updater need one manual installation before subsequent in-app upgrades.
 
 After the bundle identifier changes, grant screen recording and any required accessibility permissions
 to `Maccy Capture` again.
@@ -231,6 +275,7 @@ system policy, signature changes, and installation paths still require real-devi
 xcodebuild -project Maccy.xcodeproj -scheme Maccy -configuration Debug \
   -destination 'platform=macOS' -derivedDataPath /private/tmp/MaccyCaptureAgentTests \
   -only-testing:MaccyTests/AppIdentityTests \
+  -only-testing:MaccyTests/SoftwareUpdaterTests \
   -only-testing:MaccyTests/AppLanguageTests \
   -only-testing:MaccyTests/ScreenshotCaptureTests \
   -only-testing:MaccyTests/ScreenshotAnnotationTests \

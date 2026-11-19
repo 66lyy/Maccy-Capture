@@ -51,6 +51,14 @@ jobs:
         run: |
           echo "MACCY_DERIVED_DATA=$RUNNER_TEMP/MaccyCaptureDerivedData" >> "$GITHUB_ENV"
           echo "MACCY_DIST_DIR=$RUNNER_TEMP/MaccyCapture-dist" >> "$GITHUB_ENV"
+          echo "MACCY_BUILD_VERSION=$((1000 + GITHUB_RUN_NUMBER)).$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+
+      - name: Validate update scripts and synthetic feed generation
+        run: |
+          for script in script/package_release.sh script/publish_prerelease.sh script/sign_update_archive.sh; do
+            bash -n "$script"
+          done
+          python3 -m unittest discover -s script -p 'test_update_feed.py'
 
       - name: Run capture regression tests with synthetic images
         shell: bash
@@ -66,6 +74,7 @@ jobs:
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -only-testing:MaccyTests/AppIdentityTests \
+            -only-testing:MaccyTests/SoftwareUpdaterTests \
             -only-testing:MaccyTests/AppLanguageTests \
             -only-testing:MaccyTests/ScreenshotCaptureTests \
             -only-testing:MaccyTests/ScreenshotSelectionTests \
@@ -81,6 +90,14 @@ jobs:
       - name: Package Release app for Apple Silicon and Intel
         run: bash script/package_release.sh
 
+      - name: Sign repository update archive
+        if: >-
+          github.event_name != 'pull_request' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: bash script/sign_update_archive.sh
+
       - name: Upload application packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -90,6 +107,7 @@ jobs:
             ${{ env.MACCY_DIST_DIR }}/*.dmg
             ${{ env.MACCY_DIST_DIR }}/SHA256SUMS.txt
             ${{ env.MACCY_DIST_DIR }}/BUILD-INFO.txt
+            ${{ env.MACCY_DIST_DIR }}/UPDATE-METADATA.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

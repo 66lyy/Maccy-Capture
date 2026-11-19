@@ -23,8 +23,9 @@ shopt -s nullglob
 ZIP_PACKAGES=("$DIST_DIR"/Maccy-Capture-*-"${GITHUB_SHA:0:12}"-universal.zip)
 DMG_PACKAGES=("$DIST_DIR"/Maccy-Capture-*-"${GITHUB_SHA:0:12}"-universal.dmg)
 if [[ "${#ZIP_PACKAGES[@]}" -ne 1 || "${#DMG_PACKAGES[@]}" -ne 1 ||
-  ! -f "$DIST_DIR/SHA256SUMS.txt" || ! -f "$DIST_DIR/BUILD-INFO.txt" ]]; then
-  echo "Expected exactly one ZIP, one DMG, checksums, and build information for the built commit." >&2
+  ! -f "$DIST_DIR/SHA256SUMS.txt" || ! -f "$DIST_DIR/BUILD-INFO.txt" ||
+  ! -f "$DIST_DIR/UPDATE-METADATA.json" ]]; then
+  echo "Expected ZIP, DMG, checksums, build information and signed update metadata." >&2
   exit 2
 fi
 grep -Fxq "Source revision: $GITHUB_SHA" "$DIST_DIR/BUILD-INFO.txt"
@@ -47,6 +48,9 @@ This rolling prerelease is updated after successful default-branch builds.
 - Universal macOS application for Apple Silicon and Intel; requires macOS 14 or later.
 - Download the ZIP or DMG below. The ZIP contains \`Maccy Capture.app\`.
 - \`SHA256SUMS.txt\` verifies the downloads; \`BUILD-INFO.txt\` records build and signing details.
+- In-app updates use this repository's \`capture-appcast.xml\` and independently Ed25519-signed ZIP.
+- Install Update restarts the running modified app so the update takes effect immediately.
+- Private repositories require a repository-limited Contents: Read-only token saved only in the client's Keychain.
 - Packages include the upstream MIT license, English and Simplified Chinese distribution notices, and third-party licenses.
 - Ad-hoc signed, not Developer ID signed or notarized. Gatekeeper may block first launch, and permissions may need to be granted again.
 - This is not an official upstream release or a stable production release.
@@ -63,19 +67,40 @@ fi
 
 gh release upload "$RELEASE_TAG" \
   "${ZIP_PACKAGES[0]}" "${DMG_PACKAGES[0]}" \
-  "$DIST_DIR/SHA256SUMS.txt" "$DIST_DIR/BUILD-INFO.txt" \
+  "$DIST_DIR/BUILD-INFO.txt" "$DIST_DIR/UPDATE-METADATA.json" \
   --clobber
 
-ASSET_NAMES="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+ZIP_NAME="$(basename "${ZIP_PACKAGES[0]}")"
+ASSET_ID="$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" \
+  --jq ".assets[] | select(.name == \"$ZIP_NAME\") | .id")"
+if [[ ! "$ASSET_ID" =~ ^[0-9]+$ ]]; then
+  echo "Could not resolve the uploaded update archive." >&2
+  exit 2
+fi
+python3 "$(dirname "${BASH_SOURCE[0]}")/generate_update_feed.py" appcast \
+  --metadata "$DIST_DIR/UPDATE-METADATA.json" --repository "$GH_REPO" \
+  --asset-id "$ASSET_ID" --archive "${ZIP_PACKAGES[0]}" --output "$DIST_DIR/capture-appcast.xml"
+(
+  cd "$DIST_DIR"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" \
+      BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
+  else
+    shasum -a 256 "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" \
+      BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
+  fi
+)
+gh release upload "$RELEASE_TAG" "$DIST_DIR/SHA256SUMS.txt" --clobber
+gh release upload "$RELEASE_TAG" "$DIST_DIR/capture-appcast.xml" --clobber
+
+STALE_ASSETS="$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" --jq \
+  '[.assets[] | select(.name | test("^Maccy-Capture-.*-universal\\.(zip|dmg)$"))]
+  | sort_by(.created_at) | reverse | .[6:][] | .name')"
 while IFS= read -r asset_name; do
-  case "$asset_name" in
-    Maccy-Capture-*-universal.zip|Maccy-Capture-*-universal.dmg)
-      if [[ ! -f "$DIST_DIR/$asset_name" ]]; then
-        gh release delete-asset "$RELEASE_TAG" "$asset_name" --yes
-      fi
-      ;;
-  esac
-done <<< "$ASSET_NAMES"
+  if [[ -n "$asset_name" && ! -f "$DIST_DIR/$asset_name" ]]; then
+    gh release delete-asset "$RELEASE_TAG" "$asset_name" --yes
+  fi
+done <<< "$STALE_ASSETS"
 
 if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
   gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \

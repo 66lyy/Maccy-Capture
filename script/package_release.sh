@@ -9,6 +9,13 @@ BUILD_LOG="$DERIVED_DATA/maccy-release-build.log"
 
 mkdir -p "$DERIVED_DATA" "$DIST_DIR"
 BUILD_OPTIONS=('ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO)
+if [[ -n "${MACCY_BUILD_VERSION:-}" ]]; then
+  if [[ ! "$MACCY_BUILD_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+    echo "Expected a numeric, monotonically increasing build version." >&2
+    exit 2
+  fi
+  BUILD_OPTIONS+=("CURRENT_PROJECT_VERSION=$MACCY_BUILD_VERSION")
+fi
 OPTIMIZATION="project default"
 if [[ "$(xcrun swiftc --version)" == *"Apple Swift version 6.3.3 "* ]]; then
   BUILD_OPTIONS+=(SWIFT_OPTIMIZATION_LEVEL=-Onone)
@@ -49,8 +56,9 @@ if [[ "$BUNDLE_ID" != "local.maccy.capture" ]]; then
   exit 2
 fi
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$APP_BUNDLE/Contents/Info.plist")"
+BUILD_VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$APP_BUNDLE/Contents/Info.plist")"
 REVISION="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
-PACKAGE_NAME="Maccy-Capture-${VERSION}-${REVISION:0:12}-universal"
+PACKAGE_NAME="Maccy-Capture-${VERSION}-build${BUILD_VERSION}-${REVISION:0:12}-universal"
 WORKSPACE="$(mktemp -d "${TMPDIR:-/tmp}/MaccyCapturePackage.XXXXXX")"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
@@ -115,6 +123,7 @@ hdiutil create -quiet -ov -format UDZO -fs HFS+ \
 cat > "$DIST_DIR/BUILD-INFO.txt" <<INFO
 Product: Maccy Capture
 Version: $VERSION
+Build version: $BUILD_VERSION
 Bundle identifier: $BUNDLE_ID
 Source revision: $REVISION
 Architectures: arm64, x86_64

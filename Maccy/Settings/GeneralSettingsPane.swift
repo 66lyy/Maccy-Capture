@@ -15,7 +15,8 @@ struct GeneralSettingsPane: View {
   @State private var pasteModifier = HistoryItemAction.paste.modifierFlags.description
   @State private var pasteWithoutFormatting = HistoryItemAction.pasteWithoutFormatting.modifierFlags.description
 
-  @State private var updater = SoftwareUpdater()
+  @State private var updater = SoftwareUpdater.shared
+  @State private var updateToken = ""
 
   var body: some View {
     ScrollView {
@@ -37,20 +38,13 @@ struct GeneralSettingsPane: View {
         LaunchAtLogin.Toggle {
           Text("LaunchAtLogin", tableName: "GeneralSettings")
         }
-        if updater.isAvailable {
-          Toggle(isOn: $updater.automaticallyChecksForUpdates) {
-            Text("CheckForUpdates", tableName: "GeneralSettings")
-          }
-          Button(
-            action: { updater.checkForUpdates() },
-            label: { Text("CheckNow", tableName: "GeneralSettings") }
-          )
-        } else {
-          Text("CustomizedUpdatesDisabled", tableName: "GeneralSettings")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+      }
+
+      Settings.Section(
+        title: NSLocalizedString("UpdateSection", tableName: "GeneralSettings", comment: ""),
+        bottomDivider: true
+      ) {
+        updateSettings
       }
 
       Settings.Section(label: { Text("Open", tableName: "GeneralSettings") }) {
@@ -180,6 +174,74 @@ struct GeneralSettingsPane: View {
         }
       }
     }
+  }
+
+  private var updateSettings: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(verbatim: "\(RepositoryUpdateFeed.repository) · \(updater.currentVersion)")
+        .font(.caption)
+        .textSelection(.enabled)
+      Toggle(isOn: $updater.automaticallyChecksForUpdates) {
+        Text("UpdateAutomaticChecks", tableName: "GeneralSettings")
+      }
+      .disabled(!updater.isAvailable)
+      HStack {
+        Button {
+          updater.checkForUpdates()
+        } label: {
+          Text("CheckNow", tableName: "GeneralSettings")
+        }
+        .disabled(!updater.isAvailable || updater.isBusy)
+        if updater.isChecking {
+          ProgressView().controlSize(.small)
+        }
+      }
+      Text(LocalizedStringKey(updater.statusKey), tableName: "GeneralSettings")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      Text("UpdateRestartHelp", tableName: "GeneralSettings")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      DisclosureGroup {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("UpdateTokenHelp", tableName: "GeneralSettings")
+            .font(.caption)
+            .fixedSize(horizontal: false, vertical: true)
+          SecureField(
+            text: $updateToken,
+            prompt: Text("UpdateTokenPlaceholder", tableName: "GeneralSettings")
+          ) {
+            Text("UpdateToken", tableName: "GeneralSettings")
+          }
+          .textContentType(.password)
+          .onSubmit(saveUpdateToken)
+          .onDisappear { updateToken = "" }
+          HStack {
+            Button(action: saveUpdateToken) {
+              Text("UpdateSaveToken", tableName: "GeneralSettings")
+            }
+            .disabled(updateToken.isEmpty || updater.isBusy)
+            if updater.hasCredential {
+              Button {
+                updater.clearAccessToken()
+              } label: {
+                Text("UpdateRemoveToken", tableName: "GeneralSettings")
+              }
+              .disabled(updater.isBusy)
+            }
+          }
+        }
+        .padding(.top, 5)
+      } label: {
+        Text("UpdatePrivateRepository", tableName: "GeneralSettings")
+      }
+    }
+  }
+
+  private func saveUpdateToken() {
+    if updater.saveAccessToken(updateToken) { updateToken = "" }
   }
 
   private func screenshotAction(

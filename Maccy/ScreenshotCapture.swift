@@ -21,6 +21,10 @@ final class ScreenshotCapture {
   private var annotationSources: [ObjectIdentifier: UUID] = [:]
   private var isShowingAlert = false
 
+  var hasActiveCapture: Bool {
+    captureTask != nil || !annotationWindows.isEmpty
+  }
+
   func captureMainDisplay() {
     startCapture(mode: .mainDisplay, pinToScreen: false)
   }

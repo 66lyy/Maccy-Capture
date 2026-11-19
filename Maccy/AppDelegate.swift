@@ -158,6 +158,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
       ContentView()
     }
+    if !Self.isTesting {
+      SoftwareUpdater.shared.start()
+    }
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -168,10 +171,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     guard !rejectedDuplicateLaunch else { return }
+    SoftwareUpdater.shared.stop()
     ScreenshotCapture.shared.shutDown()
     if !isRestarting, Defaults[.clearOnQuit] {
       AppState.shared.history.clear()
     }
+  }
+
+  func prepareForUpdateRestart() {
+    isRestarting = true
   }
 
   func restartCurrentApplication() {
