@@ -1,5 +1,9 @@
 "Title" = "通用";
 "UpdateSection" = "软件更新";
+"UpdateChannel" = "更新渠道：";
+"UpdateChannelStable" = "稳定版";
+"UpdateChannelPreview" = "测试版";
+"UpdateChannelHelp" = "稳定版只检查正式发布；测试版检查可能有问题的测试构建。切换渠道不会降级已安装版本。";
 "UpdateAutomaticChecks" = "启动时自动检查更新";
 "UpdateReady" = "更新会在安装前验证。";
 "UpdateChecking" = "正在检查更新…";

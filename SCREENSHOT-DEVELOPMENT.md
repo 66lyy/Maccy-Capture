@@ -185,8 +185,11 @@ Successful default-branch builds also update Releases → Latest test build (`ca
 with the ZIP, DMG, `SHA256SUMS.txt`, and `BUILD-INFO.txt`.
 The `capture-appcast.xml` update feed is activated only after the signed ZIP and supporting files upload.
 The newest three ZIP/DMG pairs are retained for in-flight updates.
-This is a rolling test release, not an official upstream release or a fixed-version stable release.
-Create a separate versioned Release for long-term fixed distribution.
+Promote a verified default-branch build to stable by creating a separate draft Release with a
+`maccy-capture-vMAJOR.MINOR.PATCH` tag at its source commit. Upload the unchanged signed ZIP and DMG
+with their build information and update metadata. Use `script/generate_update_feed.py appcast`
+with the **stable Release's ZIP asset ID**, not the preview asset ID, and upload the new appcast and
+checksums before publishing as Latest (not a prerelease). Default-branch builds never replace that release.
 
 Open Actions → Build Maccy Capture in this repository to view runs and download artifacts;
 select Run workflow to build manually.
@@ -235,7 +238,9 @@ official releases over customized features.
 
 `SoftwareUpdater` is a single application-lifetime Sparkle controller started after normal launch.
 The application's own preference controls a single automatic check at launch. Manual checks remain available.
-Each check resolves this repository's public `capture-latest` release without authentication.
+Each check anonymously resolves the configured channel. Stable (default) accepts only a published
+`maccy-capture-vMAJOR.MINOR.PATCH` release from GitHub's Latest Release endpoint; Preview accepts
+only the rolling `capture-latest` prerelease. Channel changes do not downgrade the app.
 Each check confirms `capture-appcast.xml` exists and loads it from the public download URL.
 The attachment ID varies the download URL when a new release replaces the file, avoiding a stale cached redirect.
 Sparkle requests RSS; the GitHub asset API can respond with JSON instead of the file to that request.

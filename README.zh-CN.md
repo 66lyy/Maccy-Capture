@@ -13,14 +13,13 @@
 
 提交到 `master` / `main` 后，GitHub Actions 自动运行合成图片回归测试，并构建
 Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-256 校验文件。
-默认分支构建成功后，在仓库的
-**[Releases → Latest test build](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**
-（`capture-latest`）下载，
+日常使用请下载 **[最新版稳定版](https://github.com/66lyy/Maccy-Capture/releases/latest)**；
+试用新功能可下载 **[最新测试版](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**，
 也可以在 **Actions → Build Maccy Capture → 成功的运行 → Artifacts** 下载；
 在该工作流页点击 **Run workflow** 可手动打包。
 在默认分支上手动构建也会更新测试版 Release；其他分支、版本标签和 Pull Request 只提供 Artifacts。
 
-自动构建产物使用 ad-hoc 签名，不包含本机证书私钥，也不是 Apple 开发者 ID 签名或公证的正式发行包。
+自动构建产物使用 ad-hoc 签名，不包含本机证书私钥，未使用 Apple 开发者 ID 签名或公证。
 首次启动可能被 Gatekeeper 拦截，升级后可能需要重新授权录屏。日常本机使用仍建议复用现有本机自签证书。
 详细说明见 [截图、贴图与标注开发文档](SCREENSHOT-DEVELOPMENT.zh-CN.md)。
 
@@ -29,7 +28,8 @@ Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-
 
 ## 应用内更新
 
-设置 → 通用 → 软件更新，检查**本仓库公开的 `capture-latest` 测试版**。
+在 **设置 → 通用 → 软件更新** 可选择更新渠道：默认的**稳定版**只检查正式发布，
+**测试版**跟踪滚动测试构建。切换渠道不会降级已安装版本。
 自动检查仅在启动时执行，可关闭；也可以手动点击「立即检查」。
 下载 ZIP 后先用应用内固定的独立 Ed25519 公钥验签，验签成功才解压和安装。
 确认安装后自动替换并重启**当前这份修改版**，无需手动退出重开。

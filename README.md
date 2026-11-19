@@ -14,10 +14,9 @@ Choose **Annotate** to open the attached drawing, OCR, Copy, Pin, and Save toolb
 
 Pushing to `master` / `main` runs synthetic-image regression tests in GitHub Actions
 and builds a universal Release `.app` for Apple Silicon and Intel, packaged as ZIP and DMG
-with SHA-256 checksums. Download the packages from
-**[Releases → Latest test build](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**
-(`capture-latest`) after a successful default-branch build,
-or **Actions → Build Maccy Capture → a successful run → Artifacts**.
+with SHA-256 checksums. Download the **[latest stable release](https://github.com/66lyy/Maccy-Capture/releases/latest)** for everyday use.
+For testing, download the **[latest preview build](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**
+or use **Actions → Build Maccy Capture → a successful run → Artifacts**.
 You can also select **Run workflow** on the workflow page to build manually.
 Manual builds on the default branch also update the test release;
 other branches, version tags, and pull requests provide artifacts only.
@@ -35,7 +34,8 @@ Version tags and manual builds are not subject to the documentation filter.
 
 ## In-App Updates
 
-Settings → General → Software Updates checks **this repository's public `capture-latest` test release**.
+In **Settings → General → Software Updates**, choose **Stable** (the default) for published stable releases,
+or **Preview** to follow the rolling test build. Switching channels does not downgrade the installed app.
 Automatic checks run only at launch and can be turned off. Use **Check Now** to check manually.
 Update ZIPs are verified against this app's dedicated Ed25519 public key before extraction.
 Confirm **Install Update** to replace and restart the exact running modified app; changes take effect

@@ -1,5 +1,9 @@
 "Title" = "General";
 "UpdateSection" = "Software Updates";
+"UpdateChannel" = "Update channel:";
+"UpdateChannelStable" = "Stable";
+"UpdateChannelPreview" = "Preview";
+"UpdateChannelHelp" = "Stable checks published releases only. Preview checks test builds, which may have issues. Switching channels does not downgrade the installed app.";
 "UpdateAutomaticChecks" = "Automatically check for updates at launch";
 "UpdateReady" = "Updates are verified before installation.";
 "UpdateChecking" = "Checking for updates…";

@@ -1,6 +1,28 @@
 import Foundation
 
 nonisolated struct RepositoryUpdateFeed: Sendable {
+  enum Channel: String, Sendable {
+    case stable, preview
+
+    var releasePath: String {
+      switch self {
+      case .stable: "latest"
+      case .preview: "tags/capture-latest"
+      }
+    }
+
+    func accepts(_ release: Release) -> Bool {
+      guard !release.draft else { return false }
+      switch self {
+      case .stable:
+        return !release.prerelease &&
+          release.tagName.range(of: #"\Amaccy-capture-v[0-9]+\.[0-9]+\.[0-9]+\z"#, options: .regularExpression) != nil
+      case .preview:
+        return release.prerelease && release.tagName == "capture-latest"
+      }
+    }
+  }
+
   enum Failure: Error {
     case unavailable, invalidRelease
   }
@@ -15,11 +37,12 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
   struct Release: Decodable, Sendable {
     let tagName: String
     let draft: Bool
+    let prerelease: Bool
     let assets: [Asset]
 
     enum CodingKeys: String, CodingKey {
       case tagName = "tag_name"
-      case draft, assets
+      case draft, prerelease, assets
     }
   }
 
@@ -34,17 +57,18 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
   }
 
   static let repository = "66lyy/Maccy-Capture"
-  static let tag = "capture-latest"
   static let feedName = "capture-appcast.xml"
 
   let repository: String
+  let channel: Channel
 
-  init(repository: String = Self.repository) {
+  init(repository: String = Self.repository, channel: Channel = .stable) {
     self.repository = repository
+    self.channel = channel
   }
 
   var releaseURL: URL {
-    URL(string: "https://api.github.com/repos/\(repository)/releases/tags/\(Self.tag)")!
+    URL(string: "https://api.github.com/repos/\(repository)/releases/\(channel.releasePath)")!
   }
 
   func request() -> URLRequest {
@@ -63,7 +87,7 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     guard response.statusCode == 200 else { throw Failure.unavailable }
     guard data.count <= 2_000_000,
           let release = try? JSONDecoder().decode(Release.self, from: data),
-          !release.draft, release.tagName == Self.tag else {
+          channel.accepts(release) else {
       throw Failure.invalidRelease
     }
     let feeds = release.assets.filter { $0.name == Self.feedName }
@@ -76,7 +100,7 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     guard !packages.isEmpty, Set(packages.map(\.url)).count == packages.count else {
       throw Failure.invalidRelease
     }
-    let downloadPage = "https://github.com/\(repository)/releases/download/\(Self.tag)"
+    let downloadPage = "https://github.com/\(repository)/releases/download/\(release.tagName)"
     return Resolved(
       feedURL: URL(string: "\(downloadPage)/\(Self.feedName)?asset=\(feed.id)")!,
       archives: Dictionary(uniqueKeysWithValues: packages.map { ($0.url, $0.size) })

@@ -123,7 +123,10 @@ ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 主分支成功构建后还会更新 Releases 中的 `capture-latest` 测试版，
 附带 ZIP、DMG、`SHA256SUMS.txt`、`BUILD-INFO.txt` 及更新元数据；
 新包和支持文件上传成功后才启用 `capture-appcast.xml`，保留最近三组 ZIP/DMG 供进行中的更新使用。
-这是滚动测试版，不是上游官方版本或固定版本的正式发行；长期固定分发仍需另建版本 Release。
+发布稳定版时，从已验证的默认分支构建提取原样签名的 ZIP 和 DMG，按源码提交创建
+`maccy-capture-v主版本.次版本.补丁版本` 标签的独立 Release 草稿，上传安装包、构建信息及更新元数据。
+用 `script/generate_update_feed.py appcast` 和**稳定版自身的 ZIP 附件 ID**生成更新源，
+上传更新源及校验文件后，发布为 Latest（非预发布）。默认分支构建不会覆盖它。
 仓库首页的 Actions → Build Maccy Capture 可查看运行和下载，Run workflow 可手动构建；
 在默认分支上手动构建也会更新测试版 Release，其他分支、版本标签及 Pull Request 只提供 Artifacts。
 GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度与计费以该账号设置为准。
@@ -161,7 +164,8 @@ bash script/package_release.sh
 
 `SoftwareUpdater` 使用应用生命周期内唯一的 Sparkle 实例，在正常启动后开启。
 自动检查由本机偏好控制，仅在启动时执行一次，仍可手动检查。
-检查时以匿名请求解析本仓库公开的 `capture-latest`；
+检查时以匿名请求解析所选渠道：稳定版（默认）只接受 GitHub Latest Release 接口返回的已发布版本标签，
+测试版只接受 `capture-latest` 预发布。切换渠道不会降级现有应用。
 每次确认 `capture-appcast.xml` 附件存在后，从公开下载地址读取。
 附件 ID 随发布替换而变化，并作为下载地址参数，避免复用旧版的缓存重定向。
 Sparkle 请求 RSS 时，GitHub 附件 API 可能返回附件元数据 JSON，而不是文件内容。

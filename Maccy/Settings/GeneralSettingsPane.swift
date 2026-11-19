@@ -180,6 +180,18 @@ struct GeneralSettingsPane: View {
       Text(verbatim: updater.currentVersion)
         .font(.caption)
         .textSelection(.enabled)
+      Picker(selection: $updater.channel) {
+        Text("UpdateChannelStable", tableName: "GeneralSettings").tag(RepositoryUpdateFeed.Channel.stable)
+        Text("UpdateChannelPreview", tableName: "GeneralSettings").tag(RepositoryUpdateFeed.Channel.preview)
+      } label: {
+        Text("UpdateChannel", tableName: "GeneralSettings")
+      }
+      .pickerStyle(.menu)
+      .disabled(!updater.isAvailable || updater.isBusy)
+      Text("UpdateChannelHelp", tableName: "GeneralSettings")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       Toggle(isOn: $updater.automaticallyChecksForUpdates) {
         Text("UpdateAutomaticChecks", tableName: "GeneralSettings")
       }

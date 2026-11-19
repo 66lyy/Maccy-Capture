@@ -6,6 +6,7 @@ import Sparkle
 final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   static let shared = SoftwareUpdater()
   static let automaticChecksKey = "MaccyCaptureAutomaticUpdateChecks"
+  static let channelKey = "MaccyCaptureUpdateChannel"
 
   var isAvailable: Bool {
     AppIdentity.isCustomizedBuild &&
@@ -15,6 +16,13 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   var automaticallyChecksForUpdates: Bool {
     didSet {
       defaults.set(automaticallyChecksForUpdates, forKey: Self.automaticChecksKey)
+    }
+  }
+
+  var channel: RepositoryUpdateFeed.Channel {
+    didSet {
+      defaults.set(channel.rawValue, forKey: Self.channelKey)
+      statusKey = "UpdateReady"
     }
   }
 
@@ -42,6 +50,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     self.defaults = defaults
     self.load = load
     automaticallyChecksForUpdates = defaults.object(forKey: Self.automaticChecksKey) as? Bool ?? true
+    channel = defaults.string(forKey: Self.channelKey).flatMap(RepositoryUpdateFeed.Channel.init(rawValue:)) ?? .stable
     super.init()
   }
 
@@ -65,6 +74,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   private func check(userInitiated: Bool) {
     guard isAvailable, !AppDelegate.isTesting, !isBusy else { return }
     if !userInitiated, ScreenshotCapture.shared.hasActiveCapture { return }
+    let feed = RepositoryUpdateFeed(channel: channel)
     isChecking = true
     statusKey = "UpdateChecking"
     checkTask = Task { [weak self] in
@@ -74,7 +84,6 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
         checkTask = nil
       }
       do {
-        let feed = RepositoryUpdateFeed()
         let (data, response) = try await load(feed.request())
         try Task.checkCancellation()
         resolved = try feed.resolve(data: data, response: response)
