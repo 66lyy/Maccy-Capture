@@ -47,7 +47,7 @@ extension ScreenshotAnnotationWindow {
     firstResponder === recognitionResults?.textView && recognitionResults != nil
   }
 
-  @objc private func dismissRecognition() {
+  @objc func dismissRecognition() {
     let hadFocus = recognitionHasFocus
     recognitionResults?.removeFromSuperview()
     recognitionResults = nil
