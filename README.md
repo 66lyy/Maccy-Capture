@@ -36,7 +36,8 @@ Version tags and manual builds are not subject to the documentation filter.
 
 In **Settings → General → Software Updates**, choose **Stable** (the default) for published stable releases,
 or **Preview** to follow the rolling test build. Switching channels does not downgrade the installed app.
-Automatic checks run only at launch and can be turned off. Use **Check Now** to check manually.
+When enabled, automatic checks run at launch, when turned on, and about once a day while the app is running.
+Checks due during capture or annotation are retried afterward. Use **Check Now** to check manually.
 Update ZIPs are verified against this app's dedicated Ed25519 public key before extraction.
 Confirm **Install Update** to replace and restart the exact running modified app; changes take effect
 after that restart, without manually quitting and reopening it. Save annotations first:

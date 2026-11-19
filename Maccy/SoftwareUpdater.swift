@@ -8,14 +8,25 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   static let automaticChecksKey = "MaccyCaptureAutomaticUpdateChecks"
   static let channelKey = "MaccyCaptureUpdateChannel"
 
-  var isAvailable: Bool {
+  private static let automaticCheckInterval: Duration = .seconds(24 * 60 * 60)
+  private static let automaticCheckRetryInterval: Duration = .seconds(30)
+
+  private static var isSupportedBuild: Bool {
     AppIdentity.isCustomizedBuild &&
       Data(base64Encoded: Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String ?? "")?.count == 32
   }
 
+  var isAvailable: Bool { Self.isSupportedBuild }
+
   var automaticallyChecksForUpdates: Bool {
     didSet {
+      guard automaticallyChecksForUpdates != oldValue else { return }
       defaults.set(automaticallyChecksForUpdates, forKey: Self.automaticChecksKey)
+      if automaticallyChecksForUpdates {
+        attemptAutomaticCheck()
+      } else {
+        cancelAutomaticChecks()
+      }
     }
   }
 
@@ -37,55 +48,109 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private let load: (URLRequest) async throws -> (Data, URLResponse)
+  @ObservationIgnored private let canCheck: () -> Bool
+  @ObservationIgnored private let hasActiveCapture: () -> Bool
+  @ObservationIgnored private let sleep: (Duration) async throws -> Void
   @ObservationIgnored private var updaterController: SPUStandardUpdaterController?
+  @ObservationIgnored private var automaticCheckTimer: Task<Void, Never>?
   @ObservationIgnored private var checkTask: Task<Void, Never>?
+  @ObservationIgnored private var isCheckingAutomatically = false
   @ObservationIgnored private var resolved: RepositoryUpdateFeed.Resolved?
   @ObservationIgnored private var isStarted = false
   @ObservationIgnored private var isUpdaterStarted = false
 
   init(
     defaults: UserDefaults = .standard,
-    load: @escaping (URLRequest) async throws -> (Data, URLResponse) = { try await RepositoryUpdateSession().load($0) }
+    load: @escaping (URLRequest) async throws -> (Data, URLResponse) = { try await RepositoryUpdateSession().load($0) },
+    canCheck: @escaping () -> Bool = { !AppDelegate.isTesting && SoftwareUpdater.isSupportedBuild },
+    hasActiveCapture: @escaping () -> Bool = { ScreenshotCapture.shared.hasActiveCapture },
+    sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.defaults = defaults
     self.load = load
+    self.canCheck = canCheck
+    self.hasActiveCapture = hasActiveCapture
+    self.sleep = sleep
     automaticallyChecksForUpdates = defaults.object(forKey: Self.automaticChecksKey) as? Bool ?? true
     channel = defaults.string(forKey: Self.channelKey).flatMap(RepositoryUpdateFeed.Channel.init(rawValue:)) ?? .stable
     super.init()
   }
 
   func start() {
-    guard !AppDelegate.isTesting, isAvailable, !isStarted else { return }
+    guard canCheck(), !isStarted else { return }
     isStarted = true
-    if automaticallyChecksForUpdates {
-      check(userInitiated: false)
-    }
+    attemptAutomaticCheck()
   }
 
   func checkForUpdates() {
+    guard canCheck(), !isBusy else { return }
     check(userInitiated: true)
   }
 
   func stop() {
+    isStarted = false
+    cancelAutomaticChecks()
     checkTask?.cancel()
-    checkTask = nil
+  }
+
+  private func cancelAutomaticChecks() {
+    automaticCheckTimer?.cancel()
+    automaticCheckTimer = nil
+    if isCheckingAutomatically {
+      checkTask?.cancel()
+    }
+  }
+
+  private func attemptAutomaticCheck() {
+    guard isStarted, automaticallyChecksForUpdates else { return }
+    if isBusy || hasActiveCapture() {
+      scheduleAutomaticCheck(after: Self.automaticCheckRetryInterval)
+    } else {
+      check(userInitiated: false)
+    }
+  }
+
+  private func scheduleAutomaticCheck(after delay: Duration) {
+    guard isStarted, automaticallyChecksForUpdates else { return }
+    automaticCheckTimer?.cancel()
+    automaticCheckTimer = Task { [weak self, sleep] in
+      do {
+        try await sleep(delay)
+        try Task.checkCancellation()
+      } catch {
+        return
+      }
+      guard let self else { return }
+      automaticCheckTimer = nil
+      attemptAutomaticCheck()
+    }
   }
 
   private func check(userInitiated: Bool) {
-    guard isAvailable, !AppDelegate.isTesting, !isBusy else { return }
-    if !userInitiated, ScreenshotCapture.shared.hasActiveCapture { return }
     let feed = RepositoryUpdateFeed(channel: channel)
     isChecking = true
+    isCheckingAutomatically = !userInitiated
     statusKey = "UpdateChecking"
     checkTask = Task { [weak self] in
       guard let self else { return }
+      var nextCheckDelay = Self.automaticCheckInterval
       defer {
         isChecking = false
+        isCheckingAutomatically = false
         checkTask = nil
+        if !userInitiated, !Task.isCancelled {
+          scheduleAutomaticCheck(after: nextCheckDelay)
+        }
       }
       do {
+        try Task.checkCancellation()
         let (data, response) = try await load(feed.request())
         try Task.checkCancellation()
+        if !userInitiated, hasActiveCapture() {
+          nextCheckDelay = Self.automaticCheckRetryInterval
+          statusKey = "UpdateReady"
+          return
+        }
         resolved = try feed.resolve(data: data, response: response)
         let updater = prepareUpdater()
         updater.httpHeaders = ["Accept": "application/octet-stream"]
@@ -98,12 +163,14 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
         } else {
           updater.checkForUpdatesInBackground()
         }
-      } catch is CancellationError {
-        statusKey = "UpdateReady"
-      } catch RepositoryUpdateFeed.Failure.unavailable {
-        statusKey = "UpdateReleaseUnavailable"
       } catch {
-        statusKey = "UpdateCheckFailed"
+        if Task.isCancelled || error is CancellationError {
+          statusKey = "UpdateReady"
+        } else if case RepositoryUpdateFeed.Failure.unavailable = error {
+          statusKey = "UpdateReleaseUnavailable"
+        } else {
+          statusKey = "UpdateCheckFailed"
+        }
       }
     }
   }

@@ -47,7 +47,7 @@
 "UpdateChannelStable" = "Stable";
 "UpdateChannelPreview" = "Preview";
 "UpdateChannelHelp" = "Stable checks published releases only. Preview checks test builds, which may have issues. Switching channels does not downgrade the installed app.";
-"UpdateAutomaticChecks" = "Automatically check for updates at launch";
+"UpdateAutomaticChecks" = "Automatically check for updates";
 "UpdateReady" = "Updates are verified before installation.";
 "UpdateChecking" = "Checking for updates…";
 "UpdateFound" = "An update is available. Follow the installer to update and restart.";

@@ -141,6 +141,142 @@ struct SoftwareUpdaterTests {
     updater.stop()
   }
 
+  @Test("Automatic checks run at launch and repeat after the daily interval")
+  func recurringAutomaticChecks() async throws {
+    let clock = CheckClock()
+    var requests: [URLRequest] = []
+    let updater = try makeUpdater(clock: clock) { request in
+      requests.append(request)
+      throw RepositoryUpdateFeed.Failure.unavailable
+    }
+    defer { updater.stop() }
+
+    updater.start()
+    #expect(updater.isChecking)
+    updater.start()
+    try await waitUntil { clock.delays.count == 1 }
+    #expect(requests.map(\.url) == [RepositoryUpdateFeed().releaseURL])
+    #expect(clock.delays == [.seconds(86_400)])
+
+    updater.channel = .preview
+    clock.advance()
+    try await waitUntil { clock.delays.count == 2 }
+    #expect(requests.map(\.url) == [
+      RepositoryUpdateFeed().releaseURL, RepositoryUpdateFeed(channel: .preview).releaseURL
+    ])
+
+    updater.stop()
+    #expect(clock.advance() == false)
+    #expect(requests.count == 2)
+  }
+
+  @Test("Opting in checks immediately and opting out cancels the next check")
+  func togglingAutomaticChecks() async throws {
+    let clock = CheckClock()
+    var requests = 0
+    let updater = try makeUpdater(clock: clock, enabled: false) { _ in
+      requests += 1
+      throw RepositoryUpdateFeed.Failure.unavailable
+    }
+    defer { updater.stop() }
+
+    updater.start()
+    #expect(!updater.isChecking)
+    #expect(clock.delays.isEmpty)
+    updater.automaticallyChecksForUpdates = true
+    #expect(updater.isChecking)
+    try await waitUntil { clock.delays.count == 1 }
+    #expect(requests == 1)
+
+    updater.automaticallyChecksForUpdates = false
+    #expect(clock.advance() == false)
+    #expect(requests == 1)
+  }
+
+  @Test("Opting out cancels automatic discovery without affecting manual checks")
+  func cancelsAutomaticDiscovery() async throws {
+    let clock = CheckClock()
+    let (response, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    var requests = 0
+    var isCapturing = false
+    let updater = try makeUpdater(clock: clock, hasActiveCapture: { isCapturing }) { _ in
+      requests += 1
+      if requests == 1 {
+        for await _ in response { break }
+      }
+      throw URLError(.cancelled)
+    }
+    defer { updater.stop() }
+
+    updater.start()
+    try await waitUntil { requests == 1 }
+    updater.automaticallyChecksForUpdates = false
+    try await waitUntil { !updater.isChecking }
+    #expect(updater.statusKey == "UpdateReady")
+    #expect(clock.delays.isEmpty)
+
+    isCapturing = true
+    updater.checkForUpdates()
+    try await waitUntil { !updater.isChecking }
+    #expect(requests == 2)
+    #expect(clock.delays.isEmpty)
+  }
+
+  @Test("An automatic check waits for capture to end, then resumes its daily schedule")
+  func captureDeferral() async throws {
+    let clock = CheckClock()
+    var isCapturing = true
+    var requests = 0
+    let updater = try makeUpdater(clock: clock, hasActiveCapture: { isCapturing }) { _ in
+      requests += 1
+      throw RepositoryUpdateFeed.Failure.unavailable
+    }
+    defer { updater.stop() }
+
+    updater.start()
+    try await waitUntil { clock.delays.count == 1 }
+    clock.advance()
+    try await waitUntil { clock.delays.count == 2 }
+    #expect(requests == 0)
+    #expect(!updater.isChecking)
+    #expect(clock.delays == [.seconds(30), .seconds(30)])
+
+    isCapturing = false
+    clock.advance()
+    try await waitUntil { clock.delays.count == 3 }
+    #expect(requests == 1)
+    #expect(clock.delays.last == .seconds(86_400))
+  }
+
+  @Test("Capture starting during discovery defers the automatic check and retries")
+  func captureStartsDuringDiscovery() async throws {
+    let clock = CheckClock()
+    var isCapturing = false
+    var requests = 0
+    let updater = try makeUpdater(clock: clock, hasActiveCapture: { isCapturing }) { request in
+      requests += 1
+      if requests == 1 { isCapturing = true }
+      let url = try #require(request.url)
+      let response = try #require(HTTPURLResponse(
+        url: url, statusCode: 404, httpVersion: nil, headerFields: nil
+      ))
+      return (Data(), response)
+    }
+    defer { updater.stop() }
+
+    updater.start()
+    try await waitUntil { clock.delays.count == 1 }
+    #expect(updater.statusKey == "UpdateReady")
+    #expect(clock.delays == [.seconds(30)])
+
+    isCapturing = false
+    clock.advance()
+    try await waitUntil { clock.delays.count == 2 }
+    #expect(requests == 2)
+    #expect(updater.statusKey == "UpdateReleaseUnavailable")
+  }
+
   @Test("Release discovery never follows a redirect")
   func refusesRedirects() async {
     let session = URLSession(configuration: .ephemeral)
@@ -163,6 +299,48 @@ struct SoftwareUpdaterTests {
   }
 
   private var packageName: String { "Maccy-Capture-2.8.0-abcdef123456-universal.zip" }
+
+  private func makeUpdater(
+    clock: CheckClock, enabled: Bool = true, hasActiveCapture: @escaping () -> Bool = { false },
+    load: @escaping (URLRequest) async throws -> (Data, URLResponse)
+  ) throws -> SoftwareUpdater {
+    let defaults = try #require(UserDefaults(suiteName: "local.maccy.updates.clock.\(UUID().uuidString)"))
+    defaults.register(defaults: [SoftwareUpdater.automaticChecksKey: enabled])
+    return SoftwareUpdater(
+      defaults: defaults, load: load, canCheck: { true }, hasActiveCapture: hasActiveCapture, sleep: clock.sleep
+    )
+  }
+
+  private func waitUntil(_ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now + .seconds(3)
+    while !condition(), ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    try #require(condition())
+  }
+
+  @MainActor
+  private final class CheckClock {
+    private(set) var delays: [Duration] = []
+    private var ticks: [AsyncStream<Void>.Continuation] = []
+
+    func sleep(_ delay: Duration) async throws {
+      let (stream, continuation) = AsyncStream<Void>.makeStream()
+      delays.append(delay)
+      ticks.append(continuation)
+      for await _ in stream { break }
+      try Task.checkCancellation()
+    }
+
+    @discardableResult
+    func advance() -> Bool {
+      let tick = ticks.removeFirst()
+      let result = tick.yield(())
+      tick.finish()
+      if case .terminated = result { return false }
+      return true
+    }
+  }
 
   private func assetURL(_ identifier: Int) -> String {
     "https://api.github.com/repos/fixture/capture/releases/assets/\(identifier)"
