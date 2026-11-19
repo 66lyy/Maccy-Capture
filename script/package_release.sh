@@ -62,7 +62,7 @@ PACKAGE_NAME="Maccy-Capture-${VERSION}-build${BUILD_VERSION}-${REVISION:0:12}-un
 WORKSPACE="$(mktemp -d "${TMPDIR:-/tmp}/MaccyCapturePackage.XXXXXX")"
 trap 'rm -rf "$WORKSPACE"' EXIT
 
-ditto "$APP_BUNDLE" "$WORKSPACE/Maccy Capture.app"
+ditto "$APP_BUNDLE" "$WORKSPACE/Maccy-Capture.app"
 ditto "$PROJECT_ROOT/LICENSE" "$WORKSPACE/LICENSE"
 ditto "$PROJECT_ROOT/DISTRIBUTION-NOTICE.md" "$WORKSPACE/DISTRIBUTION-NOTICE.md"
 ditto "$PROJECT_ROOT/DISTRIBUTION-NOTICE.zh-CN.md" "$WORKSPACE/DISTRIBUTION-NOTICE.zh-CN.md"
@@ -106,22 +106,22 @@ if [[ "$PACKAGE_INDEX" -eq 0 ]]; then
   echo "No locked dependency licenses were collected." >&2
   exit 2
 fi
-APP_RESOURCES="$WORKSPACE/Maccy Capture.app/Contents/Resources"
+APP_RESOURCES="$WORKSPACE/Maccy-Capture.app/Contents/Resources"
 ditto "$WORKSPACE/LICENSE" "$APP_RESOURCES/LICENSE"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.md"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.zh-CN.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.zh-CN.md"
 ditto "$WORKSPACE/ThirdPartyLicenses" "$APP_RESOURCES/ThirdPartyLicenses"
 codesign --force --sign - --timestamp=none --preserve-metadata=entitlements,flags \
-  "$WORKSPACE/Maccy Capture.app"
-codesign --verify --deep --strict "$WORKSPACE/Maccy Capture.app"
+  "$WORKSPACE/Maccy-Capture.app"
+codesign --verify --deep --strict "$WORKSPACE/Maccy-Capture.app"
 ditto -c -k --sequesterRsrc \
   "$WORKSPACE" "$DIST_DIR/$PACKAGE_NAME.zip"
 ln -s /Applications "$WORKSPACE/Applications"
 hdiutil create -quiet -ov -format UDZO -fs HFS+ \
-  -volname "Maccy Capture" -srcfolder "$WORKSPACE" "$DIST_DIR/$PACKAGE_NAME.dmg"
+  -volname "Maccy-Capture" -srcfolder "$WORKSPACE" "$DIST_DIR/$PACKAGE_NAME.dmg"
 
 cat > "$DIST_DIR/BUILD-INFO.txt" <<INFO
-Product: Maccy Capture
+Product: Maccy-Capture
 Version: $VERSION
 Build version: $BUILD_VERSION
 Bundle identifier: $BUNDLE_ID

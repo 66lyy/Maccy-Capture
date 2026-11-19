@@ -1,5 +1,6 @@
 import AppKit
 import UniformTypeIdentifiers
+import Vision
 
 @MainActor
 final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
@@ -10,20 +11,30 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   var onClose: (() -> Void)?
   var onOutput: ((Data, NSImage, OutputAction) throws -> Void)?
   let canvas: ScreenshotAnnotationCanvas
-  private(set) var toolPicker: NSSegmentedControl!
+  private(set) var toolButtons: [ScreenshotToolbarButton] = []
+  private(set) var swatches: [ScreenshotToolbarButton] = []
   private(set) var undoButton: NSButton!
   private(set) var redoButton: NSButton!
   private(set) var copyButton: NSButton!
   private(set) var pinButton: NSButton!
   private(set) var annotationToolbar = ScreenshotAnnotationToolbar()
-  private let colorWell = NSColorWell()
-  private let widthPicker = NSPopUpButton()
-  private let fontPicker = NSPopUpButton()
+  let styleSlider = NSSlider()
+  private let styleLabel = NSTextField(labelWithString: "")
+  private let styleValue = NSTextField(labelWithString: "")
   private let statusLabel = NSTextField(labelWithString: "")
   private let editingPin: Bool
   private var isFinished = false
   private var screenObserver: NSObjectProtocol?
   private var savePanel: NSSavePanel?
+  private var recognitionTask: Task<Void, Never>?
+  private var recognitionPopover: NSPopover?
+  private var recognitionButton: NSButton!
+  private var recognizedText = ""
+  private let palette: [(NSColor, String)] = [
+    (.red, "AnnotationRed"), (.systemOrange, "AnnotationOrange"), (.systemYellow, "AnnotationYellow"),
+    (.systemGreen, "AnnotationGreen"), (.systemCyan, "AnnotationCyan"), (.white, "AnnotationWhite"),
+    (.black, "AnnotationBlack")
+  ]
 
   init?(
     image: NSImage, visibleFrame: NSRect, screenFrame: NSRect? = nil, imageFrame: NSRect? = nil,
@@ -58,15 +69,18 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     overlay.onCancel = { [weak self] in self?.cancelOperation(nil) }
     overlay.addSubview(canvas)
     contentView = overlay
-    configureToolbar(originalWasCopied: originalWasCopied, compact: visibleFrame.width < 520)
+    let compact = visibleFrame.width < 476
+    let narrow = visibleFrame.width < 410
+    configureToolbar(originalWasCopied: originalWasCopied, compact: compact, narrow: narrow)
     annotationToolbar.frame = Self.toolbarFrame(
       beside: canvas.frame, bounds: visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY),
-      size: NSSize(width: 508, height: visibleFrame.width < 520 ? 120 : 82)
+      size: NSSize(width: 460, height: narrow ? 149 : compact ? 120 : 88)
     )
     annotationToolbar.movementBounds = visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY)
     overlay.addSubview(annotationToolbar)
     canvas.onChange = { [weak self] in self?.refreshHistoryButtons() }
     canvas.onCancel = { [weak self] in self?.cancelOperation(nil) }
+    canvas.onBeginMark = { [weak self] in self?.clearRecognition() }
     initialFirstResponder = canvas
     refreshHistoryButtons()
     screenObserver = NotificationCenter.default.addObserver(
@@ -139,8 +153,10 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     }
     savePanel?.cancel(nil)
     savePanel = nil
+    clearRecognition()
     canvas.onChange = nil
     canvas.onCancel = nil
+    canvas.onBeginMark = nil
     canvas.discardPendingMark()
     onOutput = nil
     (contentView as? ScreenshotAnnotationOverlay)?.onCancel = nil
@@ -165,12 +181,14 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   @objc func undoMark() {
+    clearRecognition()
     canvas.commitText()
     canvas.document.undo()
     refreshHistoryButtons()
   }
 
   @objc func redoMark() {
+    clearRecognition()
     canvas.commitText()
     canvas.document.redo()
     refreshHistoryButtons()
@@ -207,28 +225,25 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     )
   }
 
-  private func configureToolbar(originalWasCopied: Bool, compact: Bool) {
-    annotationToolbar.material = .popover
+  private func configureToolbar(originalWasCopied: Bool, compact: Bool, narrow: Bool) {
+    annotationToolbar.material = .hudWindow
     annotationToolbar.blendingMode = .withinWindow
     annotationToolbar.state = .active
     annotationToolbar.wantsLayer = true
     annotationToolbar.layer?.cornerRadius = 10
     annotationToolbar.layer?.masksToBounds = true
-    annotationToolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.96).cgColor
+    annotationToolbar.appearance = NSAppearance(named: .darkAqua)
+    annotationToolbar.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+    annotationToolbar.layer?.borderWidth = 1
     annotationToolbar.setAccessibilityLabel(text("AnnotationTools"))
     let tools = ScreenshotAnnotationDocument.Tool.allCases
     let symbols = ["arrow.up.right", "rectangle", "oval", "pencil.tip", "textformat", "rectangle.fill"]
-    toolPicker = NSSegmentedControl(
-      images: zip(tools, symbols).map { tool, symbol in
-        NSImage(systemSymbolName: symbol, accessibilityDescription: text(tool.titleKey)) ?? NSImage()
-      }, trackingMode: .selectOne, target: self, action: #selector(selectTool)
-    )
-    for (index, tool) in tools.enumerated() {
-      toolPicker.setWidth(28, forSegment: index)
-      toolPicker.setToolTip(text(tool.titleKey), forSegment: index)
+    toolButtons = zip(tools, symbols).map { tool, symbol in
+      let control = button(tool.titleKey, symbol: symbol, action: #selector(selectTool(_:)))
+      control.tag = tool.rawValue
+      control.isChosen = tool == canvas.tool
+      return control
     }
-    toolPicker.selectedSegment = 0
-    toolPicker.setAccessibilityLabel(text("AnnotationTools"))
     undoButton = button("AnnotationUndo", symbol: "arrow.uturn.backward", action: #selector(undoMark))
     redoButton = button("AnnotationRedo", symbol: "arrow.uturn.forward", action: #selector(redoMark))
     copyButton = button("AnnotationCopy", symbol: "doc.on.doc", action: #selector(copyImage))
@@ -237,37 +252,29 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       symbol: editingPin ? "checkmark" : "pin.fill",
       action: editingPin ? #selector(applyImage) : #selector(pinImage)
     )
+    recognitionButton = button("AnnotationRecognizeText", symbol: "text.viewfinder", action: #selector(recognizeText))
     let outputRow = row([
-      button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor)), pinButton,
-      button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage)), copyButton
+      recognitionButton, pinButton, button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage)),
+      copyButton, button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor))
     ])
-    let toolRow = row([toolPicker, undoButton, redoButton])
-    colorWell.color = canvas.color
-    colorWell.target = self
-    colorWell.action = #selector(changeStyle)
-    colorWell.setAccessibilityLabel(text("AnnotationColor"))
-    colorWell.toolTip = text("AnnotationColor")
-    colorWell.translatesAutoresizingMaskIntoConstraints = false
-    NSLayoutConstraint.activate([
-      colorWell.widthAnchor.constraint(equalToConstant: 36),
-      colorWell.heightAnchor.constraint(equalToConstant: 24)
-    ])
-    for width in [2, 3, 5, 8] {
-      widthPicker.addItem(withTitle: "\(width)")
-      widthPicker.lastItem?.tag = width
+    let toolRow = row(toolButtons.map { $0 as NSView } + [undoButton, redoButton])
+    swatches = palette.enumerated().map { index, entry in
+      let swatch = button(entry.1, symbol: "", action: #selector(selectColor(_:)), width: 23)
+      swatch.tag = index
+      swatch.swatchColor = entry.0
+      swatch.isChosen = index == 0
+      return swatch
     }
-    widthPicker.selectItem(at: 1)
-    for size in [16, 24, 32, 48, 72] {
-      fontPicker.addItem(withTitle: "\(size)")
-      fontPicker.lastItem?.tag = size
-    }
-    fontPicker.selectItem(at: 1)
-    for picker in [widthPicker, fontPicker] {
-      picker.target = self
-      picker.action = #selector(changeStyle)
-    }
-    widthPicker.setAccessibilityLabel(text("AnnotationWidth"))
-    fontPicker.setAccessibilityLabel(text("AnnotationFontSize"))
+    styleSlider.target = self
+    styleSlider.action = #selector(changeSize)
+    styleSlider.isContinuous = true
+    styleSlider.controlSize = .small
+    styleSlider.widthAnchor.constraint(equalToConstant: 95).isActive = true
+    styleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+    styleValue.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    styleValue.alignment = .right
+    styleValue.widthAnchor.constraint(equalToConstant: 34).isActive = true
+    refreshStyle()
     let info = NSImageView(image: NSImage(
       systemSymbolName: "info.circle", accessibilityDescription: text("AnnotationInlineHelp")
     ) ?? NSImage())
@@ -275,21 +282,25 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       originalWasCopied ? "AnnotationExistingOriginalNotice" : "AnnotationPrivateNotice"
     )
     statusLabel.font = .systemFont(ofSize: 11)
-    statusLabel.textColor = .systemRed
-    statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    let grip = NSImageView(image: NSImage(
+    statusLabel.textColor = .secondaryLabelColor
+    let grip = ScreenshotToolbarGrip(image: NSImage(
       systemSymbolName: "line.3.horizontal", accessibilityDescription: text("AnnotationMoveToolbar")
     ) ?? NSImage())
     grip.toolTip = text("AnnotationMoveToolbar")
-    let styleRow = row([
-      grip, colorWell, NSTextField(labelWithString: text("AnnotationWidth")), widthPicker,
-      NSTextField(labelWithString: text("AnnotationFontSize")), fontPicker, info, statusLabel
-    ])
-    let rows = compact ? [toolRow, outputRow, styleRow] : [row([toolRow, outputRow]), styleRow]
+    let colors = row(swatches.map { $0 as NSView })
+    let adjustment = row([styleLabel, styleSlider, styleValue])
+    var rows: [NSView] = compact ? [row([grip, toolRow]), outputRow] : [row([grip, toolRow, outputRow])]
+    if narrow {
+      rows += [row([colors, info]), adjustment]
+    } else {
+      rows.append(row([colors, adjustment, info]))
+    }
+    rows.append(statusLabel)
+    statusLabel.stringValue = text("AnnotationToolbarShortcuts")
     let stack = NSStackView(views: rows)
     stack.orientation = .vertical
     stack.alignment = .leading
-    stack.spacing = 6
+    stack.spacing = 3
     stack.translatesAutoresizingMaskIntoConstraints = false
     annotationToolbar.addSubview(stack)
     NSLayoutConstraint.activate([
@@ -302,22 +313,24 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   private func row(_ views: [NSView]) -> NSStackView {
     let stack = NSStackView(views: views)
     stack.orientation = .horizontal
-    stack.spacing = 6
+    stack.spacing = 3
     stack.alignment = .centerY
     return stack
   }
 
-  private func button(_ key: String, symbol: String, action: Selector) -> NSButton {
-    let button = NSButton(
-      image: NSImage(systemSymbolName: symbol, accessibilityDescription: text(key)) ?? NSImage(),
-      target: self, action: action
-    )
-    button.bezelStyle = .texturedRounded
+  private func button(_ key: String, symbol: String, action: Selector, width: CGFloat = 28) -> ScreenshotToolbarButton {
+    let button = ScreenshotToolbarButton(frame: .zero)
+    button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: text(key))?
+      .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+    button.target = self
+    button.action = action
+    button.isBordered = false
     button.imagePosition = .imageOnly
+    button.contentTintColor = .white
     button.toolTip = text(key)
     button.setAccessibilityLabel(text(key))
     button.translatesAutoresizingMaskIntoConstraints = false
-    button.widthAnchor.constraint(equalToConstant: 30).isActive = true
+    button.widthAnchor.constraint(equalToConstant: width).isActive = true
     button.heightAnchor.constraint(equalToConstant: 28).isActive = true
     return button
   }
@@ -334,20 +347,113 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     statusLabel.setAccessibilityLabel(text("AnnotationOutputFailed"))
   }
 
-  @objc private func selectTool() {
+  @objc private func selectTool(_ sender: NSButton) {
     canvas.commitText()
-    guard let tool = ScreenshotAnnotationDocument.Tool(rawValue: toolPicker.selectedSegment) else { return }
+    guard let tool = ScreenshotAnnotationDocument.Tool(rawValue: sender.tag) else { return }
     canvas.tool = tool
+    for button in toolButtons { button.isChosen = button.tag == sender.tag }
+    refreshStyle()
     invalidateCursorRects(for: canvas)
     makeFirstResponder(canvas)
   }
 
-  @objc private func changeStyle() {
+  @objc private func selectColor(_ sender: NSButton) {
+    guard palette.indices.contains(sender.tag) else { return }
     canvas.commitText()
-    canvas.color = colorWell.color.withAlphaComponent(1)
-    canvas.lineWidth = CGFloat(widthPicker.selectedItem?.tag ?? 3)
-    canvas.fontSize = CGFloat(fontPicker.selectedItem?.tag ?? 24)
+    canvas.color = palette[sender.tag].0
+    for swatch in swatches { swatch.isChosen = swatch.tag == sender.tag }
     makeFirstResponder(canvas)
+  }
+
+  private func refreshStyle() {
+    let isText = canvas.tool == .text
+    let label = text(isText ? "AnnotationFontSize" : "AnnotationWidth")
+    styleLabel.stringValue = label
+    styleSlider.setAccessibilityLabel(label)
+    styleSlider.minValue = isText ? 10 : 1
+    styleSlider.maxValue = isText ? 120 : 40
+    styleSlider.doubleValue = isText ? canvas.fontSize : canvas.lineWidth
+    styleSlider.isEnabled = canvas.tool != .redact
+    styleValue.stringValue = canvas.tool == .redact ? "—" : "\(styleSlider.integerValue)"
+  }
+
+  @objc private func changeSize() {
+    let size = CGFloat(styleSlider.doubleValue.rounded())
+    if canvas.tool == .text {
+      canvas.fontSize = size
+    } else if canvas.tool != .redact {
+      canvas.lineWidth = size
+    }
+    styleValue.stringValue = "\(Int(size))"
+  }
+
+  @objc private func recognizeText() {
+    guard recognitionTask == nil, !isFinished else { return }
+    clearRecognition()
+    canvas.commitText()
+    guard let image = canvas.document.renderedImage() else { showOutputError(); return }
+    recognitionButton.isEnabled = false
+    statusLabel.stringValue = text("AnnotationRecognizingText")
+    recognitionTask = Task { [weak self] in
+      let worker = Task.detached(priority: .userInitiated) { try ScreenshotTextRecognition.recognize(image) }
+      let result = await withTaskCancellationHandler { await worker.result } onCancel: { worker.cancel() }
+      guard !Task.isCancelled, let self, !isFinished else { return }
+      recognitionTask = nil
+      recognitionButton.isEnabled = true
+      switch result {
+      case .success(let value) where !value.isEmpty:
+        statusLabel.stringValue = text("AnnotationToolbarShortcuts")
+        showRecognizedText(value)
+      case .success:
+        statusLabel.stringValue = text("AnnotationNoText")
+      case .failure:
+        statusLabel.stringValue = text("AnnotationRecognitionFailed")
+      }
+    }
+  }
+
+  private func clearRecognition() {
+    if recognitionTask != nil {
+      statusLabel.stringValue = text("AnnotationToolbarShortcuts")
+    }
+    recognitionTask?.cancel()
+    recognitionTask = nil
+    recognitionPopover?.close()
+    recognitionPopover = nil
+    recognitionButton.isEnabled = true
+    recognizedText = ""
+  }
+
+  private func showRecognizedText(_ value: String) {
+    recognizedText = value
+    let content = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 210))
+    let scroll = NSTextView.scrollableTextView()
+    scroll.frame = NSRect(x: 12, y: 43, width: 276, height: 155)
+    let resultView = scroll.documentView as? NSTextView
+    resultView?.isEditable = false
+    resultView?.string = value
+    resultView?.font = .systemFont(ofSize: 13)
+    resultView?.setAccessibilityLabel(text("AnnotationRecognizeText"))
+    content.addSubview(scroll)
+    let copy = NSButton(title: text("AnnotationCopyText"), target: self, action: #selector(copyRecognizedText))
+    copy.sizeToFit()
+    copy.setFrameOrigin(NSPoint(x: 10, y: 8))
+    content.addSubview(copy)
+    let controller = NSViewController()
+    controller.view = content
+    let popover = NSPopover()
+    popover.contentViewController = controller
+    popover.contentSize = content.frame.size
+    popover.behavior = .transient
+    recognitionPopover = popover
+    popover.show(relativeTo: recognitionButton.bounds, of: recognitionButton, preferredEdge: .maxY)
+  }
+
+  @objc private func copyRecognizedText() {
+    guard !recognizedText.isEmpty else { return }
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(recognizedText, forType: .string)
+    clearRecognition()
   }
 
   @objc private func saveImage() {
@@ -378,6 +484,51 @@ final class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   private func text(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
   }
+}
+
+enum ScreenshotTextRecognition {
+  nonisolated static func recognize(_ image: CGImage) throws -> String {
+    try Task.checkCancellation()
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    let supported = try request.supportedRecognitionLanguages()
+    let languages = ["en-US", "zh-Hans", "zh-Hant"].filter(supported.contains)
+    if !languages.isEmpty { request.recognitionLanguages = languages }
+    try VNImageRequestHandler(cgImage: image).perform([request])
+    try Task.checkCancellation()
+    return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+  }
+}
+
+@MainActor
+final class ScreenshotToolbarButton: NSButton {
+  var isChosen = false { didSet { needsDisplay = true; setAccessibilityValue(isChosen) } }
+  var swatchColor: NSColor? { didSet { needsDisplay = true } }
+
+  override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
+
+  override func draw(_ dirtyRect: NSRect) {
+    let tile = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5)
+    if isChosen || cell?.isHighlighted == true {
+      NSColor.white.withAlphaComponent(0.22).setFill()
+      tile.fill()
+    }
+    if let swatchColor {
+      let dot = NSBezierPath(ovalIn: NSRect(x: bounds.midX - 7, y: bounds.midY - 7, width: 14, height: 14))
+      swatchColor.setFill()
+      dot.fill()
+      NSColor.white.withAlphaComponent(isChosen ? 1 : 0.4).setStroke()
+      dot.lineWidth = isChosen ? 2 : 1
+      dot.stroke()
+    } else {
+      super.draw(dirtyRect)
+    }
+  }
+}
+
+@MainActor
+private final class ScreenshotToolbarGrip: NSImageView {
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 @MainActor
@@ -437,7 +588,7 @@ private final class ScreenshotAnnotationOverlay: NSView {
   }
 
   override func mouseDown(with event: NSEvent) {
-    onCancel?()
+    window?.makeFirstResponder(nil)
   }
 
   override func rightMouseDown(with event: NSEvent) {

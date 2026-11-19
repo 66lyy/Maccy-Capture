@@ -40,7 +40,7 @@ struct ScreenshotSelectionTests {
     ) == capture)
   }
 
-  @Test("Releasing a region enters inline annotation or dedicated pinning after every overlay closes",
+  @Test("Annotation or dedicated pinning starts after every overlay closes",
         arguments: [false, true])
   func releaseActions(pinToScreen: Bool) async throws {
     let controller = controller()
@@ -57,6 +57,10 @@ struct ScreenshotSelectionTests {
     let view = try #require(windows.first?.selectionView)
     view.beginSelection(at: NSPoint(x: 10, y: 20))
     view.endSelection(at: NSPoint(x: 110, y: 80))
+    if !pinToScreen {
+      #expect(controller.isSelecting)
+      view.annotateSelection()
+    }
     let result = try #require(try await task.value)
     #expect(result.pinToScreen == pinToScreen)
     #expect(result.annotate == !pinToScreen)
@@ -84,7 +88,7 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
-  @Test("A normal region goes directly to annotation without an extra button or copying the original")
+  @Test("A normal region stays editable and does not copy the original before annotation")
   func annotateSelection() async throws {
     let controller = controller()
     let task = Task { try await controller.select(pinImmediately: false) }
@@ -93,11 +97,106 @@ struct ScreenshotSelectionTests {
     let view = try #require(windows.first?.selectionView)
     view.beginSelection(at: NSPoint(x: 20, y: 30))
     view.endSelection(at: NSPoint(x: 220, y: 180))
+    #expect(controller.isSelecting)
+    view.annotateSelection()
     let result = try #require(try await task.value)
     #expect(result.annotate)
     #expect(!result.pinToScreen)
     #expect(controller.windows.isEmpty)
     #expect(windows.allSatisfy { !$0.isVisible && $0.selectionView.onAnnotate == nil })
+  }
+
+  @Test("An existing selection can move, resize and nudge without capturing")
+  func adjustSelection() {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    var captures = 0
+    view.onCapture = { _, _ in captures += 1 }
+    view.beginSelection(at: NSPoint(x: 20, y: 30))
+    view.endSelection(at: NSPoint(x: 120, y: 130))
+    view.beginSelection(at: NSPoint(x: 50, y: 60))
+    view.endSelection(at: NSPoint(x: 110, y: 100))
+    #expect(view.selectedRect == NSRect(x: 80, y: 70, width: 100, height: 100))
+    view.nudge(dx: -1, dy: 10)
+    #expect(view.selectedRect == NSRect(x: 79, y: 80, width: 100, height: 100))
+    view.beginSelection(at: NSPoint(x: 179, y: 180))
+    view.endSelection(at: NSPoint(x: 200, y: 220))
+    #expect(view.selectedRect == NSRect(x: 79, y: 80, width: 121, height: 140))
+    view.nudge(dx: -500, dy: 500)
+    #expect(view.selectedRect == NSRect(x: 0, y: 160, width: 121, height: 140))
+    #expect(captures == 0)
+  }
+
+  @Test("Pointer nudges use whole screen points and stay on the display")
+  func nudgePointer() throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    var steps: [NSPoint] = []
+    view.movePointer = { steps.append($0) }
+    let hover = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: NSPoint(x: 2.4, y: 298.6), modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: hover)
+    view.nudge(dx: -1, dy: 1)
+    view.nudge(dx: -10, dy: 10)
+    #expect(steps == [NSPoint(x: 1, y: 300), NSPoint(x: 0, y: 300)])
+    #expect(view.selectedRect == nil)
+  }
+
+  @Test("Element bounds clip to the current display and keep the child-to-parent order")
+  func snapCandidates() {
+    let child = NSRect(x: 20, y: 30, width: 60, height: 30)
+    let parent = NSRect(x: -10, y: -15, width: 180, height: 160)
+    let bounds = NSRect(x: 0, y: 0, width: 160, height: 120)
+    let other = NSRect(x: 110, y: 70, width: 100, height: 80)
+    #expect(ScreenshotSelectionView.snapCandidates(
+      [child, child, other, parent, bounds], containing: NSPoint(x: 50, y: 40), bounds: bounds
+    ) == [child, bounds])
+  }
+
+  @Test("Option-Tab and Option-Shift-Tab select parent and child without using the live desktop",
+        arguments: [false, true])
+  func elementNavigation(useParent: Bool) async throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    let child = NSRect(x: 20, y: 30, width: 60, height: 30)
+    let parent = NSRect(x: 10, y: 15, width: 180, height: 160)
+    let point = NSPoint(x: 50, y: 40)
+    view.findElements = { _ in [child, parent] }
+    defer { view.finishInteraction() }
+    let hover = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: point, modifierFlags: .option,
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: hover)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: point) != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: point) == child)
+    let tab = try #require(NSEvent.keyEvent(
+      with: .keyDown, location: point, modifierFlags: .option, timestamp: 0, windowNumber: 0,
+      context: nil, characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
+    ))
+    view.keyDown(with: tab)
+    #expect(view.snapRectangle(near: point) == parent)
+    if !useParent {
+      let back = try #require(NSEvent.keyEvent(
+        with: .keyDown, location: point, modifierFlags: [.option, .shift], timestamp: 0, windowNumber: 0,
+        context: nil, characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
+      ))
+      view.keyDown(with: back)
+    }
+    let click = try #require(NSEvent.mouseEvent(
+      with: .leftMouseDown, location: point, modifierFlags: .option,
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+    ))
+    view.mouseDown(with: click)
+    #expect(view.selectedRect == (useParent ? parent : child))
   }
 
   @Test("Clicking without a usable selection does not capture an empty image")

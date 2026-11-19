@@ -1,4 +1,4 @@
-# Maccy Capture
+# Maccy-Capture
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -6,9 +6,9 @@ An **unofficial modified version** of **[p0deje/Maccy](https://github.com/p0deje
 It retains the original clipboard history features and adds region and full-screen capture,
 pinned screenshots, mouse-wheel and trackpad zoom, local image annotations, and language settings.
 This version uses a separate application identifier and disables the official automatic updater.
-Screenshots and annotations are processed locally, without cloud recognition or training services.
-Capture a region or the main display, then annotate directly in place using the attached
-Copy / Pin / Save toolbar—no separate annotation editor opens.
+Screenshots, annotations, and OCR are processed locally, without cloud recognition or training services.
+Move or resize a selected region, or hold Option to detect the window or accessible UI element under the pointer.
+Choose **Annotate** to open the attached drawing, OCR, Copy, Pin, and Save toolbar—no separate annotation editor opens.
 
 ## Download and Build
 
@@ -35,19 +35,15 @@ Version tags and manual builds are not subject to the documentation filter.
 
 ## In-App Updates
 
-Settings → General → Repository updates checks **this repository's `capture-latest` test release**,
-at launch and every six hours, with an option to disable automatic checks or check manually.
+Settings → General → Software Updates checks **this repository's public `capture-latest` test release**.
+Automatic checks run only at launch and can be turned off. Use **Check Now** to check manually.
 Update ZIPs are verified against this app's dedicated Ed25519 public key before extraction.
 Confirm **Install Update** to replace and restart the exact running modified app; changes take effect
 after that restart, without manually quitting and reopening it. Save annotations first:
 temporary pinned images close, but clipboard history is preserved.
 
-For this private repository, expand **Private repository access** and save a fine-grained GitHub token
-limited to this repository with **Contents: Read-only**. The token stays in this Mac's Keychain,
-is not included in the application or CI artifacts, and is sent only to `api.github.com` for updates.
-Do not paste tokens into issues or chat. Public repositories do not need a token.
-Checks send no clipboard, screenshots, history, system profile, or analytics.
-Expired credentials and incomplete releases leave the installed application unchanged.
+Checks are anonymous and send no clipboard, screenshots, history, system profile, or analytics.
+Unavailable or incomplete releases leave the installed application unchanged.
 Existing versions without this updater need one manual upgrade first.
 
 The separate update-signing key is held in the maintainer's Keychain and the repository's

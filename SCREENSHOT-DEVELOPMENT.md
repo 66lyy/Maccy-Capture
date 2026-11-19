@@ -27,7 +27,7 @@ plus Capture Now or Pin to Screen buttons.
 
 ## Capture Previews and Region Selection
 
-Main-display capture and ordinary region capture now enter inline annotation first.
+Main-display capture opens inline annotation directly; ordinary region capture first lets you adjust the box.
 The captured image stays at its original screen position, with a compact floating tool strip beside it,
 instead of opening a separate titled editor. Nothing is copied or added to history until you confirm
 Copy or Pin. Cancel discards the new capture.
@@ -43,10 +43,15 @@ Previews are held only in memory.
 The success sound can be disabled in General settings; canceled and failed captures do not play it.
 
 Region capture uses the app's own crosshair and selection overlay.
-Release the mouse to capture the region and annotate directly on the selected image.
-The attached tool strip offers drawing tools, undo/redo, Cancel, Copy, Pin, and Save PNG.
+After releasing the mouse, drag inside the box to move it or drag a corner to resize.
+Arrow keys move the pointer before selection, or the box after selection, by one screen point;
+hold Shift to move by ten. Hold Option over a window to preview its bounds;
+with Accessibility permission, Option-Tab moves to a parent and Option-Shift-Tab returns to a finer hovered element.
+Click the highlighted element to select it. Apps without accessible elements fall back to their window.
+Select **Annotate** or press E to open the inline toolbar, which offers drawing, undo/redo, OCR,
+Cancel, Copy, Pin, and Save PNG.
 Press Enter or ⌘C to copy, P to pin, or ⌘S to save; press Esc or ⌘W to cancel.
-Clicking outside the image and toolbar also cancels; while entering text, Esc first discards that text.
+Right-click cancels; while entering text, Esc first discards that text.
 The toolbar is placed below the image when space allows, above it near the screen edge,
 or inside the available display area for full-screen captures. It is never part of the exported PNG.
 Drag its grip or empty background to move it away from content you want to annotate.
@@ -131,7 +136,7 @@ It runs on pushes to `master` / `main`, `capture-v*` tags, pull requests, and ma
 The build job has read-only source permissions.
 After a successful default-branch build, a separate publishing job updates the
 `capture-latest` prerelease. Only that publishing job can write repository contents.
-Pull requests never publish, and the repository can remain private.
+Pull requests never publish. In-app updates require the release to be publicly accessible.
 
 Branch pushes and pull requests that change only Markdown, `docs/`, `LICENSE`,
 issue or pull request templates, `.gitignore`, or `.gitattributes` do not trigger builds.
@@ -153,7 +158,7 @@ After tests pass, `script/package_release.sh` builds a universal Release applica
 and verifies its signature, modified bundle identifier, and `arm64` / `x86_64` architectures.
 It produces:
 
-- `Maccy-Capture-VERSION-buildBUILD-REVISION-universal.zip`: `Maccy Capture.app` and license files.
+- `Maccy-Capture-VERSION-buildBUILD-REVISION-universal.zip`: `Maccy-Capture.app` and license files.
 - A matching `.dmg`: the app, an Applications shortcut, and license files.
 - `SHA256SUMS.txt`: SHA-256 checksums for both packages and the build information.
 - `BUILD-INFO.txt`: version, source revision, architectures, and signing limitations.
@@ -212,7 +217,7 @@ Do not commit real screenshots, clipboard databases, personal information, or si
 
 ## Application Identity and Permissions
 
-This version appears as `Maccy Capture` and uses the separate bundle identifier `local.maccy.capture`.
+This version appears as `Maccy-Capture` and uses the separate bundle identifier `local.maccy.capture`.
 It avoids sharing the original identifier, which could cause macOS to relaunch the wrong application.
 On first launch, the app locally migrates upstream preferences without overwriting existing
 preferences in this version or deleting the originals.
@@ -223,8 +228,8 @@ official releases over customized features.
 ## Repository Updates
 
 `SoftwareUpdater` is a single application-lifetime Sparkle controller started after normal launch.
-Automatic checks use the application's own preference and resolve this repository's `capture-latest`
-release through the GitHub API at launch and every six hours.
+The application's own preference controls a single automatic check at launch. Manual checks remain available.
+Each check resolves this repository's public `capture-latest` release without authentication.
 Each check resolves the current `capture-appcast.xml` asset ID, so a rolling release is not cached forever.
 Background discovery is skipped during capture or annotation; repeated checks cannot overlap.
 Sparkle's independent scheduler and automatic installation-on-quit are disabled.
@@ -232,15 +237,9 @@ The user confirms installation, which then restarts the running host bundle at i
 That restart bypasses Clear History on Quit, just like the existing internal restart.
 Temporary pins and unsaved annotations do not survive restart.
 
-The private-repository credential is a fine-grained token restricted to this repository with
-Contents: Read-only. Users enter it in General settings, not in chat or source code.
-It is a device-only, nonsynchronizing Keychain item; it is never stored in preferences, logs,
-package metadata, CI variables, or screenshots. Only the pinned GitHub API receives the token.
 Repository discovery refuses redirects; Sparkle's archive URLs must exactly match asset IDs and lengths
-from the resolved repository release. Cross-host download redirects use the system networking
-stack's authorization-header stripping. External release notes and system profiling are disabled.
-An expired token, invalid release, wrong package host, or signature failure leaves the existing app intact.
-After a code-signing identity change, a manual Check Now may require Keychain authorization again.
+from the resolved repository release. External release notes and system profiling are disabled.
+An unavailable or invalid release, mismatched package, or signature failure leaves the existing app intact.
 
 The update archive is signed after all packaging modifications with a dedicated Ed25519 key.
 `SUPublicEDKey` is committed in the app's Info.plist, and `SUVerifyUpdateBeforeExtraction` is enabled.
@@ -259,7 +258,7 @@ The unsigned legacy upstream `appcast.xml` is not used by this modified app.
 Clients without the new updater need one manual installation before subsequent in-app upgrades.
 
 After the bundle identifier changes, grant screen recording and any required accessibility permissions
-to `Maccy Capture` again.
+to `Maccy-Capture` again.
 The app actively requests screen recording permission at most once per process.
 The first request is not immediately followed by the app's own permission explanation.
 The settings prompt appears only on a later capture attempt if permission is still unavailable.
@@ -298,7 +297,7 @@ Real trackpad behavior still needs manual verification.
 Preview tests cover the default 2-second timeout, actual image binding, pin callbacks,
 non-activating windows, and multiple-display bounds.
 Selection tests use virtual displays and injected callbacks without showing windows.
-They cover dragging, coordinate conversion, inline annotation and immediate pinning on mouse release,
+They cover moving and resizing, coordinate conversion, inline annotation and immediate pinning on mouse release,
 keyboard actions, empty selections, repeated triggers, cancellation, timeouts,
 and cleanup after display changes, without reading the desktop.
 Identity and permission tests use simulated authorization callbacks and an isolated preference domain.
@@ -314,7 +313,7 @@ shortcut conflicts, and selection interactions.
 
 All annotation entry points use a borderless in-place overlay, not a separate editor window:
 
-- Release a normal region selection, or capture the main display. Selection windows close before capture;
+- Confirm Annotate after selecting a region, or capture the main display. Selection windows close before capture;
   the original remains in memory without first entering the clipboard or history.
 - Click the pencil button in the 2-second preview after copying. The inline overlay opens and the preview closes
   immediately; its original automatic timeout is not extended.
@@ -323,15 +322,17 @@ All annotation entry points use a borderless in-place overlay, not a separate ed
   Only one annotation session is allowed at a time; repeated capture shortcuts bring it forward.
 
 Tools include arrows, rectangles, ellipses, a freehand brush, single-line text,
-and opaque solid-black covers.
-Color, line width, and text size are adjustable.
+and opaque solid-color covers.
+Click a swatch to set the color for new marks, including covers. Drag the size slider
+to adjust stroke width (1–40 pt) or, with the text tool selected, font size (10–120 pt).
 Click to enter text, press Enter to confirm, or Esc to cancel the current text.
 Undo and redo support ⌘Z / ⇧⌘Z.
 Line width and text size are chosen relative to the displayed canvas,
 while annotations are stored in original-image pixel coordinates.
 The image keeps its capture rectangle and native aspect ratio; there is no independently resizable editor.
 Export retains the original pixel resolution regardless of the screen's backing scale.
-The compact toolbar uses icon buttons with localized hover labels and a color/stroke/text-size row.
+The compact toolbar groups drawing tools on the left and output actions on the right, with a second
+row for the palette and the contextual size slider.
 Narrow displays wrap the controls; display-configuration changes close the overlay without exporting.
 
 Copy and Finish writes only the flattened PNG to the local clipboard and history;
@@ -349,11 +350,12 @@ editable undo layers do not persist across sessions.
 
 Rendering uses the original `CGImage` pixel dimensions.
 Export creates a new flattened PNG without embedding the original or removable cover layers.
-Covers are forced to opaque black, aligned to whole pixels, and drawn after all other annotations.
+Covers use the selected color at full opacity, align to whole pixels, and are drawn after all other annotations.
 Changing color opacity or adding text later cannot reveal the image beneath a cover.
-This is not automatic recognition or redaction; users must check cover placement themselves.
-All image and text processing stays in local memory, without OCR, cloud recognition,
-network APIs, or training services.
+The text-recognition button runs Vision on the **flattened** image, including covers, with support for
+English and available Chinese models. Results are previewed locally; only an explicit Copy Text action
+writes to the clipboard. This is not automatic redaction. No image or recognized text is sent to a
+server, network API, or training service.
 
 The original behind a capture preview or pinned image may already be in the clipboard and history.
 Adding a cover later does not retroactively delete that original.

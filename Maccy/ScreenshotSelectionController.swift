@@ -1,9 +1,10 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 
 @MainActor
 final class ScreenshotSelectionController {
-  struct Display {
+  struct Display: Sendable {
     let frame: NSRect
     let captureFrame: NSRect
     let scale: CGFloat
@@ -99,7 +100,7 @@ final class ScreenshotSelectionController {
     ).integral
   }
 
-  static func screenRectangle(_ captureRect: NSRect, display: Display) -> NSRect {
+  nonisolated static func screenRectangle(_ captureRect: NSRect, display: Display) -> NSRect {
     NSRect(
       x: display.frame.minX + captureRect.minX - display.captureFrame.minX,
       y: display.frame.maxY - (captureRect.maxY - display.captureFrame.minY),
@@ -110,6 +111,17 @@ final class ScreenshotSelectionController {
   private func makeWindow(display: Display, pinImmediately: Bool) -> ScreenshotSelectionWindow {
     let window = ScreenshotSelectionWindow(frame: display.frame, scale: display.scale, pinImmediately: pinImmediately)
     window.onCancel = { [weak self] in self?.cancel() }
+    window.selectionView.movePointer = { point in
+      CGWarpMouseCursorPosition(CGPoint(
+        x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y
+      ))
+    }
+    window.selectionView.findElements = { point in
+      let global = NSPoint(x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y)
+      return ScreenshotElementDetection.rectangles(at: global).map {
+        Self.screenRectangle($0, display: display).offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+      }
+    }
     window.selectionView.onBegin = { [weak self, weak window] in
       guard let self, let window else { return }
       for other in windows where other !== window {
@@ -148,9 +160,7 @@ final class ScreenshotSelectionController {
     }
     for window in windows {
       window.onCancel = nil
-      window.selectionView.onBegin = nil
-      window.selectionView.onCapture = nil
-      window.selectionView.onAnnotate = nil
+      window.selectionView.finishInteraction()
       window.orderOut(nil)
       window.close()
     }
@@ -204,10 +214,12 @@ final class ScreenshotSelectionWindow: NSPanel, NSWindowDelegate {
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-       event.charactersIgnoringModifiers?.lowercased() == "w" {
-      onCancel?()
-      return true
+    if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+      switch event.charactersIgnoringModifiers?.lowercased() {
+      case "w": onCancel?(); return true
+      case "c": selectionView.captureSelection(pinToScreen: false); return true
+      default: break
+      }
     }
     return super.performKeyEquivalent(with: event)
   }
@@ -225,17 +237,34 @@ final class ScreenshotSelectionView: NSView {
   var onCapture: ((NSRect, Bool) -> Void)?
   var onAnnotate: ((NSRect) -> Void)?
   var onCancel: (() -> Void)?
+  var movePointer: ((NSPoint) -> Void)?
+  var findElements: (@Sendable (NSPoint) -> [NSRect])?
   private(set) var selectedRect: NSRect?
+
+  private enum Drag {
+    case new(NSPoint)
+    case move(NSPoint, NSRect)
+    case resize(NSPoint)
+  }
 
   private let scale: CGFloat
   private let pinImmediately: Bool
-  private var anchor: NSPoint?
+  private var drag: Drag?
+  private var pointer: NSPoint?
+  private var snapRects: [NSRect] = []
+  private var snapIndex = 0
+  private var lastProbe: NSPoint?
+  private var probing = false
+  private var wantsSnapping = false
+  private var elementTask: Task<Void, Never>?
+  private let actions = NSVisualEffectView()
 
   init(frame: NSRect, scale: CGFloat, pinImmediately: Bool) {
     self.scale = scale
     self.pinImmediately = pinImmediately
     super.init(frame: frame)
     setAccessibilityLabel(localized("ScreenshotSelectionHint"))
+    configureActions()
   }
 
   required init?(coder: NSCoder) { nil }
@@ -245,16 +274,65 @@ final class ScreenshotSelectionView: NSView {
 
   override func resetCursorRects() {
     addCursorRect(bounds, cursor: .crosshair)
+    if let selectedRect, drag == nil {
+      addCursorRect(selectedRect, cursor: .openHand)
+      for corner in Self.corners(of: selectedRect) {
+        addCursorRect(NSRect(x: corner.x - 6, y: corner.y - 6, width: 12, height: 12), cursor: .crosshair)
+      }
+    }
+    if !actions.isHidden { addCursorRect(actions.frame, cursor: .arrow) }
+  }
+
+  override func updateTrackingAreas() {
+    super.updateTrackingAreas()
+    trackingAreas.forEach(removeTrackingArea)
+    addTrackingArea(NSTrackingArea(
+      rect: .zero, options: [.inVisibleRect, .mouseMoved, .mouseEnteredAndExited, .activeAlways],
+      owner: self, userInfo: nil
+    ))
+  }
+
+  override func mouseMoved(with event: NSEvent) {
+    pointer = convert(event.locationInWindow, from: nil)
+    updateProbe(enabled: event.modifierFlags.contains(.option))
+  }
+
+  override func mouseExited(with event: NSEvent) {
+    pointer = nil
+    updateProbe(enabled: false)
+  }
+
+  override func flagsChanged(with event: NSEvent) {
+    pointer = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+    updateProbe(enabled: event.modifierFlags.contains(.option))
   }
 
   override func mouseDown(with event: NSEvent) {
     window?.makeKey()
     window?.makeFirstResponder(self)
-    beginSelection(at: convert(event.locationInWindow, from: nil))
+    let point = convert(event.locationInWindow, from: nil)
+    pointer = point
+    if event.clickCount == 2, selectedRect?.contains(point) == true {
+      captureSelection(pinToScreen: pinImmediately)
+      return
+    }
+    if event.modifierFlags.contains(.option),
+       let snap = snapRectangle(near: point) {
+      onBegin?()
+      selectedRect = snap
+      updateProbe(enabled: false)
+      if pinImmediately { captureSelection(pinToScreen: true) }
+      updateControls()
+      return
+    }
+    updateProbe(enabled: false)
+    beginSelection(at: point)
   }
 
   override func mouseDragged(with event: NSEvent) {
-    updateSelection(to: convert(event.locationInWindow, from: nil))
+    let point = convert(event.locationInWindow, from: nil)
+    pointer = point
+    updateSelection(to: point)
   }
 
   override func mouseUp(with event: NSEvent) {
@@ -270,11 +348,27 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func keyDown(with event: NSEvent) {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
     switch event.keyCode {
     case 53:
       onCancel?()
     case 36, 76:
-      captureSelection(pinToScreen: pinImmediately)
+      if selectedRect == nil, let pointer, let snap = snapRectangle(near: pointer) {
+        onBegin?()
+        selectedRect = snap
+        updateProbe(enabled: false)
+        if pinImmediately { captureSelection(pinToScreen: true) }
+        updateControls()
+      } else {
+        captureSelection(pinToScreen: pinImmediately)
+      }
+    case 48 where wantsSnapping:
+      cycleSnap(towardParent: !modifiers.contains(.shift))
+    case 123...126:
+      let step: CGFloat = modifiers.contains(.shift) ? 10 : 1
+      let dx: CGFloat = event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0
+      let dy: CGFloat = event.keyCode == 125 ? -step : event.keyCode == 126 ? step : 0
+      nudge(dx: dx, dy: dy)
     default:
       if event.charactersIgnoringModifiers?.lowercased() == "p" {
         captureSelection(pinToScreen: true)
@@ -285,36 +379,81 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func beginSelection(at point: NSPoint) {
+    if let selectedRect, !pinImmediately {
+      let corners = Self.corners(of: selectedRect)
+      if let index = corners.firstIndex(where: { hypot($0.x - point.x, $0.y - point.y) <= 8 }) {
+        drag = .resize(corners[3 - index])
+        updateControls()
+        return
+      }
+      if selectedRect.contains(point) {
+        drag = .move(point, selectedRect)
+        updateControls()
+        return
+      }
+    }
     onBegin?()
-    anchor = point
+    drag = .new(point)
     selectedRect = nil
-    needsDisplay = true
+    updateControls()
   }
 
   func updateSelection(to point: NSPoint) {
-    guard let anchor else { return }
-    selectedRect = Self.rectangle(from: anchor, to: point, bounds: bounds)
-    needsDisplay = true
+    guard let drag else { return }
+    switch drag {
+    case .new(let start), .resize(let start):
+      selectedRect = Self.rectangle(from: start, to: point, bounds: bounds)
+    case .move(let start, let rectangle):
+      selectedRect = Self.translated(rectangle, dx: point.x - start.x, dy: point.y - start.y, bounds: bounds)
+    }
+    updateControls()
   }
 
   func endSelection(at point: NSPoint) {
+    guard drag != nil else { return }
     updateSelection(to: point)
-    anchor = nil
+    drag = nil
     guard let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else {
       clearSelection()
       return
     }
     if pinImmediately {
       captureSelection(pinToScreen: true)
-    } else {
-      annotateSelection()
     }
+    updateControls()
   }
 
   func clearSelection() {
-    anchor = nil
+    drag = nil
     selectedRect = nil
-    needsDisplay = true
+    updateProbe(enabled: false)
+    updateControls()
+  }
+
+  func finishInteraction() {
+    elementTask?.cancel()
+    elementTask = nil
+    onBegin = nil
+    onCapture = nil
+    onAnnotate = nil
+    onCancel = nil
+    movePointer = nil
+    findElements = nil
+  }
+
+  func nudge(dx: CGFloat, dy: CGFloat) {
+    if drag != nil {
+      let point = pointer ?? window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+      guard let point else { return }
+      let next = moveCrosshair(from: point, dx: dx, dy: dy)
+      updateSelection(to: next)
+    } else if let selectedRect {
+      self.selectedRect = Self.translated(selectedRect, dx: dx, dy: dy, bounds: bounds)
+      updateControls()
+    } else if let point = pointer ?? window.map({ convert($0.mouseLocationOutsideOfEventStream, from: nil) }) {
+      _ = moveCrosshair(from: point, dx: dx, dy: dy)
+      updateProbe(enabled: wantsSnapping)
+    }
   }
 
   func captureSelection(pinToScreen: Bool) {
@@ -325,6 +464,136 @@ final class ScreenshotSelectionView: NSView {
   @objc func annotateSelection() {
     guard let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else { return }
     onAnnotate?(selectedRect)
+  }
+
+  @objc private func copySelection() { captureSelection(pinToScreen: false) }
+  @objc private func pinSelection() { captureSelection(pinToScreen: true) }
+  @objc private func cancelSelection() { onCancel?() }
+
+  private func configureActions() {
+    actions.appearance = NSAppearance(named: .darkAqua)
+    actions.material = .hudWindow
+    actions.blendingMode = .withinWindow
+    actions.state = .active
+    actions.wantsLayer = true
+    actions.layer?.cornerRadius = 9
+    actions.layer?.masksToBounds = true
+    let edit = NSButton(title: localized("ScreenshotEditSelection"), target: self, action: #selector(annotateSelection))
+    edit.bezelStyle = .rounded
+    let buttons: [(String, String, Selector)] = [
+      ("AnnotationCopy", "doc.on.doc", #selector(copySelection)),
+      ("ScreenshotPinImage", "pin.fill", #selector(pinSelection)),
+      ("ScreenshotCancel", "xmark", #selector(cancelSelection))
+    ]
+    let controls = buttons.map { key, symbol, selector in
+      let button = ScreenshotToolbarButton(frame: .zero)
+      button.isBordered = false
+      button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: localized(key))
+      button.contentTintColor = .white
+      button.toolTip = localized(key)
+      button.setAccessibilityLabel(localized(key))
+      button.target = self
+      button.action = selector
+      button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+      button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+      return button
+    }
+    let stack = NSStackView(views: [edit as NSView] + controls.map { $0 as NSView })
+    stack.spacing = 4
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    actions.addSubview(stack)
+    NSLayoutConstraint.activate([
+      stack.centerXAnchor.constraint(equalTo: actions.centerXAnchor),
+      stack.centerYAnchor.constraint(equalTo: actions.centerYAnchor)
+    ])
+    actions.isHidden = true
+    addSubview(actions)
+  }
+
+  private func updateControls() {
+    if let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3, drag == nil, !pinImmediately {
+      actions.frame = ScreenshotAnnotationWindow.toolbarFrame(
+        beside: selectedRect, bounds: bounds, size: NSSize(width: 210, height: 38)
+      )
+      actions.isHidden = false
+    } else {
+      actions.isHidden = true
+    }
+    window?.invalidateCursorRects(for: self)
+    needsDisplay = true
+  }
+
+  private func moveCrosshair(from point: NSPoint, dx: CGFloat, dy: CGFloat) -> NSPoint {
+    let next = NSPoint(
+      x: max(bounds.minX, min((point.x + dx).rounded(), bounds.maxX - 1)),
+      y: max(bounds.minY + 1, min((point.y + dy).rounded(), bounds.maxY))
+    )
+    pointer = next
+    movePointer?(next)
+    return next
+  }
+
+  private func updateProbe(enabled: Bool) {
+    wantsSnapping = enabled && selectedRect == nil && drag == nil
+    if !wantsSnapping {
+      snapRects = []
+      lastProbe = nil
+      needsDisplay = true
+      return
+    }
+    guard let pointer, bounds.contains(pointer), let findElements, !probing,
+          lastProbe.map({ hypot($0.x - pointer.x, $0.y - pointer.y) >= 3 }) ?? true else { return }
+    probing = true
+    lastProbe = pointer
+    snapRects = []
+    elementTask = Task { [weak self] in
+      let worker = Task.detached(priority: .userInitiated) { findElements(pointer) }
+      let rectangles = await worker.value
+      try? await Task.sleep(for: .milliseconds(50))
+      guard let self, !Task.isCancelled else { return }
+      probing = false
+      elementTask = nil
+      if wantsSnapping, self.pointer.map({ hypot($0.x - pointer.x, $0.y - pointer.y) < 3 }) == true {
+        snapRects = Self.snapCandidates(rectangles, containing: pointer, bounds: bounds)
+        snapIndex = 0
+      }
+      needsDisplay = true
+      if wantsSnapping { updateProbe(enabled: true) }
+    }
+  }
+
+  private func cycleSnap(towardParent: Bool) {
+    guard !snapRects.isEmpty else { return }
+    snapIndex = max(0, min(snapRects.count - 1, snapIndex + (towardParent ? 1 : -1)))
+    needsDisplay = true
+  }
+
+  func snapRectangle(near point: NSPoint) -> NSRect? {
+    guard let lastProbe, hypot(lastProbe.x - point.x, lastProbe.y - point.y) < 3,
+          snapRects.indices.contains(snapIndex) else { return nil }
+    return snapRects[snapIndex]
+  }
+
+  static func snapCandidates(_ rectangles: [NSRect], containing point: NSPoint, bounds: NSRect) -> [NSRect] {
+    rectangles.reduce(into: []) { result, rectangle in
+      let clipped = rectangle.intersection(bounds)
+      if clipped.width >= 3, clipped.height >= 3, clipped.contains(point), !result.contains(clipped) {
+        result.append(clipped)
+      }
+    }
+  }
+
+  static func translated(_ rect: NSRect, dx: CGFloat, dy: CGFloat, bounds: NSRect) -> NSRect {
+    NSRect(
+      x: max(bounds.minX, min(rect.minX + dx, bounds.maxX - rect.width)),
+      y: max(bounds.minY, min(rect.minY + dy, bounds.maxY - rect.height)),
+      width: rect.width, height: rect.height
+    )
+  }
+
+  private static func corners(of rect: NSRect) -> [NSPoint] {
+    [NSPoint(x: rect.minX, y: rect.minY), NSPoint(x: rect.minX, y: rect.maxY),
+     NSPoint(x: rect.maxX, y: rect.minY), NSPoint(x: rect.maxX, y: rect.maxY)]
   }
 
   static func rectangle(from start: NSPoint, to end: NSPoint, bounds: NSRect) -> NSRect {
@@ -344,22 +613,35 @@ final class ScreenshotSelectionView: NSView {
     NSColor.clear.setFill()
     bounds.fill(using: .copy)
     let shade = NSBezierPath(rect: bounds)
-    if let selectedRect {
-      shade.appendRect(selectedRect)
+    let activeRect = selectedRect ?? pointer.flatMap { snapRectangle(near: $0) }
+    if let activeRect {
+      shade.appendRect(activeRect)
     }
     shade.windingRule = .evenOdd
     NSColor.black.withAlphaComponent(0.12).setFill()
     shade.fill()
-    if let selectedRect {
-      NSColor.controlAccentColor.setStroke()
-      let border = NSBezierPath(rect: selectedRect.insetBy(dx: 1, dy: 1))
+    if let activeRect {
+      NSColor.systemCyan.setStroke()
+      let border = NSBezierPath(rect: activeRect.insetBy(dx: 1, dy: 1))
       border.lineWidth = 2
       border.stroke()
-      let dimensions = "\(Int(selectedRect.width * scale)) × \(Int(selectedRect.height * scale)) px"
-      drawPill(dimensions, near: NSPoint(x: selectedRect.minX, y: selectedRect.maxY + 8))
+      if selectedRect != nil, drag == nil {
+        for corner in Self.corners(of: activeRect) {
+          NSColor.white.setFill()
+          let handle = NSBezierPath(ovalIn: NSRect(x: corner.x - 3, y: corner.y - 3, width: 6, height: 6))
+          handle.fill()
+          handle.stroke()
+        }
+      }
+      let dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
+      drawPill(dimensions, near: NSPoint(x: activeRect.minX, y: activeRect.maxY + 8))
     } else {
       let key = pinImmediately ? "ScreenshotSelectionPinInstructions" : "ScreenshotSelectionInstructions"
       drawPill(localized(key), near: NSPoint(x: bounds.midX - 190, y: bounds.maxY - 64))
+    }
+    if wantsSnapping {
+      let key = AXIsProcessTrusted() ? "ScreenshotElementHint" : "ScreenshotElementPermissionHint"
+      drawPill(localized(key), near: NSPoint(x: 12, y: 12))
     }
   }
 
@@ -380,5 +662,57 @@ final class ScreenshotSelectionView: NSView {
 
   private func localized(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+}
+
+enum ScreenshotElementDetection {
+  nonisolated static func rectangles(at point: NSPoint) -> [NSRect] {
+    guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
+                                                   kCGNullWindowID) as? [[String: Any]] else { return [] }
+    let ownPID = ProcessInfo.processInfo.processIdentifier
+    for window in windows {
+      guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
+            window[kCGWindowLayer as String] as? Int == 0,
+            let bounds = window[kCGWindowBounds as String] as? [String: Any],
+            let rectangle = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+      else { continue }
+      guard rectangle.contains(point) else { continue }
+      guard AXIsProcessTrusted() else { return [rectangle] }
+      let application = AXUIElementCreateApplication(pid)
+      AXUIElementSetMessagingTimeout(application, 0.06)
+      var hit: AXUIElement?
+      guard AXUIElementCopyElementAtPosition(application, Float(point.x), Float(point.y), &hit) == .success
+      else { return [rectangle] }
+      var rectangles: [NSRect] = []
+      for _ in 0..<6 {
+        guard let element = hit else { break }
+        AXUIElementSetMessagingTimeout(element, 0.04)
+        if let position: CGPoint = value(kAXPositionAttribute, element: element, type: .cgPoint, zero: .zero),
+           let size: CGSize = value(kAXSizeAttribute, element: element, type: .cgSize, zero: .zero) {
+          let frame = NSRect(origin: position, size: size).intersection(rectangle)
+          if frame.contains(point) { rectangles.append(frame) }
+        }
+        var parent: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parent) == .success,
+              let parent, CFGetTypeID(parent) == AXUIElementGetTypeID(), !CFEqual(parent, element) else { break }
+        hit = (parent as! AXUIElement)
+      }
+      return rectangles + [rectangle]
+    }
+    return []
+  }
+
+  nonisolated private static func value<Value>(
+    _ attribute: String, element: AXUIElement, type: AXValueType, zero: Value
+  ) -> Value? {
+    var raw: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, attribute as CFString, &raw) == .success,
+          let raw, CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+    let value = raw as! AXValue
+    guard AXValueGetType(value) == type else { return nil }
+    var result = zero
+    return withUnsafeMutablePointer(to: &result) { pointer in
+      AXValueGetValue(value, type, pointer)
+    } ? result : nil
   }
 }

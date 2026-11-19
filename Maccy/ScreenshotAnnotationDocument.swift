@@ -75,14 +75,18 @@ final class ScreenshotAnnotationDocument {
   }
 
   func pngData() -> Data? {
+    guard let image = renderedImage() else { return nil }
+    return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+  }
+
+  func renderedImage() -> CGImage? {
     guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(
             data: nil, width: sourceImage.width, height: sourceImage.height, bitsPerComponent: 8,
             bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
           ) else { return nil }
     draw(in: context)
-    guard let image = context.makeImage() else { return nil }
-    return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+    return context.makeImage()
   }
 
   func draw(in context: CGContext, preview: Mark? = nil) {
@@ -145,7 +149,7 @@ final class ScreenshotAnnotationDocument {
     case .redact:
       context.setShouldAntialias(false)
       context.setBlendMode(.copy)
-      context.setFillColor(NSColor.black.cgColor)
+      context.setFillColor(color.cgColor)
       context.fill(rectangle.integral)
     }
   }

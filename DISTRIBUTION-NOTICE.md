@@ -1,4 +1,4 @@
-# Maccy Capture — Unofficial Distribution Notice
+# Maccy-Capture — Unofficial Distribution Notice
 
 **English** | [简体中文](DISTRIBUTION-NOTICE.zh-CN.md)
 
@@ -15,6 +15,9 @@ The upstream author is not responsible for this version's features, quality, or 
 This is not an official release and does not imply sponsorship, approval, or endorsement
 by the upstream author.
 
+The fork's purple viewfinder icon is a new drawing inspired by the upstream feather.
+Its editable source is `artwork/capture-icon.svg`; it is not the original Maccy icon.
+
 The Maccy name identifies the upstream source; this project claims no exclusive rights
 to the upstream name, trademarks, or icons.
 The code license should not be treated as authorization to use all branding, icons, or other assets.
@@ -30,7 +33,7 @@ Automatically generated ZIP and DMG packages include:
 - `DISTRIBUTION-NOTICE.zh-CN.md`: this notice in Simplified Chinese.
 - `ThirdPartyLicenses/`: third-party licenses, notices, and source records collected from `Package.resolved`.
 
-These files are also included in `Maccy Capture.app/Contents/Resources/`,
+These files are also included in `Maccy-Capture.app/Contents/Resources/`,
 so they remain with the app after it is dragged into Applications.
 Do not remove applicable copyright, license, or notice files when redistributing.
 Third-party components retain their own licenses; including those licenses does not mean

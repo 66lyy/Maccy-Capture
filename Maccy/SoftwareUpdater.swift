@@ -15,13 +15,10 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   var automaticallyChecksForUpdates: Bool {
     didSet {
       defaults.set(automaticallyChecksForUpdates, forKey: Self.automaticChecksKey)
-      guard isStarted else { return }
-      scheduleChecks()
     }
   }
 
   private(set) var isChecking = false
-  private(set) var hasCredential = false
   private(set) var statusKey = "UpdateReady"
   var isBusy: Bool { isChecking || updaterController?.updater.sessionInProgress == true }
   var currentVersion: String {
@@ -31,28 +28,18 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   }
 
   @ObservationIgnored private let defaults: UserDefaults
-  @ObservationIgnored private let readCredential: (Bool) throws -> String?
-  @ObservationIgnored private let writeCredential: (String) throws -> Void
-  @ObservationIgnored private let removeCredential: () throws -> Void
   @ObservationIgnored private let load: (URLRequest) async throws -> (Data, URLResponse)
   @ObservationIgnored private var updaterController: SPUStandardUpdaterController?
   @ObservationIgnored private var checkTask: Task<Void, Never>?
-  @ObservationIgnored private var scheduleTask: Task<Void, Never>?
   @ObservationIgnored private var resolved: RepositoryUpdateFeed.Resolved?
   @ObservationIgnored private var isStarted = false
   @ObservationIgnored private var isUpdaterStarted = false
 
   init(
     defaults: UserDefaults = .standard,
-    readCredential: @escaping (Bool) throws -> String? = { try RepositoryUpdateCredential.read(allowInteraction: $0) },
-    writeCredential: @escaping (String) throws -> Void = RepositoryUpdateCredential.write,
-    removeCredential: @escaping () throws -> Void = RepositoryUpdateCredential.remove,
     load: @escaping (URLRequest) async throws -> (Data, URLResponse) = { try await RepositoryUpdateSession().load($0) }
   ) {
     self.defaults = defaults
-    self.readCredential = readCredential
-    self.writeCredential = writeCredential
-    self.removeCredential = removeCredential
     self.load = load
     automaticallyChecksForUpdates = defaults.object(forKey: Self.automaticChecksKey) as? Bool ?? true
     super.init()
@@ -61,34 +48,8 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   func start() {
     guard !AppDelegate.isTesting, isAvailable, !isStarted else { return }
     isStarted = true
-    refreshCredential()
-    scheduleChecks()
-  }
-
-  func saveAccessToken(_ token: String) -> Bool {
-    guard !isBusy else { return false }
-    let token = token.trimmingCharacters(in: .whitespacesAndNewlines)
-    do {
-      guard RepositoryUpdateCredential.valid(token) else { throw RepositoryUpdateCredential.Failure.invalidToken }
-      try writeCredential(token)
-      hasCredential = true
-      statusKey = "UpdateCredentialSaved"
-      return true
-    } catch {
-      statusKey = "UpdateCredentialFailed"
-      return false
-    }
-  }
-
-  func clearAccessToken() {
-    guard !isBusy else { return }
-    do {
-      try removeCredential()
-      updaterController?.updater.httpHeaders = nil
-      hasCredential = false
-      statusKey = "UpdateCredentialRemoved"
-    } catch {
-      statusKey = "UpdateCredentialFailed"
+    if automaticallyChecksForUpdates {
+      check(userInitiated: false)
     }
   }
 
@@ -97,32 +58,8 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   }
 
   func stop() {
-    scheduleTask?.cancel()
     checkTask?.cancel()
-    scheduleTask = nil
     checkTask = nil
-    isStarted = false
-  }
-
-  private func refreshCredential() {
-    do {
-      hasCredential = try readCredential(false) != nil
-    } catch {
-      statusKey = "UpdateCredentialFailed"
-    }
-  }
-
-  private func scheduleChecks() {
-    scheduleTask?.cancel()
-    guard automaticallyChecksForUpdates else { return }
-    scheduleTask = Task { [weak self] in
-      while !Task.isCancelled {
-        self?.check(userInitiated: false)
-        do {
-          try await Task.sleep(for: .seconds(21_600))
-        } catch { return }
-      }
-    }
   }
 
   private func check(userInitiated: Bool) {
@@ -137,15 +74,12 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
         checkTask = nil
       }
       do {
-        let token = try readCredential(userInitiated)
-        hasCredential = token != nil
         let feed = RepositoryUpdateFeed()
-        let (data, response) = try await load(feed.request(token: token))
+        let (data, response) = try await load(feed.request())
         try Task.checkCancellation()
         resolved = try feed.resolve(data: data, response: response)
         let updater = prepareUpdater()
         updater.httpHeaders = ["Accept": "application/octet-stream"]
-        if let token { updater.httpHeaders?["Authorization"] = "Bearer \(token)" }
         if !isUpdaterStarted {
           try updater.start()
           isUpdaterStarted = true
@@ -157,12 +91,8 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
         }
       } catch is CancellationError {
         statusKey = "UpdateReady"
-      } catch RepositoryUpdateFeed.Failure.authorizationRequired {
-        statusKey = "UpdateAuthorizationRequired"
       } catch RepositoryUpdateFeed.Failure.unavailable {
         statusKey = "UpdateReleaseUnavailable"
-      } catch is RepositoryUpdateCredential.Failure {
-        statusKey = "UpdateCredentialFailed"
       } catch {
         statusKey = "UpdateCheckFailed"
       }
@@ -212,7 +142,6 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     _ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest
   ) {
     guard resolved?.permits(item.fileURL, length: item.contentLength) == true, request.url == item.fileURL else {
-      request.setValue(nil, forHTTPHeaderField: "Authorization")
       request.url = URL(string: "about:blank")
       return
     }

@@ -5,6 +5,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   let document: ScreenshotAnnotationDocument
   var onChange: (() -> Void)?
   var onCancel: (() -> Void)?
+  var onBeginMark: (() -> Void)?
   var tool: ScreenshotAnnotationDocument.Tool = .arrow
   var color = NSColor.red
   var lineWidth: CGFloat = 3
@@ -66,6 +67,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
 
   func beginMark(at point: NSPoint) {
     guard let imagePoint = imagePoint(at: point) else { return }
+    onBeginMark?()
     if tool == .text {
       beginText(at: point)
       return

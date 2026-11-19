@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" x2="0.84" y1="0" y2="1">
+      <stop stop-color="#382979"/>
+      <stop offset="1" stop-color="#191836"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="0" x2="1" y1="0" y2="1">
+      <stop stop-color="#90f7cb"/>
+      <stop offset="1" stop-color="#27c2eb"/>
+    </linearGradient>
+  </defs>
+  <path fill="#16132e" opacity=".23" d="M288 115H736Q936 115 936 315V748Q936 948 736 948H288Q88 948 88 748V315Q88 115 288 115Z"/>
+  <path fill="url(#tile)" stroke="#8373c4" stroke-width="3" d="M294 100H730Q925 100 925 295V729Q925 924 730 924H294Q99 924 99 729V295Q99 100 294 100Z"/>
+  <path d="M247 383V299Q247 245 301 245H385M639 245H723Q777 245 777 299V383M777 641V725Q777 779 723 779H639M385 779H301Q247 779 247 725V641"
+        fill="none" stroke="#dedaff" stroke-width="32" stroke-linecap="round"/>
+  <path d="M512 273C579 273 625 369 625 458C625 547 581 609 512 632C443 609 399 547 399 458C399 369 445 273 512 273Z"
+        fill="url(#feather)" stroke="#f0fffb" stroke-width="22"/>
+  <path d="M512 359V745M512 519L574 474M512 699L560 665M512 709L467 678"
+        fill="none" stroke="#f0fffb" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

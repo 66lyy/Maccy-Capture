@@ -37,19 +37,19 @@ struct ScreenshotAnnotationTests {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
     document.append(.init(
       tool: .redact, points: [NSPoint(x: 20.2, y: 20.2), NSPoint(x: 180.8, y: 100.8)],
-      color: NSColor.red.withAlphaComponent(0)
+      color: NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 0)
     ))
     document.append(.init(
       tool: .text, points: [NSPoint(x: 40, y: 40)], color: .white, text: "Sample", fontSize: 32
     ))
     let bitmap = try bitmap(document)
+    let fill = try color(bitmap, x: 21, y: 138)
+    #expect(fill.redComponent > 0.9 && fill.greenComponent < 0.2 && fill.blueComponent < 0.2)
+    #expect(fill.alphaComponent > 0.999)
     for column in stride(from: 21, through: 179, by: 4) {
       for row in stride(from: 21, through: 99, by: 4) {
         let pixel = try color(bitmap, x: column, y: 159 - row)
-        #expect(pixel.redComponent < 0.001)
-        #expect(pixel.greenComponent < 0.001)
-        #expect(pixel.blueComponent < 0.001)
-        #expect(pixel.alphaComponent > 0.999)
+        #expect(pixel == fill)
       }
     }
     #expect(try color(bitmap, x: 10, y: 10).blueComponent > 0.9)
@@ -204,8 +204,12 @@ struct ScreenshotAnnotationTests {
     let content = try #require(window.contentView)
     content.layoutSubtreeIfNeeded()
     #expect(window.canvas.frame.width > 500 && window.canvas.frame.height > 200)
-    #expect(window.toolPicker.segmentCount == 6)
-    #expect(window.toolPicker.frame.width > 150 && window.toolPicker.frame.height > 15)
+    #expect(window.toolButtons.count == 6)
+    for button in window.toolButtons {
+      #expect(abs(button.frame.width - window.copyButton.frame.width) <= 1)
+      #expect(abs(button.frame.height - window.copyButton.frame.height) <= 1)
+      #expect(button.frame.width >= 26 && button.frame.height >= 26)
+    }
     #expect(window.undoButton.frame.width > 20 && window.undoButton.frame.height > 15)
     #expect(!window.styleMask.contains(.titled))
     #expect(!window.styleMask.contains(.resizable))
@@ -237,6 +241,54 @@ struct ScreenshotAnnotationTests {
       to: URL(fileURLWithPath: "/private/tmp/maccy-annotation-editor-synthetic.png")
     )
     #expect(!window.isVisible)
+  }
+
+  @Test("Palette changes the cover color and the contextual slider preserves both sizes")
+  func paletteAndSize() throws {
+    let window = try editor()
+    defer { window.close() }
+    let canvas = window.canvas
+    window.swatches[3].performClick(nil)
+    window.toolButtons[5].performClick(nil)
+    #expect(canvas.tool == .redact)
+    #expect(window.swatches[3].isChosen)
+    #expect(!window.styleSlider.isEnabled)
+    canvas.beginMark(at: NSPoint(x: 40, y: 40))
+    canvas.endMark(at: NSPoint(x: 100, y: 100))
+    #expect(canvas.document.marks.last?.color == .systemGreen)
+
+    window.toolButtons[0].performClick(nil)
+    window.styleSlider.doubleValue = 15
+    window.styleSlider.sendAction(window.styleSlider.action, to: window.styleSlider.target)
+    #expect(canvas.lineWidth == 15)
+    window.toolButtons[4].performClick(nil)
+    window.styleSlider.doubleValue = 55
+    window.styleSlider.sendAction(window.styleSlider.action, to: window.styleSlider.target)
+    #expect(canvas.fontSize == 55)
+    #expect(canvas.lineWidth == 15)
+    window.toolButtons[0].performClick(nil)
+    #expect(window.styleSlider.doubleValue == 15)
+  }
+
+  @Test("Vision reads synthetic text locally and does not see text behind a solid cover")
+  func localRecognition() throws {
+    let image = NSImage(size: NSSize(width: 640, height: 160), flipped: false) { rect in
+      NSColor.white.setFill()
+      rect.fill()
+      ("SAMPLE 42" as NSString).draw(at: NSPoint(x: 55, y: 45), withAttributes: [
+        .font: NSFont.systemFont(ofSize: 64, weight: .semibold),
+        .foregroundColor: NSColor.black
+      ])
+      return true
+    }
+    let document = try #require(ScreenshotAnnotationDocument(image: image))
+    let source = try #require(document.renderedImage())
+    #expect(try ScreenshotTextRecognition.recognize(source).contains("SAMPLE 42"))
+    document.append(.init(
+      tool: .redact, points: [.zero, NSPoint(x: document.imageSize.width, y: document.imageSize.height)], color: .white
+    ))
+    let covered = try #require(document.renderedImage())
+    #expect(try ScreenshotTextRecognition.recognize(covered).isEmpty)
   }
 
   @Test("Toolbar copy and pin export only a flattened result", arguments: [false, true])
@@ -318,11 +370,11 @@ struct ScreenshotAnnotationTests {
 
   @Test("Narrow displays wrap toolbar controls without hiding the copy or pin actions")
   func compactInlineToolbar() throws {
-    let display = NSRect(x: 0, y: 0, width: 480, height: 800)
+    let display = NSRect(x: 0, y: 0, width: 450, height: 800)
     let window = try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
     defer { window.close() }
     window.contentView?.layoutSubtreeIfNeeded()
-    for control in [window.toolPicker as NSView, window.copyButton as NSView, window.pinButton as NSView] {
+    for control in [window.toolButtons[0] as NSView, window.copyButton as NSView, window.pinButton as NSView] {
       #expect(window.annotationToolbar.bounds.contains(window.annotationToolbar.convert(control.bounds, from: control)))
       #expect(control.frame.width > 20)
     }

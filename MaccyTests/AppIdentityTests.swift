@@ -59,6 +59,8 @@ struct AppIdentityTests {
   func independentIdentity() {
     #expect(AppIdentity.customizedIdentifier != AppIdentity.originalIdentifier)
     #expect(Bundle.main.bundleIdentifier == AppIdentity.customizedIdentifier)
+    #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == "Maccy-Capture")
+    #expect(Bundle.main.url(forResource: "CaptureIcon", withExtension: "icns") != nil)
     #expect(AppIdentity.isCustomizedBuild)
     #expect(SoftwareUpdater().isAvailable)
     #expect(

@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated struct RepositoryUpdateFeed: Sendable {
   enum Failure: Error {
-    case authorizationRequired, unavailable, invalidRelease, network
+    case unavailable, invalidRelease
   }
 
   struct Asset: Decodable, Sendable {
@@ -47,14 +47,12 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     URL(string: "https://api.github.com/repos/\(repository)/releases/tags/\(Self.tag)")!
   }
 
-  func request(token: String?) -> URLRequest {
+  func request() -> URLRequest {
     var request = URLRequest(url: releaseURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+    request.httpShouldHandleCookies = false
     request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
     request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
     request.setValue("MaccyCapture/Updates", forHTTPHeaderField: "User-Agent")
-    if let token {
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    }
     return request
   }
 
@@ -62,11 +60,7 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     guard let response = response as? HTTPURLResponse, response.url == releaseURL else {
       throw Failure.invalidRelease
     }
-    switch response.statusCode {
-    case 200: break
-    case 401, 403, 404: throw Failure.authorizationRequired
-    default: throw Failure.unavailable
-    }
+    guard response.statusCode == 200 else { throw Failure.unavailable }
     guard data.count <= 2_000_000,
           let release = try? JSONDecoder().decode(Release.self, from: data),
           !release.draft, release.tagName == Self.tag else {
