@@ -59,8 +59,8 @@ struct AppIdentityTests {
   func independentIdentity() {
     #expect(AppIdentity.customizedIdentifier != AppIdentity.originalIdentifier)
     #expect(Bundle.main.bundleIdentifier == AppIdentity.customizedIdentifier)
-    #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == "Maccy-Capture")
-    #expect(Bundle.main.url(forResource: "CaptureIcon", withExtension: "icns") != nil)
+    #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == "Maccy Capture")
+    #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "CaptureIcon")
     #expect(AppIdentity.isCustomizedBuild)
     #expect(SoftwareUpdater().isAvailable)
     #expect(
@@ -68,6 +68,16 @@ struct AppIdentityTests {
         .contains(RepositoryUpdateFeed.repository) == true
     )
     #expect(Bundle.main.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true)
+  }
+
+  @Test("The app and default menu item use the capture artwork")
+  func captureArtwork() throws {
+    let iconURL = try #require(Bundle.main.url(forResource: "CaptureIcon", withExtension: "icns"))
+    let icon = try #require(NSImage(contentsOf: iconURL))
+    #expect(icon.isValid)
+    let menuImage = try #require(NSImage(named: .captureStatusBar))
+    #expect(menuImage.isTemplate)
+    #expect(MenuIcon.maccy.image === menuImage)
   }
 
   @Test("Preference migration is local, preserves custom settings, and runs only once")

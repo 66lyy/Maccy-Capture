@@ -38,6 +38,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   private var isRestarting = false
 
   func applicationWillFinishLaunching(_ notification: Notification) { // swiftlint:disable:this function_body_length
+    if AppIdentity.isCustomizedBuild,
+       let iconURL = Bundle.main.url(forResource: "CaptureIcon", withExtension: "icns"),
+       let icon = NSImage(contentsOf: iconURL) {
+      NSApp.applicationIconImage = icon
+    }
     if !Self.isTesting, AppIdentity.isCustomizedBuild {
       AppIdentity.migratePreferences()
     }

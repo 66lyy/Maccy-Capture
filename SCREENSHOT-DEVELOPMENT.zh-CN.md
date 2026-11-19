@@ -103,7 +103,7 @@ bash script/setup_local_signing.sh
 通过后使用 `script/package_release.sh` 构建 Release 通用架构应用，检查代码签名、修改版标识
 和 `arm64` / `x86_64` 架构，然后生成：
 
-- `Maccy-Capture-版本-build构建号-提交号-universal.zip`：包含 `Maccy-Capture.app` 和许可文件。
+- `Maccy-Capture-版本-build构建号-提交号-universal.zip`：包含 `Maccy Capture.app` 和许可文件。
 - 同名 `.dmg`：包含应用、Applications 快捷方式和许可文件。
 - `SHA256SUMS.txt`：上述包和构建信息的 SHA-256。
 - `BUILD-INFO.txt`：版本、源码提交、架构和签名限制。
@@ -147,7 +147,7 @@ bash script/package_release.sh
 
 ## 应用身份与权限
 
-修改版在系统中显示为 `Maccy-Capture`，使用独立应用标识 `local.maccy.capture`，
+修改版在系统中显示为 `Maccy Capture`，使用独立应用标识 `local.maccy.capture`，
 避免与原版共享标识后，系统的重启或启动定位到另一份应用。
 首次启动会在本机迁移原版偏好设置，保留已有的新版本设置，不删除原版偏好；
 历史仍使用原有的本地 Maccy 数据库。
@@ -182,7 +182,7 @@ CI 构建号使用 `1000 + GITHUB_RUN_NUMBER`，再加运行尝试次数，如 `
 本地开发默认构建号为 `1000`，打包时可用 `MACCY_BUILD_VERSION` 覆盖。
 保留的上游 `appcast.xml` 不作为修改版更新源；不带本更新器的旧客户端需先手动安装一次。
 
-更换应用标识后，需要为 `Maccy-Capture` 重新授予屏幕录制和需要的辅助功能权限。
+更换应用标识后，需要为 `Maccy Capture` 重新授予屏幕录制和需要的辅助功能权限。
 一次进程内最多主动请求一次录屏授权；首次请求后不再紧接着弹出应用自己的权限说明。
 之后再次触发截图且权限仍未生效时，才显示设置入口。
 设置中的「重启此版本」会等待当前进程退出，再按当前应用的完整路径启动，

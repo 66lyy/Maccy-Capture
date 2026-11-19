@@ -41,12 +41,12 @@ grep -Fxq "Source revision: $GITHUB_SHA" "$DIST_DIR/BUILD-INFO.txt"
 NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/MaccyCaptureReleaseNotes.XXXXXX")"
 trap 'rm -f "$NOTES_FILE"' EXIT
 cat > "$NOTES_FILE" <<NOTES
-Unofficial Maccy-Capture test build based on [p0deje/Maccy](https://github.com/p0deje/Maccy).
+Unofficial Maccy Capture test build based on [p0deje/Maccy](https://github.com/p0deje/Maccy).
 This rolling prerelease is updated after successful default-branch builds.
 
 - Source revision: \`$GITHUB_SHA\`
 - Universal macOS application for Apple Silicon and Intel; requires macOS 14 or later.
-- Download the ZIP or DMG below. The ZIP contains \`Maccy-Capture.app\`.
+- Download the ZIP or DMG below. The ZIP contains \`Maccy Capture.app\`.
 - \`SHA256SUMS.txt\` verifies the downloads; \`BUILD-INFO.txt\` records build and signing details.
 - In-app updates use this repository's \`capture-appcast.xml\` and independently Ed25519-signed ZIP.
 - Install Update restarts the running modified app so the update takes effect immediately.

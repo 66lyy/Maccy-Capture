@@ -55,7 +55,6 @@
 		2FD5DE512FFE6DD50023FF60 /* LegacyReorderableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FD5DE502FFE6DCE0023FF60 /* LegacyReorderableContainer.swift */; };
 		2FF2E94E2E774B5B0093D72C /* NavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF2E94D2E774B570093D72C /* NavigationManager.swift */; };
 		2FF2E9502E7808470093D72C /* AppImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FF2E94F2E7808420093D72C /* AppImageView.swift */; };
-		42E9C329301B7F9C00B6B55B /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 42E9C328301B7F9C00B6B55B /* AppIcon.icon */; };
 		4762D6972467226100B3A2BA /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 4762D6992467226100B3A2BA /* Localizable.strings */; };
 		4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CB7148030897A9E00A357EC /* SharedStateTests.swift */; };
 		9B24FC30A093450F29E2CC4A /* View+Invisible.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DC045710F4F8773D1A5EC87 /* View+Invisible.swift */; };
@@ -1170,7 +1169,6 @@
 				DA5E62802C39E53F00F4C710 /* PreviewItemView.strings in Resources */,
 				DA009932256411F90030E697 /* README.md in Resources */,
 				DA9C3C4A2C20D4B40056795D /* IgnoreSettings.strings in Resources */,
-				42E9C329301B7F9C00B6B55B /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1933,7 +1931,6 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = MN3X4648SC;
 				ENABLE_HARDENED_RUNTIME = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = AppIcon.icon;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",
@@ -1969,7 +1966,6 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = MN3X4648SC;
 				ENABLE_HARDENED_RUNTIME = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = AppIcon.icon;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)",

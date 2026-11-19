@@ -1,4 +1,4 @@
-# Maccy-Capture — 非官方修改版分发说明
+# Maccy Capture — 非官方修改版分发说明
 
 [English](DISTRIBUTION-NOTICE.md) | **简体中文**
 
@@ -29,7 +29,7 @@ Maccy 名称仅用于标明来源；本项目不主张对上游名称、商标�
 - `DISTRIBUTION-NOTICE.zh-CN.md`：本说明的简体中文版。
 - `ThirdPartyLicenses/`：按 `Package.resolved` 收集的第三方许可、通知及来源记录。
 
-以上文件亦放入 `Maccy-Capture.app/Contents/Resources/`，
+以上文件亦放入 `Maccy Capture.app/Contents/Resources/`，
 将应用单独拖入 Applications 后仍然保留。不得在再次分发时删除适用的版权、许可及通知。
 第三方组件适用各自的许可证，随附其许可不表示这些组件全都采用 MIT。
 依赖或素材发生变更时仍需重新检查相应要求。

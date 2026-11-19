@@ -158,7 +158,7 @@ After tests pass, `script/package_release.sh` builds a universal Release applica
 and verifies its signature, modified bundle identifier, and `arm64` / `x86_64` architectures.
 It produces:
 
-- `Maccy-Capture-VERSION-buildBUILD-REVISION-universal.zip`: `Maccy-Capture.app` and license files.
+- `Maccy-Capture-VERSION-buildBUILD-REVISION-universal.zip`: `Maccy Capture.app` and license files.
 - A matching `.dmg`: the app, an Applications shortcut, and license files.
 - `SHA256SUMS.txt`: SHA-256 checksums for both packages and the build information.
 - `BUILD-INFO.txt`: version, source revision, architectures, and signing limitations.
@@ -217,7 +217,7 @@ Do not commit real screenshots, clipboard databases, personal information, or si
 
 ## Application Identity and Permissions
 
-This version appears as `Maccy-Capture` and uses the separate bundle identifier `local.maccy.capture`.
+This version appears as `Maccy Capture` and uses the separate bundle identifier `local.maccy.capture`.
 It avoids sharing the original identifier, which could cause macOS to relaunch the wrong application.
 On first launch, the app locally migrates upstream preferences without overwriting existing
 preferences in this version or deleting the originals.
@@ -260,7 +260,7 @@ The unsigned legacy upstream `appcast.xml` is not used by this modified app.
 Clients without the new updater need one manual installation before subsequent in-app upgrades.
 
 After the bundle identifier changes, grant screen recording and any required accessibility permissions
-to `Maccy-Capture` again.
+to `Maccy Capture` again.
 The app actively requests screen recording permission at most once per process.
 The first request is not immediately followed by the app's own permission explanation.
 The settings prompt appears only on a later capture attempt if permission is still unavailable.

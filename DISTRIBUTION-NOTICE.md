@@ -1,4 +1,4 @@
-# Maccy-Capture — Unofficial Distribution Notice
+# Maccy Capture — Unofficial Distribution Notice
 
 **English** | [简体中文](DISTRIBUTION-NOTICE.zh-CN.md)
 
@@ -33,7 +33,7 @@ Automatically generated ZIP and DMG packages include:
 - `DISTRIBUTION-NOTICE.zh-CN.md`: this notice in Simplified Chinese.
 - `ThirdPartyLicenses/`: third-party licenses, notices, and source records collected from `Package.resolved`.
 
-These files are also included in `Maccy-Capture.app/Contents/Resources/`,
+These files are also included in `Maccy Capture.app/Contents/Resources/`,
 so they remain with the app after it is dragged into Applications.
 Do not remove applicable copyright, license, or notice files when redistributing.
 Third-party components retain their own licenses; including those licenses does not mean

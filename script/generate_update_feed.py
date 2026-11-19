@@ -49,9 +49,9 @@ def create_appcast(metadata, repository, asset_id, archive):
         raise ValueError("Missing update signature")
     root = ET.Element("rss", {"version": "2.0"})
     channel = ET.SubElement(root, "channel")
-    ET.SubElement(channel, "title").text = "Maccy-Capture test updates"
+    ET.SubElement(channel, "title").text = "Maccy Capture test updates"
     item = ET.SubElement(channel, "item")
-    ET.SubElement(item, "title").text = f'Maccy-Capture {metadata["shortVersion"]} ({metadata["version"]})'
+    ET.SubElement(item, "title").text = f'Maccy Capture {metadata["shortVersion"]} ({metadata["version"]})'
     ET.SubElement(item, "pubDate").text = datetime.datetime.now(datetime.timezone.utc).strftime(
         "%a, %d %b %Y %H:%M:%S GMT"
     )
