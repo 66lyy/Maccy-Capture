@@ -1,5 +1,7 @@
 import AppKit
 import CoreData
+import Defaults
+import KeyboardShortcuts
 import Testing
 @testable import Maccy
 
@@ -245,6 +247,66 @@ struct ScreenshotCaptureTests {
     #expect(zoomed == NSRect(x: 250, y: 175, width: 600, height: 300))
   }
 
+  @Test("A remapped pinned-window shortcut works without keeping its old binding")
+  func remappedPinnedShortcut() throws {
+    try #require(AppDelegate.isTesting)
+    let action = ScopedShortcut.closePinnedImage
+    let previous = Defaults[.scopedShortcuts][action.rawValue]
+    defer { Defaults[.scopedShortcuts][action.rawValue] = previous }
+    let newShortcut = KeyboardShortcuts.Shortcut(.k, modifiers: [.control, .option])
+    action.set(newShortcut)
+    let image = try #require(NSImage(data: generatedPNG()))
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+      anchor: NSPoint(x: 400, y: 300)
+    )
+    var closed = false
+    window.onClose = { closed = true }
+    defer { window.close() }
+    let oldEvent = try #require(NSEvent.keyEvent(
+      with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+      windowNumber: window.windowNumber, context: nil,
+      characters: "w", charactersIgnoringModifiers: "w", isARepeat: false,
+      keyCode: UInt16(action.initial.carbonKeyCode)
+    ))
+    #expect(!action.matches(oldEvent))
+    let newEvent = try #require(NSEvent.keyEvent(
+      with: .keyDown, location: .zero, modifierFlags: newShortcut.modifiers, timestamp: 0,
+      windowNumber: window.windowNumber, context: nil,
+      characters: "k", charactersIgnoringModifiers: "k", isARepeat: false,
+      keyCode: UInt16(newShortcut.carbonKeyCode)
+    ))
+    #expect(window.performKeyEquivalent(with: newEvent))
+    #expect(closed)
+  }
+
+  @Test("Shortcut conflicts respect window scope and global assignments")
+  func shortcutConflictScopes() {
+    let chord = KeyboardShortcuts.Shortcut(.k, modifiers: [.control, .option])
+    let capture = ShortcutAssignment(id: "capture", title: "Capture", scope: .capture, shortcut: chord)
+    let editor = ShortcutAssignment(id: "edit", title: "Edit", scope: .annotation, shortcut: chord)
+    let selection = ShortcutAssignment(id: "selection", title: "Selection", scope: .selection, shortcut: chord)
+    let pin = ShortcutAssignment(id: "pin", title: "Pin", scope: .pinnedImage, shortcut: chord)
+    let global = ShortcutAssignment(id: "global", title: "Global", scope: .global, shortcut: chord)
+    let assignments = [capture, editor, selection, pin, global]
+    #expect(Set(capture.conflicts(in: assignments).map(\.id)) == ["edit", "selection", "global"])
+    #expect(Set(editor.conflicts(in: assignments).map(\.id)) == ["capture", "global"])
+    #expect(pin.conflicts(in: assignments).map(\.id) == ["global"])
+    #expect(global.conflicts(in: assignments).count == 4)
+  }
+
+  @Test("Shortcut storage distinguishes a cleared binding from its default")
+  func scopedShortcutStorage() throws {
+    let action = ScopedShortcut.copyCapture
+    let cleared = try JSONEncoder().encode(nil as KeyboardShortcuts.Shortcut?)
+    let custom = KeyboardShortcuts.Shortcut(.k, modifiers: .command)
+    let customData = try JSONEncoder().encode(custom)
+    #expect(ScopedShortcut.resolve(initial: action.initial, stored: nil) == action.initial)
+    #expect(ScopedShortcut.resolve(initial: action.initial, stored: cleared) == nil)
+    #expect(ScopedShortcut.resolve(initial: action.initial, stored: customData) == custom)
+    #expect(ScopedShortcut.resolve(initial: action.initial, stored: Data()) == action.initial)
+  }
+
   @Test("Pinned zoom stays on negative-coordinate displays for wide, tall, and tiny images",
         arguments: [
           NSSize(width: 800, height: 400), NSSize(width: 400, height: 800),
@@ -318,7 +380,9 @@ struct ScreenshotCaptureTests {
     #expect(abs(window.frame.width - originalFrame.width) <= 1)
     #expect(imageView.image === image)
     #expect(image.size == originalSize)
-    #expect(window.contentView?.subviews.compactMap { $0 as? NSButton }.count == 1)
+    let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
+    #expect(controls.controlsView.subviews.compactMap { $0 as? NSButton }.count == 1)
+    #expect(window.contentView?.subviews.contains { $0 is NSButton } == false)
   }
 
   @Test("Trackpad pinch reaches the pinned panel through its image view")
@@ -449,6 +513,28 @@ struct ScreenshotCaptureTests {
     window.pinImage()
     #expect(pins == 1)
     #expect(closes == 1)
+  }
+
+  @Test("The thumbnail glass strip leaves its pin button clickable")
+  func thumbnailGlassButton() throws {
+    let image = try #require(NSImage(data: generatedPNG()))
+    var pins = 0
+    let window = ScreenshotPreviewWindow(
+      image: image, visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+      onPin: { pins += 1 }
+    )
+    defer { window.close() }
+    let surface = try #require(window.contentView as? GlassSurfaceView)
+    surface.layoutSubtreeIfNeeded()
+    let controls = try #require(surface.controlsView.subviews.compactMap { $0 as? GlassControlStrip }.first)
+    let button = try #require(controls.controlsView.subviews.compactMap { $0 as? NSButton }.first)
+    let center = NSPoint(x: button.bounds.midX, y: button.bounds.midY)
+    let hit = controls.hitTest(surface.controlsView.convert(center, from: button))
+    #expect(hit === button)
+    let gutter = surface.controlsView.convert(NSPoint(x: 1, y: controls.bounds.midY), from: controls)
+    #expect(controls.hitTest(gutter) == nil)
+    button.performClick(nil)
+    #expect(pins == 1)
   }
 
   private func waitForPreviewClose(_ isClosed: () -> Bool) async throws {

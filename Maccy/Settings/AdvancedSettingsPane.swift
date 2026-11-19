@@ -9,21 +9,21 @@ struct AdvancedSettingsPane: View {
       }
       Text("TurnOffDescription", tableName: "AdvancedSettings")
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.gray)
+        .foregroundStyle(.secondary)
         .controlSize(.small)
       Text("TurnOffShellScript", tableName: "AdvancedSettings")
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.gray)
+        .foregroundStyle(.secondary)
         .font(.system(size: 11, design: .monospaced))
         .controlSize(.small)
         .padding(.vertical, 2)
       Text("TurnOffViaMenuIconDescription", tableName: "AdvancedSettings")
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.gray)
+        .foregroundStyle(.secondary)
         .controlSize(.small)
       Text("TurnOffNextShellScript", tableName: "AdvancedSettings")
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.gray)
+        .foregroundStyle(.secondary)
         .font(.system(size: 11, design: .monospaced))
         .controlSize(.small)
         .padding(.vertical, 2)
@@ -38,8 +38,7 @@ struct AdvancedSettingsPane: View {
         Text("ClearSystemClipboard", tableName: "AdvancedSettings")
       }.help(Text("ClearSystemClipboardTooltip", tableName: "AdvancedSettings"))
     }
-    .frame(minWidth: 350, maxWidth: 450)
-    .padding()
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

@@ -125,6 +125,79 @@ struct ScreenshotAnnotationTests {
     #expect(document.marks.count == 1)
   }
 
+  @Test("Dragging rendered text preserves the grab offset and records one undoable move", arguments: [1.0, 2.0])
+  func moveCanvasText(scale: CGFloat) throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 240 * scale, height: 160 * scale)
+    canvas.imageInset = 0
+    canvas.tool = .text
+    canvas.color = .black
+    canvas.beginMark(at: NSPoint(x: 20 * scale, y: 20 * scale))
+    canvas.textField?.stringValue = "Sample"
+    canvas.commitText()
+    let origin = try #require(document.marks.first?.points.first)
+    let before = try bitmap(document)
+    var paintedPoint: NSPoint?
+    for row in 75..<155 {
+      for column in 0..<120 where try color(before, x: column, y: row).redComponent < 0.1 {
+        paintedPoint = NSPoint(x: CGFloat(column) + 0.5, y: 160 - CGFloat(row) - 0.5)
+        break
+      }
+      if paintedPoint != nil { break }
+    }
+    let pixel = try #require(paintedPoint)
+    let start = NSPoint(x: pixel.x * scale, y: pixel.y * scale)
+    canvas.beginMark(at: start)
+    #expect(canvas.isMovingText && canvas.textField == nil)
+    canvas.updateMark(to: NSPoint(x: start.x + 12 * scale, y: start.y + 8 * scale))
+    #expect(document.marks.first?.points.first == origin)
+    canvas.endMark(at: NSPoint(x: start.x + 40 * scale, y: start.y + 40 * scale))
+    let destination = NSPoint(x: origin.x + 40, y: origin.y + 40)
+    #expect(document.marks.count == 1 && document.marks.first?.points.first == destination)
+    let after = try bitmap(document)
+    #expect(try color(after, x: Int(pixel.x), y: 159 - Int(pixel.y)).redComponent > 0.9)
+    #expect(try color(after, x: Int(pixel.x) + 40, y: 119 - Int(pixel.y)).redComponent < 0.1)
+    document.undo()
+    #expect(document.marks.first?.points.first == origin)
+    document.undo()
+    #expect(document.marks.isEmpty)
+    document.redo()
+    document.redo()
+    #expect(document.marks.first?.points.first == destination)
+  }
+
+  @Test("Text moving respects covers and can be cancelled without closing the editor")
+  func cancelTextMove() throws {
+    let window = try editor()
+    defer { window.close() }
+    let canvas = try #require(window.canvas)
+    canvas.tool = .text
+    let origin = NSPoint(x: 40, y: 40)
+    let document = canvas.document
+    document.append(.init(tool: .text, points: [origin], text: "Bottom"))
+    document.append(.init(tool: .text, points: [origin], text: "Top"))
+    document.append(.init(tool: .redact, points: [origin, NSPoint(x: 95, y: 65)]))
+    let covered = NSPoint(x: 45, y: 45)
+    #expect(document.textMarkIndex(at: covered, padding: 0) == nil)
+    document.undo()
+    #expect(document.textMarkIndex(at: covered, padding: 0) == 1)
+
+    let start = NSPoint(x: 135, y: 135)
+    canvas.beginMark(at: start)
+    #expect(canvas.isMovingText)
+    canvas.updateMark(to: NSPoint(x: 200, y: 200))
+    window.cancelOperation(nil)
+    #expect(!canvas.isMovingText && document.marks.last?.points.first == origin && document.canRedo)
+    canvas.beginMark(at: start)
+    canvas.endMark(at: start)
+    #expect(document.canRedo)
+    canvas.beginMark(at: start)
+    canvas.endMark(at: NSPoint(x: -10, y: -10))
+    #expect(document.marks.first?.points.first == origin)
+    #expect(document.marks.last?.points.first == .zero && !document.canRedo)
+  }
+
   @Test("Active native text editing is exported on completion and discarded on cancellation")
   func activeTextEditing() throws {
     let window = try editor()
@@ -139,7 +212,7 @@ struct ScreenshotAnnotationTests {
     textEditor.string = "示例数值 42"
     canvas.commitText()
     #expect(canvas.document.marks.last?.text == "示例数值 42")
-    canvas.beginMark(at: point)
+    canvas.beginMark(at: NSPoint(x: point.x, y: point.y + 60))
     let cancelledField = try #require(canvas.textField)
     let cancelledEditor = try #require(cancelledField.currentEditor() as? NSTextView)
     cancelledEditor.string = "Discard this"
@@ -455,17 +528,42 @@ struct ScreenshotAnnotationTests {
     #expect(display.contains(window.annotationToolbar.frame))
   }
 
-  @Test("Narrow displays wrap toolbar controls without hiding the copy or pin actions")
-  func compactInlineToolbar() throws {
-    let display = NSRect(x: 0, y: 0, width: 450, height: 800)
+  @Test("Toolbar grouping keeps all controls inside the panel", arguments: [420.0, 450.0, 800.0])
+  func inlineToolbarLayout(displayWidth: CGFloat) throws {
+    let display = NSRect(x: 0, y: 0, width: displayWidth, height: 800)
     let window = try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
     defer { window.close() }
     window.contentView?.layoutSubtreeIfNeeded()
-    for control in [window.toolButtons[0] as NSView, window.copyButton as NSView, window.pinButton as NSView] {
+    let actions: [NSView] = [window.copyButton, window.pinButton, window.undoButton, window.redoButton,
+                             window.recognitionButton, window.colorWell, window.styleSlider]
+    let controls: [NSView] = window.toolButtons + window.swatches
+    for control in controls + actions {
       #expect(window.annotationToolbar.bounds.contains(window.annotationToolbar.convert(control.bounds, from: control)))
       #expect(control.frame.width > 20)
     }
-    #expect(window.annotationToolbar.frame.height == 120)
+    let expectedHeight: CGFloat = displayWidth < 430 ? 149 : displayWidth < 476 ? 120 : 88
+    #expect(window.annotationToolbar.frame.height == expectedHeight)
+  }
+
+  @Test("The glass panel leaves screenshot buttons and the toolbar drag area interactive")
+  func glassToolbarHitTesting() throws {
+    let window = try editor()
+    defer { window.close() }
+    let toolbar = window.annotationToolbar
+    let contents = try #require(window.contentView)
+    contents.layoutSubtreeIfNeeded()
+    if #available(macOS 26.0, *) {
+      let glass = try #require(toolbar.subviews.first as? NSGlassEffectView)
+      #expect(glass.contentView === toolbar.controlsView)
+    } else {
+      #expect(toolbar.controlsView is NSVisualEffectView)
+    }
+
+    let copyButton = try #require(window.copyButton)
+    let copyCenter = NSPoint(x: copyButton.bounds.midX, y: copyButton.bounds.midY)
+    #expect(toolbar.hitTest(contents.convert(copyCenter, from: copyButton)) === copyButton)
+    let dragArea = NSPoint(x: 4, y: toolbar.bounds.midY)
+    #expect(toolbar.hitTest(contents.convert(dragArea, from: toolbar)) === toolbar)
   }
 
   @Test("The floating toolbar can move without moving the image or leaving the display")
@@ -571,7 +669,9 @@ struct ScreenshotAnnotationTests {
     window.replaceImage(replacement)
     #expect(window.image === replacement)
     #expect(abs(window.frame.width - originalFrame.width) <= 1)
-    #expect(window.contentView?.subviews.compactMap { $0 as? NSButton }.count == 1)
+    let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
+    #expect(controls.controlsView.subviews.compactMap { $0 as? NSButton }.count == 1)
+    #expect(window.contentView?.subviews.contains { $0 is NSButton } == false)
   }
 
   private func editor() throws -> ScreenshotAnnotationWindow {

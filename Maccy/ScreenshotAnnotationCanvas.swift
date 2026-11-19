@@ -2,6 +2,14 @@ import AppKit
 
 @MainActor
 final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
+  private struct TextDrag {
+    let index: Int
+    let start: NSPoint
+    let origin: NSPoint
+    let size: NSSize
+    var position: NSPoint
+  }
+
   let document: ScreenshotAnnotationDocument
   var onChange: (() -> Void)?
   var onCancel: (() -> Void)?
@@ -16,6 +24,8 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   private var textOrigin: NSPoint?
   private var textScale: CGFloat = 1
   private var pendingMark: ScreenshotAnnotationDocument.Mark?
+  private var textDrag: TextDrag?
+  var isMovingText: Bool { textDrag != nil }
 
   var imageRect: NSRect {
     Self.imageRect(imageSize: document.imageSize, bounds: bounds.insetBy(dx: imageInset, dy: imageInset))
@@ -43,7 +53,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     context.saveGState()
     context.translateBy(x: imageRect.minX, y: imageRect.minY)
     context.scaleBy(x: imageScale, y: imageScale)
-    document.draw(in: context, preview: pendingMark)
+    document.draw(in: context, preview: pendingMark, movingText: textDrag.map { ($0.index, $0.position) })
     context.restoreGState()
   }
 
@@ -55,10 +65,13 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
 
   override func mouseDragged(with event: NSEvent) {
     updateMark(to: convert(event.locationInWindow, from: nil))
+    if isMovingText { NSCursor.closedHand.set() }
   }
 
   override func mouseUp(with event: NSEvent) {
+    let wasMovingText = isMovingText
     endMark(at: convert(event.locationInWindow, from: nil))
+    if wasMovingText { NSCursor.iBeam.set() }
   }
 
   override func rightMouseDown(with event: NSEvent) {
@@ -69,7 +82,13 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     guard let imagePoint = imagePoint(at: point) else { return }
     onBeginMark?()
     if tool == .text {
-      beginText(at: point)
+      if let index = document.textMarkIndex(at: imagePoint, padding: 3 / imageScale),
+         let origin = document.marks[index].points.first {
+        textDrag = TextDrag(index: index, start: point, origin: origin,
+                            size: document.marks[index].textSize, position: origin)
+      } else {
+        beginText(at: point)
+      }
       return
     }
     pendingMark = ScreenshotAnnotationDocument.Mark(
@@ -80,6 +99,17 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   }
 
   func updateMark(to point: NSPoint) {
+    if let drag = textDrag {
+      guard point.x.isFinite, point.y.isFinite, imageScale > 0 else { return }
+      let maxX = max(0, document.imageSize.width - ceil(drag.size.width))
+      let maxY = max(0, document.imageSize.height - ceil(drag.size.height))
+      textDrag?.position = point == drag.start ? drag.origin : NSPoint(
+        x: max(0, min(maxX, drag.origin.x + (point.x - drag.start.x) / imageScale)),
+        y: max(0, min(maxY, drag.origin.y + (point.y - drag.start.y) / imageScale))
+      )
+      needsDisplay = true
+      return
+    }
     guard let tool = pendingMark?.tool, let imagePoint = imagePoint(at: point, clamped: true) else { return }
     if tool == .pen {
       if (pendingMark?.points.count ?? 0) < 50_000 { pendingMark?.points.append(imagePoint) }
@@ -92,6 +122,12 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
 
   func endMark(at point: NSPoint) {
     updateMark(to: point)
+    if let drag = textDrag {
+      textDrag = nil
+      document.moveText(at: drag.index, to: drag.position)
+      changed()
+      return
+    }
     guard let mark = pendingMark else { return }
     pendingMark = nil
     document.append(mark)
@@ -112,12 +148,19 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   }
 
   func discardPendingMark() {
+    cancelTextDrag()
     pendingMark = nil
     let field = textField
     textField = nil
     textOrigin = nil
     field?.removeFromSuperview()
     changed()
+  }
+
+  func cancelTextDrag() {
+    guard isMovingText else { return }
+    textDrag = nil
+    needsDisplay = true
   }
 
   func controlTextDidEndEditing(_ notification: Notification) {

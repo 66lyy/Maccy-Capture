@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import SwiftUI
 
 struct ItemEditorView: View {
@@ -110,7 +111,7 @@ struct ItemEditorView: View {
         .keyboardShortcut(.cancelAction)
 
         Button(Self.doneButtonTitle, action: saveChanges)
-          .keyboardShortcut(.return, modifiers: .command)
+          .keyboardShortcut(ScopedShortcut.saveHistoryEdit.current?.toSwiftUI)
           .disabled(!hasChangesToApply)
       }
     }

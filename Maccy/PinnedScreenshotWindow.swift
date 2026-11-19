@@ -46,20 +46,18 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     imageView.toolTip = localized("ScreenshotZoomHelp")
     container.addSubview(imageView)
 
-    let closeButton = NSButton(title: "×", target: self, action: #selector(closeImage))
-    closeButton.setAccessibilityLabel(localized("ScreenshotClose"))
-    closeButton.font = .systemFont(ofSize: 20, weight: .semibold)
-    closeButton.isBordered = true
-    closeButton.bezelStyle = .circular
-    closeButton.toolTip = localized("ScreenshotClose")
-    closeButton.translatesAutoresizingMaskIntoConstraints = false
-    container.addSubview(closeButton)
-    NSLayoutConstraint.activate([
-      closeButton.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
-      closeButton.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
-      closeButton.widthAnchor.constraint(equalToConstant: 24),
-      closeButton.heightAnchor.constraint(equalToConstant: 24)
-    ])
+    let closeLabel = localized("ScreenshotClose")
+    let closeButton = NSButton(
+      image: NSImage(systemSymbolName: "xmark", accessibilityDescription: closeLabel) ?? NSImage(),
+      target: self, action: #selector(closeImage)
+    )
+    closeButton.setAccessibilityLabel(closeLabel)
+    closeButton.toolTip = closeLabel
+    let controls = GlassControlStrip(buttons: [closeButton])
+    controls.frame.origin = NSPoint(x: container.bounds.maxX - controls.frame.width - 4,
+                                    y: container.bounds.maxY - controls.frame.height - 4)
+    controls.autoresizingMask = [.minXMargin, .minYMargin]
+    container.addSubview(controls)
 
     let menu = NSMenu()
     let copyItem = NSMenuItem(title: localized("ScreenshotCopy"), action: #selector(copyImage), keyEquivalent: "")
@@ -101,29 +99,27 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 {
       close()
-    } else {
+    } else if !handleShortcut(event) {
       super.keyDown(with: event)
     }
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    if modifiers == .command {
-      switch event.charactersIgnoringModifiers?.lowercased() {
-      case "w":
-        close()
-        return true
-      case "c":
-        copyImage()
-        return true
-      case "e":
-        annotateImage()
-        return true
-      default:
-        break
-      }
-    }
+    if handleShortcut(event) { return true }
     return super.performKeyEquivalent(with: event)
+  }
+
+  private func handleShortcut(_ event: NSEvent) -> Bool {
+    if ScopedShortcut.closePinnedImage.matches(event) {
+      close()
+    } else if ScopedShortcut.copyPinnedImage.matches(event) {
+      copyImage()
+    } else if ScopedShortcut.editPinnedImage.matches(event) {
+      annotateImage()
+    } else {
+      return false
+    }
+    return true
   }
 
   func windowWillClose(_ notification: Notification) {

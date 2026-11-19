@@ -1,4 +1,7 @@
 "Title" = "Ignore";
+"NoIgnoreRules" = "No rules added";
+"AddIgnoreRule" = "Add rule";
+"RemoveIgnoreRule" = "Remove selected rule";
 "ApplicationsTab" = "Applications";
 "IgnoredAppsDescription" = "It's possible to ignore copies coming from certain applications.\nPlease note that the way it works is not bullet-proof, so it's better to use pasteboard types when possible.";
 "IgnoredAllAppsExceptListed" = "Ignore all applications except listed";

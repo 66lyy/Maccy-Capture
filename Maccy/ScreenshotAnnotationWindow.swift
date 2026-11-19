@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import UniformTypeIdentifiers
 import Vision
 
@@ -142,7 +143,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
           showOutputError()
           return
         }
-        statusLabel.stringValue = text("AnnotationToolbarShortcuts")
+        statusLabel.stringValue = shortcutSummary
         attachCanvas(document, frame: rectangle)
         onCanvasReady?()
         if let canvas { action(canvas) }
@@ -170,7 +171,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   override func cancelOperation(_ sender: Any?) {
     if recognitionResults != nil {
       dismissRecognition()
-    } else if canvas?.textField != nil {
+    } else if let canvas, canvas.textField != nil || canvas.isMovingText {
       canvas.discardPendingMark()
       makeFirstResponder(canvas)
     } else {
@@ -179,36 +180,57 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   override func keyDown(with event: NSEvent) {
-    guard canvas?.textField == nil else { super.keyDown(with: event); return }
-    switch event.keyCode {
-    case 53: cancelOperation(nil)
-    case 36, 76: complete(.copy)
-    default:
-      if event.charactersIgnoringModifiers?.lowercased() == "p" {
-        complete(editingPin ? .apply : .pin)
-      } else {
-        super.keyDown(with: event)
-      }
+    if event.keyCode == 53 {
+      cancelOperation(nil)
+    } else if !handleShortcut(event) {
+      super.keyDown(with: event)
     }
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
-    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    if event.charactersIgnoringModifiers?.lowercased() == "z", modifiers.contains(.command),
-       canvas?.textField == nil, !recognitionHasFocus {
-      if modifiers.contains(.shift) { redoMark() } else { undoMark() }
+    if let shortcut = KeyboardShortcuts.Shortcut(event: event),
+       !shortcut.modifiers.isDisjoint(with: [.command, .control, .option]),
+       handleShortcut(event) {
       return true
     }
-    if modifiers == .command {
-      switch event.charactersIgnoringModifiers?.lowercased() {
-      case "w": close(); return true
-      case "s" where !annotationToolbar.isHidden: saveImage(); return true
-      case "c" where recognitionHasFocus: recognitionResults?.textView.copy(nil); return true
-      case "c" where canvas?.textField == nil: complete(.copy); return true
-      default: break
+    return super.performKeyEquivalent(with: event)
+  }
+
+  private func handleShortcut(_ event: NSEvent) -> Bool {
+    if ScopedShortcut.closeCapture.matches(event) {
+      cancelOperation(nil)
+    } else if ScopedShortcut.closeCaptureWindow.matches(event) {
+      close()
+    } else if recognitionHasFocus, KeyboardShortcuts.Shortcut(event: event) == .init(.c, modifiers: .command) {
+      recognitionResults?.textView.copy(nil)
+    } else {
+      guard canvas?.textField == nil, !recognitionHasFocus else { return false }
+      if canvas != nil, ScopedShortcut.undoAnnotation.matches(event) {
+        undoMark()
+      } else if canvas != nil, ScopedShortcut.redoAnnotation.matches(event) {
+        redoMark()
+      } else if ScopedShortcut.saveCapture.matches(event), !annotationToolbar.isHidden {
+        saveImage()
+      } else if ScopedShortcut.copyCapture.matches(event) || ScopedShortcut.copyCaptureWithCommand.matches(event) {
+        complete(.copy)
+      } else if ScopedShortcut.pinCapture.matches(event) {
+        complete(editingPin ? .apply : .pin)
+      } else {
+        return false
       }
     }
-    return super.performKeyEquivalent(with: event)
+    return true
+  }
+
+  private var shortcutSummary: String {
+    let copy = [ScopedShortcut.copyCapture, .copyCaptureWithCommand]
+      .compactMap { $0.current?.description }
+      .joined(separator: " / ")
+    return String(
+      localized: "AnnotationShortcutSummary",
+      defaultValue: "\(copy.isEmpty ? "—" : copy) Copy · \(ScopedShortcut.pinCapture.current?.description ?? "—") Pin / Apply · \(ScopedShortcut.saveCapture.current?.description ?? "—") Save · Esc Close",
+      table: "GeneralSettings"
+    )
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -255,6 +277,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   @objc func undoMark() {
     guard let canvas else { return }
     clearRecognition()
+    canvas.cancelTextDrag()
     canvas.commitText()
     canvas.document.undo()
     refreshHistoryButtons()
@@ -263,6 +286,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   @objc func redoMark() {
     guard let canvas else { return }
     clearRecognition()
+    canvas.cancelTextDrag()
     canvas.commitText()
     canvas.document.redo()
     refreshHistoryButtons()
@@ -300,15 +324,6 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   private func configureToolbar(originalWasCopied: Bool, compact: Bool, narrow: Bool) {
-    annotationToolbar.material = .hudWindow
-    annotationToolbar.blendingMode = .withinWindow
-    annotationToolbar.state = .active
-    annotationToolbar.wantsLayer = true
-    annotationToolbar.layer?.cornerRadius = 10
-    annotationToolbar.layer?.masksToBounds = true
-    annotationToolbar.appearance = NSAppearance(named: .darkAqua)
-    annotationToolbar.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
-    annotationToolbar.layer?.borderWidth = 1
     annotationToolbar.setAccessibilityLabel(text("AnnotationTools"))
     let tools = ScreenshotAnnotationDocument.Tool.allCases
     let symbols = ["arrow.up.right", "rectangle", "oval", "pencil.tip", "textformat", "rectangle.fill"]
@@ -331,7 +346,9 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       recognitionButton, pinButton, button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage)),
       copyButton, button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor))
     ])
-    let toolRow = row(toolButtons.map { $0 as NSView } + [undoButton, redoButton])
+    let toolsRow = row(toolButtons)
+    let historyRow = row([undoButton, redoButton])
+    let toolRow = row([toolsRow, separator(), historyRow])
     swatches = palette.enumerated().map { index, entry in
       let swatch = button(entry.1, symbol: "", action: #selector(selectColor(_:)), width: 23)
       swatch.tag = index
@@ -367,32 +384,35 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     info.toolTip = text("AnnotationInlineHelp") + "\n" + text(
       originalWasCopied ? "AnnotationExistingOriginalNotice" : "AnnotationPrivateNotice"
     )
+    info.contentTintColor = .secondaryLabelColor
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.textColor = .secondaryLabelColor
     let grip = ScreenshotToolbarGrip(image: NSImage(
       systemSymbolName: "line.3.horizontal", accessibilityDescription: text("AnnotationMoveToolbar")
     ) ?? NSImage())
     grip.toolTip = text("AnnotationMoveToolbar")
+    grip.contentTintColor = .secondaryLabelColor
     let colors = row(swatches.map { $0 as NSView } + [colorWell])
     let adjustment = row([styleLabel, styleSlider, styleValue])
-    var rows: [NSView] = compact ? [row([grip, toolRow]), outputRow] : [row([grip, toolRow, outputRow])]
+    var rows: [NSView] = compact ? [row([grip, toolRow]), outputRow] : [row([grip, toolRow, separator(), outputRow])]
     if narrow {
       rows += [row([colors, info]), adjustment]
     } else {
-      rows.append(row([colors, adjustment, info]))
+      rows.append(row([colors, separator(), adjustment, info]))
     }
     rows.append(statusLabel)
-    statusLabel.stringValue = text("AnnotationToolbarShortcuts")
+    statusLabel.stringValue = shortcutSummary
     let stack = NSStackView(views: rows)
     stack.orientation = .vertical
     stack.alignment = .leading
     stack.spacing = 3
     stack.translatesAutoresizingMaskIntoConstraints = false
-    annotationToolbar.addSubview(stack)
+    let controls = annotationToolbar.controlsView
+    controls.addSubview(stack)
     NSLayoutConstraint.activate([
-      stack.leadingAnchor.constraint(equalTo: annotationToolbar.leadingAnchor, constant: 10),
-      stack.trailingAnchor.constraint(lessThanOrEqualTo: annotationToolbar.trailingAnchor, constant: -10),
-      stack.centerYAnchor.constraint(equalTo: annotationToolbar.centerYAnchor)
+      stack.leadingAnchor.constraint(equalTo: controls.leadingAnchor, constant: 10),
+      stack.trailingAnchor.constraint(lessThanOrEqualTo: controls.trailingAnchor, constant: -10),
+      stack.centerYAnchor.constraint(equalTo: controls.centerYAnchor)
     ])
   }
 
@@ -404,6 +424,14 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     return stack
   }
 
+  private func separator() -> NSBox {
+    let divider = NSBox()
+    divider.boxType = .separator
+    divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+    divider.heightAnchor.constraint(equalToConstant: 16).isActive = true
+    return divider
+  }
+
   private func button(_ key: String, symbol: String, action: Selector, width: CGFloat = 28) -> ScreenshotToolbarButton {
     let button = ScreenshotToolbarButton(frame: .zero)
     button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: text(key))?
@@ -412,7 +440,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     button.action = action
     button.isBordered = false
     button.imagePosition = .imageOnly
-    button.contentTintColor = .white
+    button.contentTintColor = .labelColor
     button.toolTip = text(key)
     button.setAccessibilityLabel(text(key))
     button.translatesAutoresizingMaskIntoConstraints = false
@@ -439,6 +467,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   func chooseTool(_ tool: ScreenshotAnnotationDocument.Tool) {
+    canvas?.cancelTextDrag()
     canvas?.commitText()
     selectedTool = tool
     updateTool()
@@ -544,7 +573,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     recognitionResults = nil
     recognizedText = ""
     if hadFocus, !isFinished { makeFirstResponder((canvas as NSView?) ?? contentView) }
-    if !isFinished { statusLabel.stringValue = text("AnnotationToolbarShortcuts") }
+    if !isFinished { statusLabel.stringValue = shortcutSummary }
   }
 
   func showRecognizedText(_ value: String, message: String?) {
@@ -702,7 +731,7 @@ enum ScreenshotTextRecognition {
 }
 
 @MainActor
-final class ScreenshotRecognitionResults: NSVisualEffectView {
+final class ScreenshotRecognitionResults: GlassSurfaceView {
   let textView: NSTextView
   let copyButton: NSButton
 
@@ -711,16 +740,7 @@ final class ScreenshotRecognitionResults: NSVisualEffectView {
     let scroll = NSTextView.scrollableTextView()
     textView = scroll.documentView as! NSTextView
     copyButton = NSButton(title: copyTitle, target: target, action: copyAction)
-    super.init(frame: .zero)
-    appearance = NSAppearance(named: .darkAqua)
-    material = .hudWindow
-    blendingMode = .withinWindow
-    state = .active
-    wantsLayer = true
-    layer?.cornerRadius = 10
-    layer?.masksToBounds = true
-    layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
-    layer?.borderWidth = 1
+    super.init(frame: .zero, cornerRadius: 14)
     setAccessibilityLabel(title)
     let heading = NSTextField(labelWithString: title)
     heading.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -745,20 +765,20 @@ final class ScreenshotRecognitionResults: NSVisualEffectView {
     copyButton.isEnabled = copyEnabled
     for subview in [header as NSView, scroll, copyButton] {
       subview.translatesAutoresizingMaskIntoConstraints = false
-      addSubview(subview)
+      controlsView.addSubview(subview)
     }
     NSLayoutConstraint.activate([
       close.widthAnchor.constraint(equalToConstant: 24),
       close.heightAnchor.constraint(equalToConstant: 22),
-      header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-      header.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
-      header.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+      header.leadingAnchor.constraint(equalTo: controlsView.leadingAnchor, constant: 12),
+      header.trailingAnchor.constraint(equalTo: controlsView.trailingAnchor, constant: -12),
+      header.topAnchor.constraint(equalTo: controlsView.topAnchor, constant: 8),
       scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 5),
       scroll.leadingAnchor.constraint(equalTo: header.leadingAnchor),
       scroll.trailingAnchor.constraint(equalTo: header.trailingAnchor),
       copyButton.topAnchor.constraint(equalTo: scroll.bottomAnchor, constant: 7),
       copyButton.trailingAnchor.constraint(equalTo: header.trailingAnchor),
-      copyButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8)
+      copyButton.bottomAnchor.constraint(equalTo: controlsView.bottomAnchor, constant: -8)
     ])
   }
 
@@ -773,16 +793,18 @@ final class ScreenshotToolbarButton: NSButton {
   override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 
   override func draw(_ dirtyRect: NSRect) {
-    let tile = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 5, yRadius: 5)
+    let tile = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6)
     if isChosen || cell?.isHighlighted == true {
-      NSColor.white.withAlphaComponent(0.22).setFill()
+      let color = isChosen ? NSColor.controlAccentColor : NSColor.labelColor
+      color.withAlphaComponent(isChosen ? 0.22 : 0.10).setFill()
       tile.fill()
     }
     if let swatchColor {
       let dot = NSBezierPath(ovalIn: NSRect(x: bounds.midX - 7, y: bounds.midY - 7, width: 14, height: 14))
       swatchColor.setFill()
       dot.fill()
-      NSColor.white.withAlphaComponent(isChosen ? 1 : 0.4).setStroke()
+      let outline = isChosen ? NSColor.controlAccentColor : NSColor.labelColor.withAlphaComponent(0.35)
+      outline.setStroke()
       dot.lineWidth = isChosen ? 2 : 1
       dot.stroke()
     } else {
@@ -797,13 +819,23 @@ private final class ScreenshotToolbarGrip: NSImageView {
 }
 
 @MainActor
-final class ScreenshotAnnotationToolbar: NSVisualEffectView {
+final class ScreenshotAnnotationToolbar: GlassSurfaceView {
   var movementBounds = NSRect.zero
   var onMove: (() -> Void)?
   private var dragOrigin: NSPoint?
   private var originalFrame = NSRect.zero
 
   override var mouseDownCanMoveWindow: Bool { false }
+
+  override func hitTest(_ point: NSPoint) -> NSView? {
+    guard let hit = super.hitTest(point) else { return nil }
+    var candidate: NSView? = hit
+    while let view = candidate, view !== self {
+      if view is NSControl { return hit }
+      candidate = view.superview
+    }
+    return self
+  }
 
   override func mouseDown(with event: NSEvent) {
     beginMove(at: superview?.convert(event.locationInWindow, from: nil) ?? .zero)

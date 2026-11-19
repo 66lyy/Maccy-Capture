@@ -42,9 +42,22 @@ enum KeyChord: CaseIterable {
   case togglePreview
   case unknown
 
+  private static let historyBindings: [(ScopedShortcut, Self)] = [
+    (.clearHistory, .clearHistory), (.clearHistoryAll, .clearHistoryAll), (.clearSearch, .clearSearch),
+    (.deleteSearchCharacter, .deleteOneCharFromSearch), (.deleteSearchWord, .deleteLastWordFromSearch),
+    (.nextItem, .moveToNext), (.previousItem, .moveToPrevious), (.firstItem, .moveToFirst),
+    (.lastItem, .moveToLast), (.selectItem, .selectCurrentItem),
+    (.openPreferences, .openPreferences), (.closeHistory, .close)
+  ]
+
   init(_ event: NSEvent?) {
     guard let event, event.type == .keyDown else {
       self = .unknown
+      return
+    }
+
+    if let match = Self.historyBindings.first(where: { $0.0.matches(event) }) {
+      self = match.1
       return
     }
 
@@ -70,59 +83,42 @@ enum KeyChord: CaseIterable {
   // swiftlint:disable:next cyclomatic_complexity function_body_length
   init(_ key: Key, _ modifierFlags: NSEvent.ModifierFlags) {
     switch (key, modifierFlags) {
-    case (.delete, [.command, .option]):
-      self = .clearHistory
-    case (.delete, [.command, .option, .shift]):
-      self = .clearHistoryAll
-    case (.u, [.control]):
-      self = .clearSearch
     case (KeyChord.deleteKey, KeyChord.deleteModifiers):
       self = .deleteCurrentItem
-    case (.h, [.control]):
-      self = .deleteOneCharFromSearch
-    case (.w, [.control]):
-      self = .deleteLastWordFromSearch
     case (.downArrow, [.shift]),
          (.n, [.control, .shift]):
-      self = AppState.shared.multiSelectionEnabled ? .extendToNext : .moveToNext
-    case (.downArrow, []),
-         (.n, [.control]),
+      self = AppState.shared.multiSelectionEnabled ? .extendToNext : Self.defaultNavigation(.nextItem, as: .moveToNext)
+    case (.n, [.control]),
          (.j, [.control]):
-      self = .moveToNext
+      self = Self.defaultNavigation(.nextItem, as: .moveToNext)
     case (.downArrow, [.command, .shift]),
          (.downArrow, [.option, .shift]),
          (.n, [.control, .option, .shift]):
-      self = AppState.shared.multiSelectionEnabled ? .extendToLast : .moveToLast
+      self = AppState.shared.multiSelectionEnabled ? .extendToLast : Self.defaultNavigation(.lastItem, as: .moveToLast)
     case (.downArrow, _) where modifierFlags.contains(.command) || modifierFlags.contains(.option),
-         (.n, [.control, .option]),
-         (.pageDown, []):
-      self = .moveToLast
+         (.n, [.control, .option]):
+      self = Self.defaultNavigation(.lastItem, as: .moveToLast)
     case (.upArrow, [.shift]),
          (.p, [.control, .shift]):
-      self = AppState.shared.multiSelectionEnabled ? .extendToPrevious : .moveToPrevious
-    case (.upArrow, []),
-         (.p, [.control]):
-      self = .moveToPrevious
+      self = AppState.shared.multiSelectionEnabled ? .extendToPrevious
+        : Self.defaultNavigation(.previousItem, as: .moveToPrevious)
+    case (.p, [.control]):
+      self = Self.defaultNavigation(.previousItem, as: .moveToPrevious)
     case (.k, [.control]) where !AppState.shared.navigator.isFirstItemHighlighted:
       // See https://github.com/p0deje/Maccy/issues/1055
-      self = .moveToPrevious
+      self = Self.defaultNavigation(.previousItem, as: .moveToPrevious)
     case (.upArrow, [.command, .shift]),
          (.upArrow, [.option, .shift]),
          (.p, [.control, .option, .shift]):
-      self = AppState.shared.multiSelectionEnabled ? .extendToFirst : .moveToFirst
+      self = AppState.shared.multiSelectionEnabled ? .extendToFirst : Self.defaultNavigation(.firstItem, as: .moveToFirst)
     case (.upArrow, _) where modifierFlags.contains(.command) || modifierFlags.contains(.option),
-         (.p, [.control, .option]),
-         (.pageUp, []):
-      self = .moveToFirst
+         (.p, [.control, .option]):
+      self = Self.defaultNavigation(.firstItem, as: .moveToFirst)
     case (KeyChord.pinKey, KeyChord.pinModifiers):
       self = .pinOrUnpin
-    case (.comma, [.command]):
-      self = .openPreferences
     case (.return, _),
          (.keypadEnter, _):
-      self = .selectCurrentItem
-    case (.escape, _):
-      self = .close
+      self = Self.defaultNavigation(.selectItem, as: .selectCurrentItem)
     case (KeyChord.previewKey, KeyChord.previewModifiers):
       self = .togglePreview
     case (_, _) where !modifierFlags.isDisjoint(with: [.command, .control, .option]):
@@ -130,5 +126,9 @@ enum KeyChord: CaseIterable {
     default:
       self = .unknown
     }
+  }
+
+  private static func defaultNavigation(_ shortcut: ScopedShortcut, as action: Self) -> Self {
+    shortcut.current == shortcut.initial ? action : .unknown
   }
 }

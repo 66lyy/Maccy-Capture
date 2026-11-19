@@ -252,6 +252,13 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     }
   }
 
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if canvas == nil, !isPreparingImage, selectionView.handleSelectionShortcut(event) {
+      return true
+    }
+    return super.performKeyEquivalent(with: event)
+  }
+
   override func windowWillClose(_ notification: Notification) {
     let handler = onCancel
     onCancel = nil
@@ -288,12 +295,17 @@ final class ScreenshotSelectionView: NSView {
   private var probing = false
   private var wantsSnapping = false
   private var elementTask: Task<Void, Never>?
+  private let selectionHint = GlassSelectionLabel()
+  private let elementHint = GlassSelectionLabel()
 
   init(frame: NSRect, scale: CGFloat, pinImmediately: Bool) {
     self.scale = scale
     self.pinImmediately = pinImmediately
     super.init(frame: frame)
     setAccessibilityLabel(localized("ScreenshotSelectionHint"))
+    addSubview(selectionHint)
+    addSubview(elementHint)
+    refreshOverlay()
   }
 
   required init?(coder: NSCoder) { nil }
@@ -385,10 +397,16 @@ final class ScreenshotSelectionView: NSView {
       return
     }
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-    switch event.keyCode {
-    case 53:
+    if handleSelectionShortcut(event) { return }
+    if ScopedShortcut.closeCapture.matches(event) {
       onCancel?()
-    case 36, 76:
+      return
+    }
+    if ScopedShortcut.pinCapture.matches(event) {
+      captureSelection(pinToScreen: true)
+      return
+    }
+    if ScopedShortcut.copyCapture.matches(event) || ScopedShortcut.copyCaptureWithCommand.matches(event) {
       if selectedRect == nil, let pointer, let snap = snapRectangle(near: pointer) {
         onBegin?()
         selectedRect = snap
@@ -398,20 +416,32 @@ final class ScreenshotSelectionView: NSView {
       } else {
         captureSelection(pinToScreen: pinImmediately)
       }
-    case 48 where wantsSnapping:
-      cycleSnap(towardParent: !modifiers.contains(.shift))
+      return
+    }
+    switch event.keyCode {
+    case 53:
+      onCancel?()
     case 123...126:
       let step: CGFloat = modifiers.contains(.shift) ? 10 : 1
       let dx: CGFloat = event.keyCode == 123 ? -step : event.keyCode == 124 ? step : 0
       let dy: CGFloat = event.keyCode == 125 ? -step : event.keyCode == 126 ? step : 0
       nudge(dx: dx, dy: dy)
-    default:
-      if event.charactersIgnoringModifiers?.lowercased() == "p" {
-        captureSelection(pinToScreen: true)
-      } else if event.charactersIgnoringModifiers?.lowercased() == "e" {
-        annotateSelection()
-      }
+    default: break
     }
+  }
+
+  func handleSelectionShortcut(_ event: NSEvent) -> Bool {
+    guard canAdjustSelection?() != false else { return false }
+    if ScopedShortcut.annotateSelection.matches(event) {
+      annotateSelection()
+    } else if wantsSnapping, ScopedShortcut.selectParent.matches(event) {
+      cycleSnap(towardParent: true)
+    } else if wantsSnapping, ScopedShortcut.selectChild.matches(event) {
+      cycleSnap(towardParent: false)
+    } else {
+      return false
+    }
+    return true
   }
 
   func beginSelection(at point: NSPoint) {
@@ -514,7 +544,7 @@ final class ScreenshotSelectionView: NSView {
       onValidSelection?(nil)
     }
     window?.invalidateCursorRects(for: self)
-    needsDisplay = true
+    refreshOverlay()
   }
 
   private func moveCrosshair(from point: NSPoint, dx: CGFloat, dy: CGFloat) -> NSPoint {
@@ -532,7 +562,7 @@ final class ScreenshotSelectionView: NSView {
     if !wantsSnapping {
       snapRects = []
       lastProbe = nil
-      needsDisplay = true
+      refreshOverlay()
       return
     }
     guard let pointer, bounds.contains(pointer), let findElements, !probing,
@@ -551,7 +581,7 @@ final class ScreenshotSelectionView: NSView {
         snapRects = Self.snapCandidates(rectangles, containing: pointer, bounds: bounds)
         snapIndex = 0
       }
-      needsDisplay = true
+      refreshOverlay()
       if wantsSnapping { updateProbe(enabled: true) }
     }
   }
@@ -559,7 +589,7 @@ final class ScreenshotSelectionView: NSView {
   private func cycleSnap(towardParent: Bool) {
     guard !snapRects.isEmpty else { return }
     snapIndex = max(0, min(snapRects.count - 1, snapIndex + (towardParent ? 1 : -1)))
-    needsDisplay = true
+    refreshOverlay()
   }
 
   func snapRectangle(near point: NSPoint) -> NSRect? {
@@ -603,11 +633,38 @@ final class ScreenshotSelectionView: NSView {
     )
   }
 
+  private var activeRect: NSRect? {
+    selectedRect ?? pointer.flatMap { snapRectangle(near: $0) }
+  }
+
+  private func refreshOverlay() {
+    needsDisplay = true
+    needsLayout = true
+  }
+
+  override func layout() {
+    super.layout()
+    if let activeRect {
+      let dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
+      selectionHint.update(dimensions, near: NSPoint(x: activeRect.minX, y: activeRect.maxY + 8), in: bounds)
+    } else {
+      let key = pinImmediately ? "ScreenshotSelectionPinInstructions" : "ScreenshotSelectionInstructions"
+      selectionHint.update(localized(key), near: NSPoint(x: bounds.midX - 190, y: bounds.maxY - 64), in: bounds)
+    }
+    elementHint.isHidden = !wantsSnapping
+    if wantsSnapping {
+      let title = AXIsProcessTrusted()
+        ? String(localized: "ScreenshotElementActions", defaultValue: "Click to select · \(ScopedShortcut.selectParent.current?.description ?? "—") parent · \(ScopedShortcut.selectChild.current?.description ?? "—") child", table: "GeneralSettings")
+        : localized("ScreenshotElementPermissionHint")
+      elementHint.update(title, near: NSPoint(x: 12, y: 12), in: bounds)
+    }
+  }
+
   override func draw(_ dirtyRect: NSRect) {
     NSColor.clear.setFill()
     bounds.fill(using: .copy)
     let shade = NSBezierPath(rect: bounds)
-    let activeRect = selectedRect ?? pointer.flatMap { snapRectangle(near: $0) }
+    let activeRect = self.activeRect
     if let activeRect {
       shade.appendRect(activeRect)
     }
@@ -627,35 +684,38 @@ final class ScreenshotSelectionView: NSView {
           handle.stroke()
         }
       }
-      let dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
-      drawPill(dimensions, near: NSPoint(x: activeRect.minX, y: activeRect.maxY + 8))
-    } else {
-      let key = pinImmediately ? "ScreenshotSelectionPinInstructions" : "ScreenshotSelectionInstructions"
-      drawPill(localized(key), near: NSPoint(x: bounds.midX - 190, y: bounds.maxY - 64))
     }
-    if wantsSnapping {
-      let key = AXIsProcessTrusted() ? "ScreenshotElementHint" : "ScreenshotElementPermissionHint"
-      drawPill(localized(key), near: NSPoint(x: 12, y: 12))
-    }
-  }
-
-  private func drawPill(_ text: String, near point: NSPoint) {
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white
-    ]
-    let size = (text as NSString).size(withAttributes: attributes)
-    let rectangle = NSRect(
-      x: max(8, min(point.x, bounds.maxX - size.width - 24)),
-      y: max(8, min(point.y, bounds.maxY - size.height - 20)),
-      width: size.width + 16, height: size.height + 12
-    )
-    NSColor.black.withAlphaComponent(0.8).setFill()
-    NSBezierPath(roundedRect: rectangle, xRadius: 6, yRadius: 6).fill()
-    (text as NSString).draw(at: NSPoint(x: rectangle.minX + 8, y: rectangle.minY + 6), withAttributes: attributes)
   }
 
   private func localized(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+}
+
+@MainActor
+private final class GlassSelectionLabel: GlassSurfaceView {
+  private let label = NSTextField(labelWithString: "")
+
+  init() {
+    super.init(frame: .zero, cornerRadius: 12)
+    label.font = .systemFont(ofSize: 13, weight: .medium)
+    label.lineBreakMode = .byTruncatingTail
+    controlsView.addSubview(label)
+  }
+
+  required init?(coder: NSCoder) { nil }
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  func update(_ text: String, near point: NSPoint, in bounds: NSRect) {
+    if label.stringValue != text { label.stringValue = text }
+    let size = NSSize(width: min(label.intrinsicContentSize.width + 20, max(0, bounds.width - 16)),
+                      height: label.intrinsicContentSize.height + 10)
+    frame = NSRect(
+      x: max(bounds.minX + 8, min(point.x, bounds.maxX - size.width - 8)),
+      y: max(bounds.minY + 8, min(point.y, bounds.maxY - size.height - 8)),
+      width: size.width, height: size.height
+    )
+    label.frame = NSRect(origin: .zero, size: size).insetBy(dx: 10, dy: 5)
   }
 }
 

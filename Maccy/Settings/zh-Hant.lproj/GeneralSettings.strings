@@ -28,7 +28,6 @@
 "ScreenshotSelection" = "區域截圖：";
 "PinScreenshot" = "截圖並貼在螢幕：";
 "PinClipboardImage" = "貼出剪貼簿圖片：";
-"ScreenshotTest" = "試用";
 "ScreenshotHelp" = "按 Esc 取消選取。貼圖可拖曳，滾輪或觸控板雙指捏合可縮放；點擊關閉按鈕、連按兩下、按 Esc 或 ⌘W 可關閉，右鍵可複製、標註或關閉，⌘E 可開啟標註。請只執行一個版本的 Maccy，避免快捷鍵衝突。";
 "ScreenshotZoomHelp" = "滾輪向上放大、向下縮小，或使用觸控板雙指捏合縮放。拖曳可移動，連按兩下可關閉。";
 "AnnotationEdit" = "標註…";

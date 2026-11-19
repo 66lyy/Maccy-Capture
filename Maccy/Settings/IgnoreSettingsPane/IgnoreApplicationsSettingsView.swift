@@ -8,7 +8,7 @@ struct IgnoreApplicationsSettingsView: View {
   @State private var selection = ""
 
   var body: some View {
-    VStack(alignment: .leading) {
+    VStack(alignment: .leading, spacing: 10) {
       List(selection: $selection) {
         ForEach($ignoredApps) { $app in
           if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app) {
@@ -28,7 +28,9 @@ struct IgnoreApplicationsSettingsView: View {
             ).frame(height: 32).padding(.horizontal, 5)
           }
         }
-      }.onDeleteCommand {
+      }
+      .ignoreRulesList(isEmpty: ignoredApps.isEmpty)
+      .onDeleteCommand {
         remove(selection)
       }
 
@@ -37,10 +39,13 @@ struct IgnoreApplicationsSettingsView: View {
           Button("", systemImage: "plus") {
             isAdding = true
           }
+          .accessibilityLabel(Text("AddIgnoreRule", tableName: "IgnoreSettings"))
 
           Button("", systemImage: "minus") {
             remove(selection)
           }
+          .disabled(!ignoredApps.contains(selection))
+          .accessibilityLabel(Text("RemoveIgnoreRule", tableName: "IgnoreSettings"))
         }
         .frame(width: 50)
         .fileDialogDefaultDirectory(URL(string: "/Applications"))
@@ -75,10 +80,10 @@ struct IgnoreApplicationsSettingsView: View {
       }
 
       Text("IgnoredAppsDescription", tableName: "IgnoreSettings")
+        .font(.subheadline)
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.gray)
-        .controlSize(.small)
-    }.padding()
+        .foregroundStyle(.secondary)
+    }
   }
 
   private func remove(_ app: String?) {

@@ -5,6 +5,23 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("The glass selection hint does not intercept selection gestures")
+  func selectionGlassHitTesting() throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 800, height: 600), scale: 2, pinImmediately: false
+    )
+    view.layoutSubtreeIfNeeded()
+    let hint = try #require(view.subviews.first { $0 is GlassSurfaceView && !$0.isHidden })
+    #expect(!hint.frame.isEmpty)
+    #expect(view.bounds.contains(hint.frame))
+    #expect(hint.hitTest(NSPoint(x: hint.frame.midX, y: hint.frame.midY)) == nil)
+    view.beginSelection(at: NSPoint(x: 20, y: 20))
+    view.endSelection(at: NSPoint(x: 140, y: 150))
+    view.layoutSubtreeIfNeeded()
+    #expect(view.selectedRect?.size == NSSize(width: 120, height: 130))
+    #expect(hint.frame.minY >= 150)
+  }
+
   @Test("Reverse drags remain inside the display")
   func dragGeometry() {
     let bounds = NSRect(x: 0, y: 0, width: 800, height: 600)

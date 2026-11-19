@@ -10,11 +10,8 @@ struct ContentView: View {
 
   var body: some View {
     ZStack {
-      if #available(macOS 26.0, *) {
-        GlassEffectView()
-      } else {
-        VisualEffectView()
-      }
+      GlassEffectView(cornerRadius: Popup.cornerRadius + Popup.horizontalPadding)
+        .allowsHitTesting(false)
 
       KeyHandlingView(searchQuery: $appState.history.searchQuery, searchFocused: $searchFocused) {
         VStack(spacing: 0) {

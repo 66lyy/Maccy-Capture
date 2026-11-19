@@ -24,14 +24,31 @@ final class ScreenshotAnnotationDocument {
     var lineWidth: CGFloat = 4
     var text = ""
     var fontSize: CGFloat = 24
+
+    var textFont: NSFont { .systemFont(ofSize: fontSize, weight: .semibold) }
+    var textSize: NSSize { (text as NSString).size(withAttributes: [.font: textFont]) }
+
+    var shapeBounds: NSRect {
+      guard let first = points.first, let last = points.last else { return .zero }
+      return NSRect(
+        x: min(first.x, last.x), y: min(first.y, last.y),
+        width: abs(last.x - first.x), height: abs(last.y - first.y)
+      )
+    }
+  }
+
+  private enum Edit {
+    case append(Mark)
+    case moveText(index: Int, from: NSPoint, to: NSPoint)
   }
 
   let sourceImage: CGImage
   var imageSize: NSSize { NSSize(width: sourceImage.width, height: sourceImage.height) }
   private(set) var marks: [Mark] = []
-  private var undoneMarks: [Mark] = []
-  var canUndo: Bool { !marks.isEmpty }
-  var canRedo: Bool { !undoneMarks.isEmpty }
+  private var undoEdits: [Edit] = []
+  private var redoEdits: [Edit] = []
+  var canUndo: Bool { !undoEdits.isEmpty }
+  var canRedo: Bool { !redoEdits.isEmpty }
 
   init?(image: NSImage) {
     guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -59,19 +76,54 @@ final class ScreenshotAnnotationDocument {
         guard abs(last.x - first.x) >= 1, abs(last.y - first.y) >= 1 else { return false }
       }
     }
-    marks.append(mark)
-    undoneMarks.removeAll()
+    record(.append(mark))
+    return true
+  }
+
+  func textMarkIndex(at point: NSPoint, padding: CGFloat) -> Int? {
+    guard !marks.contains(where: { $0.tool == .redact && $0.shapeBounds.integral.contains(point) }) else { return nil }
+    return marks.indices.reversed().first { index in
+      let mark = marks[index]
+      guard mark.tool == .text, let origin = mark.points.first else { return false }
+      return NSRect(origin: origin, size: mark.textSize).insetBy(dx: -padding, dy: -padding).contains(point)
+    }
+  }
+
+  @discardableResult
+  func moveText(at index: Int, to position: NSPoint) -> Bool {
+    guard marks.indices.contains(index), marks[index].tool == .text,
+          let origin = marks[index].points.first, position != origin,
+          position.x.isFinite, position.y.isFinite else { return false }
+    record(.moveText(index: index, from: origin, to: position))
     return true
   }
 
   func undo() {
-    guard let mark = marks.popLast() else { return }
-    undoneMarks.append(mark)
+    guard let edit = undoEdits.popLast() else { return }
+    switch edit {
+    case .append: marks.removeLast()
+    case .moveText(let index, let origin, _): marks[index].points[0] = origin
+    }
+    redoEdits.append(edit)
   }
 
   func redo() {
-    guard let mark = undoneMarks.popLast() else { return }
-    marks.append(mark)
+    guard let edit = redoEdits.popLast() else { return }
+    apply(edit)
+    undoEdits.append(edit)
+  }
+
+  private func record(_ edit: Edit) {
+    apply(edit)
+    undoEdits.append(edit)
+    redoEdits.removeAll()
+  }
+
+  private func apply(_ edit: Edit) {
+    switch edit {
+    case .append(let mark): marks.append(mark)
+    case .moveText(let index, _, let position): marks[index].points[0] = position
+    }
   }
 
   func pngData() -> Data? {
@@ -89,7 +141,7 @@ final class ScreenshotAnnotationDocument {
     return context.makeImage()
   }
 
-  func draw(in context: CGContext, preview: Mark? = nil) {
+  func draw(in context: CGContext, preview: Mark? = nil, movingText: (index: Int, position: NSPoint)? = nil) {
     context.saveGState()
     defer { context.restoreGState() }
     context.clip(to: NSRect(origin: .zero, size: imageSize))
@@ -98,7 +150,12 @@ final class ScreenshotAnnotationDocument {
     NSGraphicsContext.saveGraphicsState()
     defer { NSGraphicsContext.restoreGraphicsState() }
     NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-    let visibleMarks = marks + (preview.map { [$0] } ?? [])
+    var visibleMarks = marks
+    if let movingText, visibleMarks.indices.contains(movingText.index),
+       visibleMarks[movingText.index].tool == .text {
+      visibleMarks[movingText.index].points[0] = movingText.position
+    }
+    if let preview { visibleMarks.append(preview) }
     for mark in visibleMarks where mark.tool != .redact {
       draw(mark, in: context)
     }
@@ -110,10 +167,6 @@ final class ScreenshotAnnotationDocument {
   private func draw(_ mark: Mark, in context: CGContext) {
     guard let first = mark.points.first else { return }
     let last = mark.points.last ?? first
-    let rectangle = NSRect(
-      x: min(first.x, last.x), y: min(first.y, last.y),
-      width: abs(last.x - first.x), height: abs(last.y - first.y)
-    )
     context.saveGState()
     defer { context.restoreGState() }
     let color = (mark.color.usingColorSpace(.sRGB) ?? .red).withAlphaComponent(1)
@@ -135,22 +188,22 @@ final class ScreenshotAnnotationDocument {
       }
       context.strokePath()
     case .rectangle:
-      context.stroke(rectangle)
+      context.stroke(mark.shapeBounds)
     case .ellipse:
-      context.strokeEllipse(in: rectangle)
+      context.strokeEllipse(in: mark.shapeBounds)
     case .pen:
       context.addLines(between: mark.points)
       context.strokePath()
     case .text:
       (mark.text as NSString).draw(at: first, withAttributes: [
-        .font: NSFont.systemFont(ofSize: mark.fontSize, weight: .semibold),
+        .font: mark.textFont,
         .foregroundColor: color
       ])
     case .redact:
       context.setShouldAntialias(false)
       context.setBlendMode(.copy)
       context.setFillColor(color.cgColor)
-      context.fill(rectangle.integral)
+      context.fill(mark.shapeBounds.integral)
     }
   }
 }

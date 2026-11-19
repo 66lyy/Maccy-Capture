@@ -1,4 +1,9 @@
 "Title" = "外观";
+"PlacementSection" = "窗口位置";
+"PreviewSection" = "图片预览";
+"InterfaceSection" = "界面元素";
+"MenuIconStyle" = "菜单栏图标样式";
+"SearchFieldVisibility" = "搜索框显示时机";
 "PopupAt" = "弹窗位置：";
 "PopupAtCursor" = "光标";
 "PopupAtMenuBarIcon" = "菜单栏图标";

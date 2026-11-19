@@ -1,7 +1,6 @@
 import AppKit
 import SwiftUI
 import Defaults
-import Settings
 
 struct AppearanceSettingsPane: View {
   @Default(.popupPosition) private var popupAt
@@ -17,27 +16,12 @@ struct AppearanceSettingsPane: View {
   @Default(.searchVisibility) private var searchVisibility
   @Default(.showFooter) private var showFooter
   @Default(.windowPosition) private var windowPosition
-  @Default(.showApplicationIcons) private var showApplicationIcons
 
   @State private var screens = NSScreen.screens
 
   private let imageHeightFormatter: NumberFormatter = {
     let formatter = NumberFormatter()
     formatter.minimum = 1
-    formatter.maximum = 200
-    return formatter
-  }()
-
-  private let numberOfItemsFormatter: NumberFormatter = {
-    let formatter = NumberFormatter()
-    formatter.minimum = 0
-    formatter.maximum = 100
-    return formatter
-  }()
-
-  private let titleLengthFormatter: NumberFormatter = {
-    let formatter = NumberFormatter()
-    formatter.minimum = 30
     formatter.maximum = 200
     return formatter
   }()
@@ -50,9 +34,31 @@ struct AppearanceSettingsPane: View {
   }()
 
   var body: some View {
-    Settings.Container(contentWidth: 650) {
-      Settings.Section(label: { Text("PopupAt", tableName: "AppearanceSettings") }) {
-        HStack {
+    VStack(alignment: .leading, spacing: 18) {
+      placement
+      previews
+      interface
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+      screens = NSScreen.screens
+    }
+  }
+
+  private var placement: some View {
+    PreferencesGroup(title: label("PlacementSection"), symbol: "macwindow") {
+      PreferencesRow(title: label("PopupAt")) {
+        HStack(spacing: 6) {
+          if popupAt == .lastPosition {
+            Button {
+              _windowPosition.reset()
+            } label: {
+              Image(systemName: "arrow.uturn.backward")
+            }
+            .help(label("PopupAtLastLocationReset"))
+            .accessibilityLabel(label("PopupAtLastLocationReset"))
+            .disabled(windowPosition == _windowPosition.defaultValue)
+          }
+
           Picker("", selection: $popupAt) {
             ForEach(PopupPosition.allCases) { position in
               if position == .center || position == .lastPosition, screens.count > 1 {
@@ -63,151 +69,152 @@ struct AppearanceSettingsPane: View {
             }
           }
           .labelsHidden()
-          .frame(width: 141, alignment: .leading)
-          .help(Text("PopupAtTooltip", tableName: "AppearanceSettings"))
-          .accessibilityLabel(Text("PopupAt", tableName: "AppearanceSettings"))
-
-          if popupAt == .lastPosition {
-            Button {
-              _windowPosition.reset()
-            } label: {
-              Image(systemName: "arrow.uturn.backward.circle.fill")
-                .imageScale(.large)
-            }
-            .buttonStyle(.borderless)
-            .help(Text("PopupAtLastLocationReset", tableName: "AppearanceSettings"))
-            .disabled(windowPosition == _windowPosition.defaultValue)
-          }
+          .frame(width: 176, alignment: .trailing)
+          .help(label("PopupAtTooltip"))
+          .accessibilityLabel(label("PopupAt"))
+          .accessibilityIdentifier("preferences.appearance.popupPosition")
         }
       }
 
-      Settings.Section(label: { Text("PinTo", tableName: "AppearanceSettings") }) {
+      Divider()
+
+      PreferencesRow(title: label("PinTo")) {
         Picker("", selection: $pinTo) {
           ForEach(PinsPosition.allCases) { position in
             Text(position.description)
           }
         }
         .labelsHidden()
-        .frame(width: 141, alignment: .leading)
-        .help(Text("PinToTooltip", tableName: "AppearanceSettings"))
-        .accessibilityLabel(Text("PinTo", tableName: "AppearanceSettings"))
+        .frame(width: 176, alignment: .trailing)
+        .help(label("PinToTooltip"))
+        .accessibilityLabel(label("PinTo"))
       }
+    }
+  }
 
-      Settings.Section(label: { Text("ImageHeight", tableName: "AppearanceSettings") }) {
+  private var previews: some View {
+    PreferencesGroup(title: label("PreviewSection"), symbol: "photo.on.rectangle") {
+      PreferencesRow(title: label("ImageHeight")) {
         HStack {
           TextField("", value: $imageHeight, formatter: imageHeightFormatter)
-            .frame(width: 120)
-            .help(Text("ImageHeightTooltip", tableName: "AppearanceSettings"))
-            .accessibilityLabel(Text("ImageHeight", tableName: "AppearanceSettings"))
+            .frame(width: 74)
+            .help(label("ImageHeightTooltip"))
+            .accessibilityLabel(label("ImageHeight"))
           Stepper("", value: $imageHeight, in: 1...200)
             .labelsHidden()
-            .accessibilityLabel(Text("ImageHeight", tableName: "AppearanceSettings"))
+            .accessibilityLabel(label("ImageHeight"))
         }
       }
 
-      Settings.Section(title: "") {
-        Defaults.Toggle(key: .openPreviewAutomatically) {
-          Text("OpenPreviewAutomatically", tableName: "AppearanceSettings")
-        }
-      }
+      Divider()
+      option(.openPreviewAutomatically, "OpenPreviewAutomatically")
+      Divider()
 
-      Settings.Section(label: { Text("PreviewDelay", tableName: "AppearanceSettings") }) {
+      PreferencesRow(title: label("PreviewDelay")) {
         HStack {
           TextField("", value: $previewDelay, formatter: previewDelayFormatter)
-            .frame(width: 120)
-            .help(Text("PreviewDelayTooltip", tableName: "AppearanceSettings"))
-            .accessibilityLabel(Text("PreviewDelay", tableName: "AppearanceSettings"))
+            .frame(width: 74)
+            .help(label("PreviewDelayTooltip"))
+            .accessibilityLabel(label("PreviewDelay"))
           Stepper("", value: $previewDelay, in: 200...100_000)
             .labelsHidden()
-            .accessibilityLabel(Text("PreviewDelay", tableName: "AppearanceSettings"))
+            .accessibilityLabel(label("PreviewDelay"))
         }
         .disabled(!openPreviewAutomatically)
       }
+    }
+  }
 
-      Settings.Section(
-        bottomDivider: true,
-        label: { Text("HighlightMatches", tableName: "AppearanceSettings") }
-      ) {
+  private var interface: some View {
+    PreferencesGroup(title: label("InterfaceSection"), symbol: "rectangle.3.group") {
+      PreferencesRow(title: label("HighlightMatches")) {
         Picker("", selection: $highlightMatch) {
           ForEach(HighlightMatch.allCases) { match in
             Text(match.description)
           }
         }
         .labelsHidden()
-        .frame(width: 141, alignment: .leading)
-        .help(Text("HighlightMatchesTooltip", tableName: "AppearanceSettings"))
-        .accessibilityLabel(Text("HighlightMatches", tableName: "AppearanceSettings"))
+        .frame(width: 176, alignment: .trailing)
+        .help(label("HighlightMatchesTooltip"))
+        .accessibilityLabel(label("HighlightMatches"))
       }
+      Divider()
 
-      Settings.Section(title: "") {
-        Defaults.Toggle(key: .showSpecialSymbols) {
-          Text("ShowSpecialSymbols", tableName: "AppearanceSettings")
-        }
-        .help(Text("ShowSpecialSymbolsTooltip", tableName: "AppearanceSettings"))
-
-        HStack {
-          Defaults.Toggle(key: .showInStatusBar) {
-            Text("ShowMenuIcon", tableName: "AppearanceSettings")
-          }
-
+      PreferencesRow(title: label("ShowMenuIcon")) {
+        HStack(spacing: 12) {
           Picker("", selection: $menuIcon) {
             ForEach(MenuIcon.allCases) { icon in
               Image(nsImage: icon.image)
             }
           }
           .labelsHidden()
-          .scaledToFit()
+          .frame(width: 66, alignment: .trailing)
           .disabled(!showInStatusBar)
-          .controlSize(.small)
-          .accessibilityLabel(Text("ShowMenuIcon", tableName: "AppearanceSettings"))
-        }
+          .accessibilityLabel(label("MenuIconStyle"))
 
-        Defaults.Toggle(key: .showRecentCopyInMenuBar) {
-          Text("ShowRecentCopyInMenuBar", tableName: "AppearanceSettings")
+          preferenceSwitch(.showInStatusBar, "ShowMenuIcon")
         }
-        HStack {
-          Defaults.Toggle(key: .showSearch) {
-            Text("ShowSearchField", tableName: "AppearanceSettings")
-          }
+      }
+      Divider()
+      option(.showRecentCopyInMenuBar, "ShowRecentCopyInMenuBar")
+      Divider()
 
+      PreferencesRow(title: label("ShowSearchField")) {
+        HStack(spacing: 12) {
           Picker("", selection: $searchVisibility) {
             ForEach(SearchVisibility.allCases) { type in
               Text(type.description)
             }
           }
           .labelsHidden()
-          .scaledToFit()
+          .frame(width: 138, alignment: .trailing)
           .disabled(!showSearch)
-          .controlSize(.small)
-          .accessibilityLabel(Text("ShowSearchField", tableName: "AppearanceSettings"))
-        }
-        Defaults.Toggle(key: .showTitle) {
-          Text("ShowTitleBeforeSearchField", tableName: "AppearanceSettings")
-        }
-        Defaults.Toggle(key: .showApplicationIcons) {
-          Text("ShowApplicationIcons", tableName: "AppearanceSettings")
-        }
-        Defaults.Toggle(key: .showHexColorSwatch) {
-          Text("ShowHexColorSwatch", tableName: "AppearanceSettings")
-        }
-        .help(Text("ShowHexColorSwatchTooltip", tableName: "AppearanceSettings"))
+          .accessibilityLabel(label("SearchFieldVisibility"))
 
-        Defaults.Toggle(key: .showFooter) {
-          Text("ShowFooter", tableName: "AppearanceSettings")
+          preferenceSwitch(.showSearch, "ShowSearchField")
         }
-        // Settings.Section offers its content the full container width even though the content
-        // starts after the label column, so cap the width to make long translations wrap.
-        Text("OpenPreferencesWarning", tableName: "AppearanceSettings")
+      }
+      Divider()
+
+      option(.showTitle, "ShowTitleBeforeSearchField")
+      Divider()
+      option(.showApplicationIcons, "ShowApplicationIcons")
+      Divider()
+      option(.showSpecialSymbols, "ShowSpecialSymbols")
+        .help(label("ShowSpecialSymbolsTooltip"))
+      Divider()
+      option(.showHexColorSwatch, "ShowHexColorSwatch")
+        .help(label("ShowHexColorSwatchTooltip"))
+      Divider()
+      option(.showFooter, "ShowFooter")
+
+      if !showFooter {
+        label("OpenPreferencesWarning")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
-          .frame(maxWidth: 380, alignment: .leading)
-          .opacity(showFooter ? 0 : 1)
-          .controlSize(.small)
-          .foregroundStyle(.gray)
+          .padding(.bottom, 10)
       }
     }
-    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-      screens = NSScreen.screens
+  }
+
+  private func option(_ key: Defaults.Key<Bool>, _ title: LocalizedStringKey) -> some View {
+    PreferencesRow(title: label(title)) {
+      preferenceSwitch(key, title)
     }
+  }
+
+  private func preferenceSwitch(_ key: Defaults.Key<Bool>, _ title: LocalizedStringKey) -> some View {
+    Defaults.Toggle(key: key) {
+      label(title)
+    }
+    .toggleStyle(.switch)
+    .labelsHidden()
+    .accessibilityLabel(label(title))
+  }
+
+  private func label(_ key: LocalizedStringKey) -> Text {
+    Text(key, tableName: "AppearanceSettings")
   }
 
   @ViewBuilder
@@ -237,12 +244,11 @@ struct AppearanceSettingsPane: View {
   }
 
   private func labelForScreen(index screenIndex: Int) -> String {
-    switch screenIndex {
-    case 0:
+    let index = screenIndex - 1
+    guard screens.indices.contains(index) else {
       return String(localized: "ActiveScreen", table: "AppearanceSettings")
-    case _:
-      return screens[screenIndex - 1].localizedName
     }
+    return screens[index].localizedName
   }
 }
 

@@ -90,31 +90,27 @@ final class ScreenshotPreviewWindow: NSPanel, NSWindowDelegate {
   }
 
   private func configureContent() {
-    let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
-    container.wantsLayer = true
-    container.layer?.cornerRadius = 8
-    container.layer?.masksToBounds = true
-    container.layer?.borderWidth = 2
-    container.layer?.borderColor = NSColor.white.withAlphaComponent(0.9).cgColor
-    container.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-
-    imageView.frame = container.bounds.insetBy(dx: 2, dy: 2)
+    let container = GlassSurfaceView(frame: NSRect(origin: .zero, size: frame.size))
+    imageView.frame = container.bounds.insetBy(dx: 4, dy: 4)
     imageView.autoresizingMask = [.width, .height]
     imageView.imageScaling = .scaleProportionallyUpOrDown
+    imageView.wantsLayer = true
+    imageView.layer?.cornerRadius = 10
+    imageView.layer?.cornerCurve = .continuous
+    imageView.layer?.masksToBounds = true
     imageView.setAccessibilityLabel(localized("ScreenshotTitle"))
-    container.addSubview(imageView)
+    container.controlsView.addSubview(imageView)
 
-    let closeButton = overlayButton(symbol: "xmark", label: "ScreenshotDismissPreview", action: #selector(dismiss))
-    closeButton.frame.origin = NSPoint(x: 6, y: container.bounds.maxY - 30)
-    container.addSubview(closeButton)
-    let pinButton = overlayButton(symbol: "pin.fill", label: "ScreenshotPinImage", action: #selector(pinImage))
-    pinButton.frame.origin = NSPoint(x: container.bounds.maxX - 30, y: container.bounds.maxY - 30)
-    container.addSubview(pinButton)
+    var buttons = [overlayButton(symbol: "pin", label: "ScreenshotPinImage", action: #selector(pinImage))]
     if annotationHandler != nil {
-      let editButton = overlayButton(symbol: "pencil.tip", label: "AnnotationEdit", action: #selector(annotateImage))
-      editButton.frame.origin = NSPoint(x: 36, y: container.bounds.maxY - 30)
-      container.addSubview(editButton)
+      buttons.insert(overlayButton(symbol: "pencil.tip", label: "AnnotationEdit", action: #selector(annotateImage)), at: 0)
     }
+    buttons.append(overlayButton(symbol: "xmark", label: "ScreenshotDismissPreview", action: #selector(dismiss)))
+    let controls = GlassControlStrip(buttons: buttons)
+    controls.frame.origin = NSPoint(x: max(0, container.bounds.maxX - controls.frame.width - 6),
+                                    y: max(0, container.bounds.maxY - controls.frame.height - 6))
+    controls.autoresizingMask = [.minXMargin, .minYMargin]
+    container.controlsView.addSubview(controls)
     contentView = container
   }
 
@@ -123,14 +119,8 @@ final class ScreenshotPreviewWindow: NSPanel, NSWindowDelegate {
       image: NSImage(systemSymbolName: symbol, accessibilityDescription: localized(label)) ?? NSImage(),
       target: self, action: action
     )
-    button.bezelStyle = .circular
-    button.isBordered = true
-    button.appearance = NSAppearance(named: .darkAqua)
-    button.bezelColor = NSColor.black.withAlphaComponent(0.65)
-    button.contentTintColor = .white
     button.toolTip = localized(label)
     button.setAccessibilityLabel(localized(label))
-    button.frame.size = NSSize(width: 24, height: 24)
     return button
   }
 

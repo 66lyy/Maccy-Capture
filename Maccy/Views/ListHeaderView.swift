@@ -12,14 +12,15 @@ struct ListHeaderView: View {
   @Default(.showTitle) private var showTitle
 
   var body: some View {
-    HStack {
+    HStack(spacing: 8) {
       if showTitle {
         Text("Maccy")
+          .font(.subheadline.weight(.semibold))
           .foregroundStyle(.secondary)
           .padding(.leading, 5)
       }
 
-      SearchFieldView(placeholder: "search_placeholder", query: $searchQuery)
+      SearchFieldView(placeholder: "search_placeholder", query: $searchQuery, isFocused: searchFocused)
         .focused($searchFocused)
         .frame(maxWidth: .infinity)
         .onChange(of: scenePhase) {

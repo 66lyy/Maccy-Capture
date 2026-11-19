@@ -9,7 +9,7 @@ struct IgnorePasteboardTypesSettingsView: View {
   @State private var selection = ""
 
   var body: some View {
-    VStack(alignment: .leading) {
+    VStack(alignment: .leading, spacing: 10) {
       List(selection: $selection) {
         ForEach(ignoredPasteboardTypes.sorted()) { type in
           TextField("", text: Binding(
@@ -26,6 +26,7 @@ struct IgnorePasteboardTypesSettingsView: View {
           .focused($focus, equals: type)
         }
       }
+      .ignoreRulesList(isEmpty: ignoredPasteboardTypes.isEmpty)
       .onDeleteCommand {
         remove(selection)
       }
@@ -36,9 +37,12 @@ struct IgnorePasteboardTypesSettingsView: View {
             ignoredPasteboardTypes.insert("xxx.yyy.zzz")
             focus = "xxx.yyy.zzz"
           }
+          .accessibilityLabel(Text("AddIgnoreRule", tableName: "IgnoreSettings"))
           Button("", systemImage: "minus") {
             remove(selection)
           }
+          .disabled(!ignoredPasteboardTypes.contains(selection))
+          .accessibilityLabel(Text("RemoveIgnoreRule", tableName: "IgnoreSettings"))
         }
         .frame(width: 50)
 
@@ -52,11 +56,10 @@ struct IgnorePasteboardTypesSettingsView: View {
       }
 
       Text("IgnoredPasteboardTypesDescription", tableName: "IgnoreSettings")
+        .font(.subheadline)
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.gray)
-        .controlSize(.small)
+        .foregroundStyle(.secondary)
     }
-    .padding()
   }
 
   private func remove(_ type: String?) {

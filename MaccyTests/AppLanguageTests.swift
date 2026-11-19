@@ -1,6 +1,118 @@
-import Foundation
+import AppKit
+import KeyboardShortcuts
 import Testing
 @testable import Maccy
+
+@MainActor
+@Suite(.serialized)
+struct PreferencesWindowTests {
+  @Test("Opening settings keeps enough height for the sidebar and controls")
+  func opensAtUsableSize() async throws {
+    try #require(AppDelegate.isTesting)
+    let controller = PreferencesWindowController()
+    let window = try #require(controller.window)
+    defer { window.close() }
+
+    controller.show()
+    try await Task.sleep(for: .milliseconds(350))
+    let contentView = try #require(window.contentView)
+    contentView.layoutSubtreeIfNeeded()
+    window.displayIfNeeded()
+    let settingsView = try #require(contentView.subviews.first)
+
+    #expect(window.isVisible)
+    #expect(window.contentLayoutRect.height >= window.contentMinSize.height - 44)
+    #expect(window.frame.height >= window.contentMinSize.height - 1)
+    #expect(contentView.bounds.width >= window.contentMinSize.width - 1)
+    #expect(contentView.bounds.height >= window.contentMinSize.height - 1)
+    #expect(settingsView.frame == contentView.bounds)
+  }
+
+  @Test("Navigation labels, page titles, and settings controls fit the window", arguments: [false, true])
+  func settingsContentFits(useMinimumSize: Bool) async throws {
+    try #require(AppDelegate.isTesting)
+    for page in [PreferencesView.Page.appearance, .shortcuts, .ignore] {
+      var frames: [String: CGRect] = [:]
+      let controller = PreferencesWindowController(page: page) { id, frame in
+        frames[id] = frame
+      }
+      let window = try #require(controller.window)
+      defer { window.close() }
+
+      if useMinimumSize {
+        window.setContentSize(window.contentMinSize)
+      }
+      controller.show()
+      try await Task.sleep(for: .milliseconds(350))
+      let contentView = try #require(window.contentView)
+      contentView.layoutSubtreeIfNeeded()
+      window.displayIfNeeded()
+
+      let visibleBounds = contentView.bounds
+      let title = try #require(frames["title.\(page.id)"])
+      #expect(title.width > 0)
+      #expect(visibleBounds.contains(title))
+      for item in PreferencesView.Page.allCases {
+        let label = try #require(frames["navigation.\(item.id)"])
+        #expect(label.width > 0)
+        #expect(visibleBounds.contains(label))
+        #expect(label.maxX < title.minX)
+      }
+      let detail = try #require(frames["detail.\(page.id)"])
+      #expect(detail.minX >= title.minX - 1)
+      #expect(detail.maxX <= visibleBounds.maxX)
+
+      if page == .ignore {
+        let categories = try ["applications", "pasteboardTypes", "regexp"].map { category in
+          try #require(frames["ignore.category.\(category)"])
+        }
+        for label in categories {
+          #expect(label.width > 20)
+          #expect(detail.contains(label))
+          #expect(visibleBounds.contains(label))
+        }
+        for (previous, next) in zip(categories, categories.dropFirst()) {
+          #expect(!previous.intersects(next))
+        }
+      }
+
+      if page == .shortcuts {
+        let recorders = recorders(in: contentView)
+        #expect(recorders.count == 8)
+        for recorder in recorders {
+          let frame = recorder.convert(recorder.bounds, to: contentView)
+          #expect(frame.width > 0)
+          #expect(frame.minX >= visibleBounds.minX && frame.maxX <= visibleBounds.maxX)
+          if !useMinimumSize {
+            #expect(visibleBounds.contains(frame))
+          }
+        }
+      }
+    }
+  }
+
+  @Test("A shortcut change ignores unrelated conflicts and its own stored assignment")
+  func checksOnlyEditedShortcut() {
+    let edited = KeyboardShortcuts.Shortcut(.k, modifiers: [.control, .option])
+    let unrelated = KeyboardShortcuts.Shortcut(.l, modifiers: [.control, .option])
+    let candidate = ShortcutAssignment(id: "edited", title: "Edited", scope: .selection, shortcut: edited)
+    var assignments = [
+      candidate,
+      ShortcutAssignment(id: "otherWindow", title: "Other window", scope: .pinnedImage, shortcut: edited),
+      ShortcutAssignment(id: "oldFirst", title: "Old first", scope: .capture, shortcut: unrelated),
+      ShortcutAssignment(id: "oldSecond", title: "Old second", scope: .global, shortcut: unrelated)
+    ]
+    #expect(candidate.conflicts(in: assignments).isEmpty)
+
+    assignments.append(ShortcutAssignment(id: "global", title: "Global", scope: .global, shortcut: edited))
+    #expect(candidate.conflicts(in: assignments).map(\.id) == ["global"])
+  }
+
+  private func recorders(in view: NSView) -> [KeyboardShortcuts.RecorderCocoa] {
+    if let recorder = view as? KeyboardShortcuts.RecorderCocoa { return [recorder] }
+    return view.subviews.flatMap { recorders(in: $0) }
+  }
+}
 
 @MainActor
 @Suite(.serialized)

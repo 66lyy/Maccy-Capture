@@ -1,6 +1,5 @@
 import SwiftUI
 import Defaults
-import Settings
 
 struct StorageSettingsPane: View {
   @Observable
@@ -70,58 +69,59 @@ struct StorageSettingsPane: View {
   }()
 
   var body: some View {
-    Settings.Container(contentWidth: 450) {
-      Settings.Section(
-        bottomDivider: true,
-        label: { Text("Save", tableName: "StorageSettings") }
-      ) {
-        Toggle(
-          isOn: $viewModel.saveFiles,
-          label: { Text("Files", tableName: "StorageSettings") }
-        )
-        Toggle(
-          isOn: $viewModel.saveImages,
-          label: { Text("Images", tableName: "StorageSettings") }
-        )
-        Toggle(
-          isOn: $viewModel.saveText,
-          label: { Text("Text", tableName: "StorageSettings") }
-        )
+    VStack(alignment: .leading, spacing: 18) {
+      PreferencesGroup(title: Text("Save", tableName: "StorageSettings"), symbol: "square.on.square") {
+        storageToggle("Files", $viewModel.saveFiles)
+        Divider()
+        storageToggle("Images", $viewModel.saveImages)
+        Divider()
+        storageToggle("Text", $viewModel.saveText)
         Text("SaveDescription", tableName: "StorageSettings")
-          .controlSize(.small)
-          .foregroundStyle(.gray)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .padding(.bottom, 10)
       }
 
-      Settings.Section(label: { Text("Size", tableName: "StorageSettings") }) {
-        HStack {
-          TextField("", value: $size, formatter: sizeFormatter)
-            .frame(width: 80)
-            .help(Text("SizeTooltip", tableName: "StorageSettings"))
-            .accessibilityLabel(Text("Size", tableName: "StorageSettings"))
-          Stepper("", value: $size, in: 1...999)
-            .labelsHidden()
-            .accessibilityLabel(Text("Size", tableName: "StorageSettings"))
-          Text(storageSize)
-            .controlSize(.small)
-            .foregroundStyle(.gray)
-            .help(Text("CurrentSizeTooltip", tableName: "StorageSettings"))
-            .onAppear {
-              storageSize = Storage.shared.size
-            }
-        }
-      }
-
-      Settings.Section(label: { Text("SortBy", tableName: "StorageSettings") }) {
-        Picker("", selection: $sortBy) {
-          ForEach(Sorter.By.allCases) { mode in
-            Text(mode.description)
+      PreferencesGroup(title: Text("HistorySection", tableName: "StorageSettings"), symbol: "clock") {
+        PreferencesRow(title: Text("Size", tableName: "StorageSettings")) {
+          HStack {
+            Text(storageSize)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .help(Text("CurrentSizeTooltip", tableName: "StorageSettings"))
+              .onAppear { storageSize = Storage.shared.size }
+            TextField("", value: $size, formatter: sizeFormatter)
+              .frame(width: 74)
+              .help(Text("SizeTooltip", tableName: "StorageSettings"))
+              .accessibilityLabel(Text("Size", tableName: "StorageSettings"))
+            Stepper("", value: $size, in: 1...999)
+              .labelsHidden()
+              .accessibilityLabel(Text("Size", tableName: "StorageSettings"))
           }
         }
-        .labelsHidden()
-        .frame(width: 160, alignment: .leading)
-        .help(Text("SortByTooltip", tableName: "StorageSettings"))
-        .accessibilityLabel(Text("SortBy", tableName: "StorageSettings"))
+        Divider()
+
+        PreferencesRow(title: Text("SortBy", tableName: "StorageSettings")) {
+          Picker("", selection: $sortBy) {
+            ForEach(Sorter.By.allCases) { mode in
+              Text(mode.description)
+            }
+          }
+          .labelsHidden()
+          .frame(width: 176, alignment: .trailing)
+          .help(Text("SortByTooltip", tableName: "StorageSettings"))
+          .accessibilityLabel(Text("SortBy", tableName: "StorageSettings"))
+        }
       }
+    }
+  }
+
+  private func storageToggle(_ key: LocalizedStringKey, _ binding: Binding<Bool>) -> some View {
+    PreferencesRow(title: Text(key, tableName: "StorageSettings")) {
+      Toggle(isOn: binding) { Text(key, tableName: "StorageSettings") }
+        .toggleStyle(.switch)
+        .labelsHidden()
+        .accessibilityLabel(Text(key, tableName: "StorageSettings"))
     }
   }
 }

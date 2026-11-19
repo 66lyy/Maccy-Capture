@@ -1,4 +1,9 @@
 "Title" = "Appearance";
+"PlacementSection" = "Window Placement";
+"PreviewSection" = "Image Previews";
+"InterfaceSection" = "Visible Elements";
+"MenuIconStyle" = "Menu icon style";
+"SearchFieldVisibility" = "Search field visibility";
 "PopupAt" = "Popup at:";
 "PopupAtCursor" = "Cursor";
 "PopupAtMenuBarIcon" = "Menu icon";

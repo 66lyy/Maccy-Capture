@@ -1,4 +1,7 @@
 "Title" = "忽略";
+"NoIgnoreRules" = "尚未添加规则";
+"AddIgnoreRule" = "添加规则";
+"RemoveIgnoreRule" = "移除所选规则";
 "ApplicationsTab" = "忽略应用";
 "IgnoredAppsDescription" = "忽略来自特定应用的内容。\n请注意此选项并非总是有效，最好使用忽略剪贴板类型设置。";
 "IgnoredAllAppsExceptListed" = "忽略列表之外的所有应用程序";

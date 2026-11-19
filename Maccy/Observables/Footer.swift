@@ -28,7 +28,6 @@ class Footer: ItemsContainer {
     items = [
       FooterItem(
         title: "clear",
-        shortcuts: [KeyShortcut(key: .delete, modifierFlags: [.command, .option])],
         help: "clear_tooltip",
         confirmation: .init(
           message: "clear_alert_message",
@@ -44,7 +43,6 @@ class Footer: ItemsContainer {
       },
       FooterItem(
         title: "clear_all",
-        shortcuts: [KeyShortcut(key: .delete, modifierFlags: [.command, .option, .shift])],
         help: "clear_all_tooltip",
         confirmation: .init(
           message: "clear_alert_message",
@@ -59,8 +57,7 @@ class Footer: ItemsContainer {
         }
       },
       FooterItem(
-        title: "preferences",
-        shortcuts: [KeyShortcut(key: .comma)]
+        title: "preferences"
       ) {
         Task { @MainActor in
           AppState.shared.openPreferences()

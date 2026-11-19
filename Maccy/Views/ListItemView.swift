@@ -61,12 +61,12 @@ struct ListItemView<Title: View, ID: Hashable>: View {
           AppImageView(appImage: appIcon, size: NSSize(width: 15, height: 15))
           Spacer(minLength: 0)
         }
-        .padding(.leading, 4)
+        .padding(.leading, 6)
         .padding(.vertical, 5)
       }
 
       Spacer()
-        .frame(width: showIcons ? 5 : 10)
+        .frame(width: showIcons && appIcon != nil ? 6 : 10)
 
       if let accessoryImage {
         Image(nsImage: accessoryImage)
@@ -78,6 +78,7 @@ struct ListItemView<Title: View, ID: Hashable>: View {
 
       if let image {
         Image(nsImage: image)
+          .clipShape(RoundedRectangle(cornerRadius: 4))
           .accessibilityIdentifier("copy-history-item")
           .accessibilityHidden(true)
           .padding(.trailing, 5)
@@ -109,6 +110,13 @@ struct ListItemView<Title: View, ID: Hashable>: View {
             ForEach(shortcuts) { shortcut in
               let visible = shortcut.isVisible(shortcuts, modifierFlags.flags)
               KeyboardShortcutView(shortcut: shortcut)
+                .font(.caption.weight(.medium))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(
+                  isSelected ? Color.white.opacity(0.18) : Color.secondary.opacity(0.10),
+                  in: RoundedRectangle(cornerRadius: 4)
+                )
                 .opacity(visible ? 1 : 0)
                 .accessibilityHidden(true)
                 .frame(width: visible ? nil : 0)

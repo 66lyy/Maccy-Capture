@@ -12,9 +12,14 @@ Language names appear in their native scripts so you can switch back from an unf
 After making a selection, click Restart to Apply to update menus, settings, and capture messages.
 This internal restart preserves clipboard history but closes temporary pinned images held only in memory.
 
-Settings → General lets you customize shortcuts for capturing the main display,
+Settings → Shortcuts lets you customize shortcuts for opening the history, pinning and
+deleting history items, toggling the preview, capturing the main display,
 capturing a region, capturing and pinning, and pinning a clipboard image.
-Each action has a button to help distinguish shortcut conflicts from screen recording permission issues.
+Each row has a shortcut recorder; run capture actions from the Capture menu instead.
+Click anywhere on an in-window group header to expand it and change keys for selection, annotation,
+and pinned images. When recording a shortcut or restoring its default, only that combination is
+checked against assignments in overlapping contexts, app menu shortcuts, and known macOS shortcuts.
+This does not detect every third-party shortcut.
 Pinning a clipboard image has no shortcut by default; assign one if needed.
 Quit the original Maccy before running this version to avoid competing shortcuts.
 At startup, this version checks whether another copy is running and exits with a message
@@ -22,8 +27,13 @@ if it detects one, without clearing history.
 
 The Capture menu at the bottom of the history list provides the same four actions,
 with crop, display, pin, and image icons.
-General settings include an explanation and a shortcut recorder for each action,
-plus Capture Now or Pin to Screen buttons.
+The history panel, settings window, selection notices, preview controls, annotation, and OCR panels
+use Liquid Glass on macOS 26 or newer, with frosted material on earlier releases. Settings use
+glass surfaces over a softly coloured window backdrop so the desktop does not show through the text.
+Settings use solid surfaces if Reduce Transparency is enabled. The sidebar stays visible while the
+detail pane scrolls. Ignore shows full category names and a compact message for empty rule lists.
+Clipboard and capture shortcuts use the same
+single-column layout with right-aligned recorders. Glass does not alter the pinned image itself or exported pixels.
 
 ## Capture Previews and Region Selection
 
@@ -339,9 +349,13 @@ All annotation entry points use a borderless in-place overlay, not a separate ed
 
 Tools include arrows, rectangles, ellipses, a freehand brush, single-line text,
 and opaque solid-color covers.
+The toolbar and OCR results use native Liquid Glass on macOS 26 or later and frosted material on earlier versions.
+Both follow the system appearance. Dividers separate drawing, undo/redo, and output
+actions, and the active tool uses the system accent color. The toolbar still wraps on narrower displays.
 Click a swatch or open the adjacent color picker to set the color for new marks, including covers. Drag the size slider
 to adjust stroke width (1–40 pt) or, with the text tool selected, font size (10–120 pt).
-Click to enter text, press Enter to confirm, or Esc to cancel the current text.
+Click to enter text, press Enter to confirm, then drag the text with the text tool to move it.
+Esc cancels the current input or drag, and a completed move can be undone or redone.
 Undo and redo support ⌘Z / ⇧⌘Z.
 Line width and text size are chosen relative to the displayed canvas,
 while annotations are stored in original-image pixel coordinates.
