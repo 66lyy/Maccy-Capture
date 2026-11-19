@@ -28,11 +28,13 @@ extension SharedStateTests {
     let savedIgnoreAllAppsExceptListed = Defaults[.ignoreAllAppsExceptListed]
     let savedIgnoredApps = Defaults[.ignoredApps]
     let savedIgnoredPasteboardTypes = Defaults[.ignoredPasteboardTypes]
+    let savedIgnoreRegexp = Defaults[.ignoreRegexp]
 
     init() throws {
       image = try #require(NSImage(named: "NSInfo"))
       Defaults[.ignoreAllAppsExceptListed] = false
       Defaults[.ignoreEvents] = false
+      Defaults[.ignoreRegexp] = []
       clipboard.clearHooks()
     }
 
@@ -43,6 +45,37 @@ extension SharedStateTests {
       Defaults[.ignoreAllAppsExceptListed] = savedIgnoreAllAppsExceptListed
       Defaults[.ignoredApps] = savedIgnoredApps
       Defaults[.ignoredPasteboardTypes] = savedIgnoredPasteboardTypes
+      Defaults[.ignoreRegexp] = savedIgnoreRegexp
+    }
+
+    @Test("Ignore regex rules", arguments: [
+      (["[", "^secret"], "secret text", true),
+      ([], "secret text", false),
+      (["^secret"], "public text", false),
+      (["^secret"], "secret text", true),
+      (["["], "public text", false)
+    ])
+    func ignoreRegexRules(patterns: [String], text: String, ignored: Bool) async throws {
+      Defaults[.ignoreRegexp] = patterns
+      let copies = try await waitForCopies(expectingCopy: !ignored, after: {
+        pasteboard.declareTypes([.string], owner: nil)
+        pasteboard.setString(text, forType: .string)
+      })
+      #expect(copies.count == (ignored ? 0 : 1))
+    }
+
+    @Test("Ignore regex cache follows preference changes")
+    func ignoreRegexCacheFollowsPreferenceChanges() async throws {
+      for patterns in [["^secret"], ["^public"], []] {
+        Defaults[.ignoreRegexp] = patterns
+        clipboard.clearHooks()
+        let ignored = patterns == ["^secret"]
+        let copies = try await waitForCopies(expectingCopy: !ignored, after: {
+          pasteboard.declareTypes([.string], owner: nil)
+          pasteboard.setString("secret text", forType: .string)
+        })
+        #expect(copies.count == (ignored ? 0 : 1))
+      }
     }
 
     @Test("Changes listener and add hooks")
