@@ -1,0 +1,260 @@
+import AppKit
+import CoreGraphics
+import Defaults
+
+@MainActor
+final class ScreenshotCapture {
+  static let shared = ScreenshotCapture()
+
+  private enum CaptureMode {
+    case mainDisplay
+    case selection
+  }
+
+  private let session = ScreenshotCaptureSession()
+  private let permission = ScreenCapturePermission()
+  private let selectionController = ScreenshotSelectionController()
+  private var captureTask: Task<Void, Never>?
+  private var pinnedWindows: [UUID: PinnedScreenshotWindow] = [:]
+  private var previewWindow: ScreenshotPreviewWindow?
+  private var annotationWindows: [UUID: ScreenshotAnnotationWindow] = [:]
+  private var annotationSources: [ObjectIdentifier: UUID] = [:]
+  private var isShowingAlert = false
+
+  func captureMainDisplay() {
+    startCapture(mode: .mainDisplay, pinToScreen: false)
+  }
+
+  func captureSelection(pinToScreen: Bool = false) {
+    startCapture(mode: .selection, pinToScreen: pinToScreen)
+  }
+
+  func pinClipboardImage() {
+    guard let image = NSImage(pasteboard: .general), image.isValid else {
+      showError("ScreenshotClipboardEmpty")
+      return
+    }
+    pinImage(image)
+  }
+
+  func cancelCapture() {
+    captureTask?.cancel()
+    selectionController.cancel()
+    session.cancel()
+  }
+
+  func shutDown() {
+    cancelCapture()
+    dismissPreview()
+    for window in Array(annotationWindows.values) {
+      window.close()
+    }
+    for window in Array(pinnedWindows.values) {
+      window.close()
+    }
+  }
+
+  private func startCapture(mode: CaptureMode, pinToScreen: Bool) {
+    guard captureTask == nil, !isShowingAlert else { return }
+    switch permission.authorize() {
+    case .granted:
+      break
+    case .requested, .requestInProgress:
+      return
+    case .needsSettings:
+      showPermissionHelp()
+      return
+    }
+
+    dismissPreview()
+    AppState.shared.popup.close()
+    captureTask = Task { [weak self] in
+      guard let self else { return }
+      defer { captureTask = nil }
+      do {
+        try await Task.sleep(for: .milliseconds(180))
+        let captureMode: ScreenshotCaptureSession.Mode
+        var shouldPin = pinToScreen
+        var pinAnchor: NSPoint?
+        var shouldAnnotate = false
+        switch mode {
+        case .mainDisplay:
+          captureMode = .mainDisplay
+        case .selection:
+          guard let selection = try await selectionController.select(pinImmediately: pinToScreen) else { return }
+          shouldPin = selection.pinToScreen
+          shouldAnnotate = selection.annotate
+          pinAnchor = selection.anchor
+          captureMode = .region(selection.captureRect)
+          try await Task.sleep(for: .milliseconds(120))
+        }
+        let data = try await session.capture(mode: captureMode)
+        try Task.checkCancellation()
+        guard let image = NSImage(data: data), image.isValid else {
+          throw ScreenshotCaptureSession.Failure.invalidImage
+        }
+        if shouldAnnotate {
+          annotateImage(image, originalWasCopied: false)
+        } else {
+          try addToHistory(data)
+          if shouldPin {
+            pinImage(image, anchor: pinAnchor)
+          } else {
+            showPreview(image, mode: mode)
+          }
+        }
+        if Defaults[.screenshotSoundEnabled] {
+          NSSound.write?.play()
+        }
+      } catch is CancellationError {
+        return
+      } catch {
+        showError(error.localizedDescription, localized: true)
+      }
+    }
+  }
+
+  private func addToHistory(_ pngData: Data) throws {
+    let item = HistoryItem(contents: [
+      HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData)
+    ])
+    item.application = Bundle.main.bundleIdentifier
+    item.title = text("ScreenshotTitle")
+
+    guard Clipboard.shared.copyScreenshot(pngData) else {
+      throw ScreenshotCaptureSession.Failure.clipboardWrite
+    }
+    if #unavailable(macOS 15.0) {
+      try History.shared.insertIntoStorage(item)
+    }
+    History.shared.add(item)
+    try Storage.shared.context.save()
+  }
+
+  private func pinImage(_ image: NSImage, anchor: NSPoint? = nil) {
+    let pointer = anchor ?? NSEvent.mouseLocation
+    guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else {
+      return
+    }
+    let identifier = UUID()
+    let window = PinnedScreenshotWindow(image: image, visibleFrame: screen.visibleFrame, anchor: pointer)
+    let sourceID = ObjectIdentifier(window)
+    window.onAnnotate = { [weak self, weak window] image in
+      guard let window else { return }
+      self?.annotateImage(image, source: window)
+    }
+    window.onClose = { [weak self] in
+      if let editorID = self?.annotationSources[sourceID] {
+        self?.annotationWindows[editorID]?.close()
+      }
+      self?.pinnedWindows.removeValue(forKey: identifier)
+    }
+    pinnedWindows[identifier] = window
+    window.makeKeyAndOrderFront(nil)
+  }
+
+  private func showPreview(_ image: NSImage, mode: CaptureMode) {
+    let pointer = NSEvent.mouseLocation
+    let screen = mode == .mainDisplay
+      ? NSScreen.screens.first
+      : NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
+    guard let screen else { return }
+    let window = ScreenshotPreviewWindow(
+      image: image, visibleFrame: screen.visibleFrame,
+      onAnnotate: { [weak self] in self?.annotateImage(image) }
+    ) {
+      [weak self] in self?.pinImage(image)
+    }
+    window.onClose = { [weak self] in
+      self?.previewWindow = nil
+    }
+    previewWindow = window
+    window.present()
+  }
+
+  private func annotateImage(
+    _ image: NSImage, source: PinnedScreenshotWindow? = nil, originalWasCopied: Bool = true
+  ) {
+    let sourceID = source.map(ObjectIdentifier.init)
+    if let sourceID, let identifier = annotationSources[sourceID], let window = annotationWindows[identifier] {
+      window.present()
+      return
+    }
+    guard let screen = source?.screen ?? NSScreen.main,
+          let window = ScreenshotAnnotationWindow(
+            image: image, visibleFrame: screen.visibleFrame, editingPin: source != nil,
+            originalWasCopied: originalWasCopied
+          ) else {
+      showError("AnnotationOutputFailed")
+      return
+    }
+    let identifier = UUID()
+    window.onOutput = { [weak self, weak source] data, rendered, action in
+      guard let self else { return }
+      switch action {
+      case .copy:
+        try addToHistory(data)
+        source?.replaceImage(rendered)
+      case .pin:
+        try addToHistory(data)
+        pinImage(rendered)
+      case .apply:
+        source?.replaceImage(rendered)
+      }
+    }
+    window.onClose = { [weak self] in
+      self?.annotationWindows.removeValue(forKey: identifier)
+      if let sourceID { self?.annotationSources.removeValue(forKey: sourceID) }
+    }
+    annotationWindows[identifier] = window
+    if let sourceID { annotationSources[sourceID] = identifier }
+    window.present()
+  }
+
+  private func dismissPreview() {
+    previewWindow?.close()
+    previewWindow = nil
+  }
+
+  private func showPermissionHelp() {
+    guard !isShowingAlert else { return }
+    isShowingAlert = true
+    defer { isShowingAlert = false }
+    let alert = NSAlert()
+    alert.messageText = text("ScreenshotPermissionTitle")
+    alert.informativeText = text("ScreenshotPermissionHelp")
+    alert.addButton(withTitle: text("ScreenshotOpenSettings"))
+    alert.addButton(withTitle: text("ScreenshotRestartCurrentApp"))
+    alert.addButton(withTitle: text("ScreenshotCancel"))
+    NSApp.activate(ignoringOtherApps: true)
+    switch alert.runModal() {
+    case .alertFirstButtonReturn:
+      openPermissionSettings()
+    case .alertSecondButtonReturn:
+      AppState.shared.appDelegate?.restartCurrentApplication()
+    default:
+      break
+    }
+  }
+
+  func openPermissionSettings() {
+    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+      NSWorkspace.shared.open(url)
+    }
+  }
+
+  private func showError(_ message: String, localized: Bool = false) {
+    guard !isShowingAlert else { return }
+    isShowingAlert = true
+    defer { isShowingAlert = false }
+    let alert = NSAlert()
+    alert.messageText = text("ScreenshotErrorTitle")
+    alert.informativeText = localized ? message : text(message)
+    NSApp.activate(ignoringOtherApps: true)
+    alert.runModal()
+  }
+
+  private func text(_ key: String) -> String {
+    NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+}

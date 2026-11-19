@@ -18,18 +18,39 @@ struct GeneralSettingsPane: View {
   @State private var updater = SoftwareUpdater()
 
   var body: some View {
+    ScrollView {
+      settingsContent
+    }
+    .frame(width: 510, height: min(680, (NSScreen.main?.visibleFrame.height ?? 800) - 120))
+  }
+
+  private var settingsContent: some View {
     Settings.Container(contentWidth: 450) {
+      Settings.Section(
+        bottomDivider: true,
+        label: { Text(String(localized: "Language", defaultValue: "Language:", table: "GeneralSettings")) }
+      ) {
+        LanguageSettingsView()
+      }
+
       Settings.Section(title: "", bottomDivider: true) {
         LaunchAtLogin.Toggle {
           Text("LaunchAtLogin", tableName: "GeneralSettings")
         }
-        Toggle(isOn: $updater.automaticallyChecksForUpdates) {
-          Text("CheckForUpdates", tableName: "GeneralSettings")
+        if updater.isAvailable {
+          Toggle(isOn: $updater.automaticallyChecksForUpdates) {
+            Text("CheckForUpdates", tableName: "GeneralSettings")
+          }
+          Button(
+            action: { updater.checkForUpdates() },
+            label: { Text("CheckNow", tableName: "GeneralSettings") }
+          )
+        } else {
+          Text("CustomizedUpdatesDisabled", tableName: "GeneralSettings")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        Button(
-          action: { updater.checkForUpdates() },
-          label: { Text("CheckNow", tableName: "GeneralSettings") }
-        )
       }
 
       Settings.Section(label: { Text("Open", tableName: "GeneralSettings") }) {
@@ -64,6 +85,52 @@ struct GeneralSettingsPane: View {
         KeyboardShortcuts.Recorder(for: .togglePreview)
           .help(Text("ShowPreviewTooltip", tableName: "GeneralSettings"))
           .accessibilityLabel(Text("ShowPreview", tableName: "GeneralSettings"))
+      }
+      Settings.Section(
+        title: NSLocalizedString("ScreenshotSection", tableName: "GeneralSettings", comment: ""),
+        bottomDivider: true
+      ) {
+        screenshotAction("Screenshot", symbol: "display", detail: "ScreenshotMainHint", shortcut: .screenshot) {
+          ScreenshotCapture.shared.captureMainDisplay()
+        }
+        screenshotAction(
+          "ScreenshotSelection", symbol: "crop", detail: "ScreenshotSelectionHint", shortcut: .screenshotSelection
+        ) {
+          ScreenshotCapture.shared.captureSelection()
+        }
+        screenshotAction("PinScreenshot", symbol: "pin", detail: "ScreenshotPinHint", shortcut: .pinScreenshot) {
+          ScreenshotCapture.shared.captureSelection(pinToScreen: true)
+        }
+        screenshotAction(
+          "PinClipboardImage", symbol: "photo.on.rectangle",
+          detail: "ScreenshotClipboardHint", shortcut: .pinClipboardImage, buttonTitle: "ScreenshotPinImage"
+        ) {
+          ScreenshotCapture.shared.pinClipboardImage()
+        }
+        Defaults.Toggle(key: .screenshotSoundEnabled) {
+          Text("ScreenshotSound", tableName: "GeneralSettings")
+        }
+        Text("ScreenshotHelp", tableName: "GeneralSettings")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack {
+          Button {
+            ScreenshotCapture.shared.openPermissionSettings()
+          } label: {
+            Text("ScreenshotOpenSettings", tableName: "GeneralSettings")
+          }
+          Button {
+            AppState.shared.appDelegate?.restartCurrentApplication()
+          } label: {
+            Text("ScreenshotRestartCurrentApp", tableName: "GeneralSettings")
+          }
+        }
+        Button {
+          ScreenshotCapture.shared.cancelCapture()
+        } label: {
+          Text("ScreenshotCancelCapture", tableName: "GeneralSettings")
+        }
       }
 
       Settings.Section(
@@ -113,6 +180,38 @@ struct GeneralSettingsPane: View {
         }
       }
     }
+  }
+
+  private func screenshotAction(
+    _ title: String,
+    symbol: String,
+    detail: String,
+    shortcut: KeyboardShortcuts.Name,
+    buttonTitle: String = "ScreenshotCaptureNow",
+    action: @escaping @MainActor () -> Void
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 5) {
+      HStack {
+        Label {
+          Text(LocalizedStringKey(title), tableName: "GeneralSettings")
+        } icon: {
+          Image(systemName: symbol)
+            .foregroundStyle(.tint)
+            .frame(width: 20)
+        }
+        Spacer()
+        Button(action: action) {
+          Text(LocalizedStringKey(buttonTitle), tableName: "GeneralSettings")
+        }
+      }
+      Text(LocalizedStringKey(detail), tableName: "GeneralSettings")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      KeyboardShortcuts.Recorder(for: shortcut)
+        .accessibilityLabel(Text(LocalizedStringKey(title), tableName: "GeneralSettings"))
+    }
+    .padding(.bottom, 10)
   }
 
   private func refreshModifiers(_ sender: Sendable) {

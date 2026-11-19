@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */; };
+		B9ACD419E2F67A01C5D85003 /* ScreenshotAnnotationCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */; };
+		B9ACD419E2F67A01C5D85005 /* ScreenshotAnnotationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */; };
+		B9ACD419E2F67A01C5D85007 /* ScreenshotAnnotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */; };
+		B9ACD419E2F67A01C5D84011 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */; };
+		B9ACD419E2F67A01C5D84013 /* LanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */; };
+		B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */; };
+		B9ACD419E2F67A01C5D83F11 /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */; };
+		B9ACD419E2F67A01C5D83F13 /* ScreenCapturePermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */; };
+		B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */; };
 		0ABDD5122BB47F1E0054963B /* NSWorkspace+ApplicationName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */; };
 		21FFF308D9217B43FD4C393F /* VoiceOver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21DCA6C3D17E48D33D6E608 /* VoiceOver.swift */; };
 		2F0E055F2FFD2EB300CCD1DE /* ReorderableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F0E055E2FFD2EAF00CCD1DE /* ReorderableContainer.swift */; };
@@ -60,6 +70,13 @@
 		DA05B5142C234DCF006980FE /* HistoryItemContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA05B5122C234DCF006980FE /* HistoryItemContent.swift */; };
 		DA05B5152C234DCF006980FE /* HistoryItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA05B5132C234DCF006980FE /* HistoryItem.swift */; };
 		DA083A6E2C42E8E8004259A0 /* NSImage+Resized.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA083A6D2C42E8E8004259A0 /* NSImage+Resized.swift */; };
+		2F5C8A01001A0F9D00BEEF00 /* ScreenshotCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C8A02001A0F9D00BEEF00 /* ScreenshotCapture.swift */; };
+		A601FB1D645F0D91D796D9CE /* ScreenshotCaptureSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C8A03001A0F9D00BEEF00 /* ScreenshotCaptureSession.swift */; };
+		AC1811260000000000000001 /* ScreenshotCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811260000000000000002 /* ScreenshotCaptureTests.swift */; };
+		AC1811180000000000000003 /* ScreenshotPreviewWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */; };
+		AC1811180000000000000005 /* ScreenshotSelectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000006 /* ScreenshotSelectionController.swift */; };
+		AC1811180000000000000007 /* ScreenshotSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000008 /* ScreenshotSelectionTests.swift */; };
+		A601FB1F645F0D91D796D9CE /* PinnedScreenshotWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */; };
 		DA0EE7B9204657830025FC60 /* MaccyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0EE7B8204657830025FC60 /* MaccyUITests.swift */; };
 		DA0EF1881E444B2A00E58577 /* Clipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0EF1871E444B2A00E58577 /* Clipboard.swift */; };
 		DA0FFA2A2C8D100C00A66C97 /* ModifierFlags+Description.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA0FFA292C8D0FEC00A66C97 /* ModifierFlags+Description.swift */; };
@@ -197,6 +214,16 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationDocument.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationCanvas.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationWindow.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationTests.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettingsView.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageTests.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCapturePermission.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentityTests.swift; sourceTree = "<group>"; };
 		088F4DA628BECBC40003AD19 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSWorkspace+ApplicationName.swift"; sourceTree = "<group>"; };
 		11680E44DAF848ADB8BA358E /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/PinsSettings.strings; sourceTree = "<group>"; };
@@ -294,6 +321,13 @@
 		DA0EE7B6204657830025FC60 /* MaccyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MaccyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA0EE7B8204657830025FC60 /* MaccyUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaccyUITests.swift; sourceTree = "<group>"; };
 		DA0EF1871E444B2A00E58577 /* Clipboard.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Clipboard.swift; sourceTree = "<group>"; };
+		2F5C8A02001A0F9D00BEEF00 /* ScreenshotCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotCapture.swift; sourceTree = "<group>"; };
+		2F5C8A03001A0F9D00BEEF00 /* ScreenshotCaptureSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotCaptureSession.swift; sourceTree = "<group>"; };
+		AC1811260000000000000002 /* ScreenshotCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotCaptureTests.swift; sourceTree = "<group>"; };
+		AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotPreviewWindow.swift; sourceTree = "<group>"; };
+		AC1811180000000000000006 /* ScreenshotSelectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionController.swift; sourceTree = "<group>"; };
+		AC1811180000000000000008 /* ScreenshotSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionTests.swift; sourceTree = "<group>"; };
+	2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinnedScreenshotWindow.swift; sourceTree = "<group>"; };
 		DA0FFA292C8D0FEC00A66C97 /* ModifierFlags+Description.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ModifierFlags+Description.swift"; sourceTree = "<group>"; };
 		DA13D7D12C19F91B00FA9E23 /* Defaults.Keys+Names.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Defaults.Keys+Names.swift"; sourceTree = "<group>"; };
 		DA13D7D32C1A223E00FA9E23 /* Select.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Select.swift; sourceTree = "<group>"; };
@@ -713,6 +747,7 @@
 				DA689FC32C1CF0F00009B887 /* AppearanceSettingsPane.swift */,
 				DA689FCD2C1DEE570009B887 /* AppearanceSettings.strings */,
 				DAA5ACB12C1B3F8800B58513 /* GeneralSettingsPane.swift */,
+				B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */,
 				DAA5ACB32C1B803000B58513 /* GeneralSettings.strings */,
 				DA9C3C632C20E1E80056795D /* IgnoreSettingsPane */,
 				DA9C3C442C207AF80056795D /* IgnoreSettingsPane.swift */,
@@ -785,6 +820,11 @@
 				C0FFEE000000000000000004 /* ShortenedTests.swift */,
 				FFFC00000000000000000004 /* UnsafeForTitleLayoutTests.swift */,
 				DAE2850123225BD90080E394 /* ColorImageTests.swift */,
+				AC1811260000000000000002 /* ScreenshotCaptureTests.swift */,
+				AC1811180000000000000008 /* ScreenshotSelectionTests.swift */,
+				B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */,
+				B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */,
+				B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */,
 				DA360DB21E3DF137005C6F6B /* HistoryTests.swift */,
 				DA1EDE422045B35300479723 /* HistoryDecoratorTests.swift */,
 				DAFE2DE8268A9B1B00990986 /* HistoryItemTests.swift */,
@@ -887,10 +927,21 @@
 				DAAEB195219694AE00A7883C /* About.swift */,
 				DA6D98E12AEABE03008A77CE /* Accessibility.swift */,
 				DAEE38461E3DBEB100DD2966 /* AppDelegate.swift */,
+				B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */,
+				B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */,
+				B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */,
+				B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */,
+				B9ACD419E2F67A01C5D85006 /* ScreenshotAnnotationWindow.swift */,
+				B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */,
 				2FB5BC9F2CD8F73C008B33F4 /* ApplicationImage.swift */,
 				DA555F072CF0F98F009608BD /* ApplicationImageCache.swift */,
 				DAB082952A2B7B850053E463 /* AppStoreReview.swift */,
 				DA0EF1871E444B2A00E58577 /* Clipboard.swift */,
+				2F5C8A02001A0F9D00BEEF00 /* ScreenshotCapture.swift */,
+				2F5C8A03001A0F9D00BEEF00 /* ScreenshotCaptureSession.swift */,
+				AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */,
+				AC1811180000000000000006 /* ScreenshotSelectionController.swift */,
+			2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */,
 				DAE284FF232257D20080E394 /* ColorImage.swift */,
 				2F8A0DBD303A1F9D004BA51F /* ConcatenatedCollection.swift */,
 				DAA54BF92C3C951900B7FDD8 /* FloatingPanel.swift */,
@@ -1135,8 +1186,13 @@
 				DAFE2DE9268A9B1B00990986 /* HistoryItemTests.swift in Sources */,
 				DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */,
 				4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */,
+				B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */,
+				B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */,
+				B9ACD419E2F67A01C5D85007 /* ScreenshotAnnotationTests.swift in Sources */,
 				DA1EDE432045B35300479723 /* HistoryDecoratorTests.swift in Sources */,
 				DAE2850223225BD90080E394 /* ColorImageTests.swift in Sources */,
+				AC1811260000000000000001 /* ScreenshotCaptureTests.swift in Sources */,
+				AC1811180000000000000007 /* ScreenshotSelectionTests.swift in Sources */,
 				DA384E86232746D800603999 /* SearchTests.swift in Sources */,
 				DA696BD22401EEE900DE80CF /* SorterTests.swift in Sources */,
 				CA110ED10000000000000001 /* CollectionSurroundingTests.swift in Sources */,
@@ -1200,6 +1256,18 @@
 				DAA5ACB22C1B3F8800B58513 /* GeneralSettingsPane.swift in Sources */,
 				DA1969122C3F0DD200258481 /* HistoryItemView.swift in Sources */,
 				DA0EF1881E444B2A00E58577 /* Clipboard.swift in Sources */,
+				2F5C8A01001A0F9D00BEEF00 /* ScreenshotCapture.swift in Sources */,
+				A601FB1D645F0D91D796D9CE /* ScreenshotCaptureSession.swift in Sources */,
+				B9ACD419E2F67A01C5D83F11 /* AppIdentity.swift in Sources */,
+				B9ACD419E2F67A01C5D84011 /* AppLanguage.swift in Sources */,
+				B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */,
+				B9ACD419E2F67A01C5D85003 /* ScreenshotAnnotationCanvas.swift in Sources */,
+				B9ACD419E2F67A01C5D85005 /* ScreenshotAnnotationWindow.swift in Sources */,
+				B9ACD419E2F67A01C5D84013 /* LanguageSettingsView.swift in Sources */,
+				B9ACD419E2F67A01C5D83F13 /* ScreenCapturePermission.swift in Sources */,
+				AC1811180000000000000003 /* ScreenshotPreviewWindow.swift in Sources */,
+				AC1811180000000000000005 /* ScreenshotSelectionController.swift in Sources */,
+				A601FB1F645F0D91D796D9CE /* PinnedScreenshotWindow.swift in Sources */,
 				DA3F1B452C90084600267632 /* Sauce+KeyboardShortcuts.swift in Sources */,
 				DA689FCC2C1D1D510009B887 /* MenuIcon.swift in Sources */,
 				2FD499452FFC489400149F02 /* MovableByWindowBackgroundModifier.swift in Sources */,
@@ -1870,7 +1938,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.8.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.p0deje.Maccy;
+				PRODUCT_BUNDLE_IDENTIFIER = local.maccy.capture;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -1905,7 +1973,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 2.8.0;
-				PRODUCT_BUNDLE_IDENTIFIER = org.p0deje.Maccy;
+				PRODUCT_BUNDLE_IDENTIFIER = local.maccy.capture;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_VERSION = 6.0;

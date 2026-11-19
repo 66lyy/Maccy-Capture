@@ -2,23 +2,26 @@ import Sparkle
 
 @Observable
 class SoftwareUpdater {
+  var isAvailable: Bool { !AppIdentity.isCustomizedBuild }
+
   var automaticallyChecksForUpdates = false {
     didSet {
+      guard isAvailable else { return }
       updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
     }
   }
 
-  private var updater: SPUUpdater
+  private var updater: SPUUpdater { updaterController.updater }
   private var automaticallyChecksForUpdatesObservation: NSKeyValueObservation?
 
-  private let updaterController = SPUStandardUpdaterController(
+  @ObservationIgnored private lazy var updaterController = SPUStandardUpdaterController(
     startingUpdater: true,
     updaterDelegate: nil,
     userDriverDelegate: nil
   )
 
   init() {
-    updater = updaterController.updater
+    guard isAvailable else { return }
     automaticallyChecksForUpdatesObservation = updater.observe(
       \.automaticallyChecksForUpdates,
       options: [.initial, .new, .old]
@@ -34,6 +37,7 @@ class SoftwareUpdater {
   }
 
   func checkForUpdates() {
+    guard isAvailable else { return }
     updater.checkForUpdates()
   }
 }

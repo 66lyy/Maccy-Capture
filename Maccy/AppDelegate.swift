@@ -34,8 +34,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private var statusItemVisibilityObserver: NSKeyValueObservation?
+  private var rejectedDuplicateLaunch = false
+  private var isRestarting = false
 
   func applicationWillFinishLaunching(_ notification: Notification) { // swiftlint:disable:this function_body_length
+    if !Self.isTesting, AppIdentity.isCustomizedBuild {
+      AppIdentity.migratePreferences()
+    }
+    if !Self.isTesting, let identifier = Bundle.main.bundleIdentifier,
+       NSWorkspace.shared.runningApplications.contains(where: {
+         ($0.bundleIdentifier == identifier ||
+          (AppIdentity.isCustomizedBuild && $0.bundleIdentifier == AppIdentity.originalIdentifier)) &&
+         $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && !$0.isTerminated
+       }) {
+      rejectedDuplicateLaunch = true
+      let alert = NSAlert()
+      alert.messageText = NSLocalizedString("ScreenshotDuplicateTitle", tableName: "GeneralSettings", comment: "")
+      alert.informativeText = NSLocalizedString("ScreenshotDuplicateHelp", tableName: "GeneralSettings", comment: "")
+      alert.addButton(withTitle: NSLocalizedString("ScreenshotQuitCopy", tableName: "GeneralSettings", comment: ""))
+      NSApp.activate(ignoringOtherApps: true)
+      alert.runModal()
+      NSApp.terminate(self)
+      return
+    }
+
     #if DEBUG
     if Self.isTesting {
       SPUUpdater(hostBundle: Bundle.main,
@@ -52,7 +74,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     AppState.shared.appDelegate = self
 
     Clipboard.shared.onNewCopy { History.shared.add($0) }
-    Clipboard.shared.start()
+    if !Self.isTesting {
+      Clipboard.shared.start()
+    }
 
     Task {
       for await _ in Defaults.updates(.clipboardCheckInterval, initial: false) {
@@ -107,8 +131,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationDidFinishLaunching(_ aNotification: Notification) {
+    guard !rejectedDuplicateLaunch else { return }
     migrateUserDefaults()
     disableUnusedGlobalHotkeys()
+
+    if !Self.isTesting {
+      KeyboardShortcuts.onKeyUp(for: .screenshot) {
+        ScreenshotCapture.shared.captureMainDisplay()
+      }
+      KeyboardShortcuts.onKeyUp(for: .screenshotSelection) {
+        ScreenshotCapture.shared.captureSelection()
+      }
+      KeyboardShortcuts.onKeyUp(for: .pinScreenshot) {
+        ScreenshotCapture.shared.captureSelection(pinToScreen: true)
+      }
+      KeyboardShortcuts.onKeyUp(for: .pinClipboardImage) {
+        ScreenshotCapture.shared.pinClipboardImage()
+      }
+    }
 
     panel = FloatingPanel(
       contentRect: NSRect(origin: .zero, size: Defaults[.windowSize]),
@@ -121,13 +161,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    guard let panel else { return false }
     panel.toggle(height: AppState.shared.popup.height)
     return true
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    if Defaults[.clearOnQuit] {
+    guard !rejectedDuplicateLaunch else { return }
+    ScreenshotCapture.shared.shutDown()
+    if !isRestarting, Defaults[.clearOnQuit] {
       AppState.shared.history.clear()
+    }
+  }
+
+  func restartCurrentApplication() {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/sh")
+    process.arguments = AppIdentity.relaunchArguments(
+      bundleURL: Bundle.main.bundleURL, processIdentifier: ProcessInfo.processInfo.processIdentifier
+    )
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      isRestarting = true
+      NSApp.terminate(self)
+    } catch {
+      let alert = NSAlert()
+      alert.messageText = NSLocalizedString("ScreenshotRestartFailed", tableName: "GeneralSettings", comment: "")
+      alert.informativeText = Bundle.main.bundleURL.path
+      alert.runModal()
     }
   }
 

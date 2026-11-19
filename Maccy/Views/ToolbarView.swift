@@ -115,6 +115,56 @@ struct ToolbarView: View {
 
   var body: some View {
     HStack {
+      Menu {
+        Button {
+          ScreenshotCapture.shared.captureSelection()
+        } label: {
+          Label {
+            Text("ScreenshotSelection", tableName: "GeneralSettings")
+          } icon: {
+            Image(systemName: "crop")
+          }
+        }
+        Button {
+          ScreenshotCapture.shared.captureMainDisplay()
+        } label: {
+          Label {
+            Text("Screenshot", tableName: "GeneralSettings")
+          } icon: {
+            Image(systemName: "display")
+          }
+        }
+        Button {
+          ScreenshotCapture.shared.captureSelection(pinToScreen: true)
+        } label: {
+          Label {
+            Text("PinScreenshot", tableName: "GeneralSettings")
+          } icon: {
+            Image(systemName: "pin")
+          }
+        }
+        Divider()
+        Button {
+          ScreenshotCapture.shared.pinClipboardImage()
+        } label: {
+          Label {
+            Text("PinClipboardImage", tableName: "GeneralSettings")
+          } icon: {
+            Image(systemName: "photo.on.rectangle")
+          }
+        }
+      } label: {
+        Label {
+          Text("ScreenshotMenu", tableName: "GeneralSettings")
+        } icon: {
+          Image(systemName: "viewfinder")
+        }
+      }
+      .menuStyle(.borderlessButton)
+      .fixedSize()
+      .help(Text("ScreenshotSelectionHint", tableName: "GeneralSettings"))
+      .excludeFromWindowMovableByBackground()
+
       if !appState.navigator.selection.isEmpty {
         Spacer()
 

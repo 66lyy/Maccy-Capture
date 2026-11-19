@@ -73,6 +73,17 @@ class Clipboard {
   }
 
   @MainActor
+  func copyScreenshot(_ pngData: Data) -> Bool {
+    let imageItem = NSPasteboardItem()
+    imageItem.setData(pngData, forType: .png)
+    imageItem.setString("", forType: .fromMaccy)
+    pasteboard.clearContents()
+    let copied = pasteboard.writeObjects([imageItem])
+    changeCount = pasteboard.changeCount
+    return copied
+  }
+
+  @MainActor
   func copyInMaccy(_ string: String) {
     pasteboard.clearContents()
     pasteboard.setString(string, forType: .string)

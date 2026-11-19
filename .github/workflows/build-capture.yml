@@ -1,0 +1,91 @@
+name: Build Maccy Capture
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["capture-v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capture-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package universal macOS app
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: xcodebuild -version
+
+      - name: Set build directories
+        shell: bash
+        run: |
+          echo "MACCY_DERIVED_DATA=$RUNNER_TEMP/MaccyCaptureDerivedData" >> "$GITHUB_ENV"
+          echo "MACCY_DIST_DIR=$RUNNER_TEMP/MaccyCapture-dist" >> "$GITHUB_ENV"
+
+      - name: Run capture regression tests with synthetic images
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Maccy.xcodeproj \
+            -scheme Maccy \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$MACCY_DERIVED_DATA" \
+            -resultBundlePath "$RUNNER_TEMP/MaccyCaptureTests.xcresult" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -only-testing:MaccyTests/AppIdentityTests \
+            -only-testing:MaccyTests/AppLanguageTests \
+            -only-testing:MaccyTests/ScreenshotCaptureTests \
+            -only-testing:MaccyTests/ScreenshotSelectionTests \
+            -only-testing:MaccyTests/ScreenshotAnnotationTests \
+            -parallel-testing-enabled NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            CODE_SIGNING_ALLOWED=YES \
+            ENABLE_HARDENED_RUNTIME=NO \
+            test 2>&1 | tee "$RUNNER_TEMP/MaccyCapture-tests.log"
+
+      - name: Package Release app for Apple Silicon and Intel
+        run: bash script/package_release.sh
+
+      - name: Upload application packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Maccy-Capture-macOS-universal-${{ github.run_number }}
+          path: |
+            ${{ env.MACCY_DIST_DIR }}/*.zip
+            ${{ env.MACCY_DIST_DIR }}/*.dmg
+            ${{ env.MACCY_DIST_DIR }}/SHA256SUMS.txt
+            ${{ env.MACCY_DIST_DIR }}/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: Maccy-Capture-build-diagnostics-${{ github.run_number }}
+          path: |
+            ${{ runner.temp }}/MaccyCapture-tests.log
+            ${{ runner.temp }}/MaccyCaptureTests.xcresult
+            ${{ env.MACCY_DERIVED_DATA }}/maccy-release-build.log
+          if-no-files-found: ignore
+          retention-days: 7
