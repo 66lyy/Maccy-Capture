@@ -111,11 +111,12 @@ final class ScreenshotCapture {
         if shouldAnnotate {
           annotateImage(image, imageFrame: imageFrame, originalWasCopied: false)
         } else {
-          try addToHistory(data)
-          if shouldPin {
-            pinImage(image, anchor: pinAnchor)
-          } else {
-            showPreview(image, imageFrame: imageFrame)
+          try deliverScreenshot(data) {
+            if shouldPin {
+              pinImage(image, anchor: pinAnchor)
+            } else {
+              showPreview(image, imageFrame: imageFrame)
+            }
           }
         }
         if Defaults[.screenshotSoundEnabled] {
@@ -129,16 +130,33 @@ final class ScreenshotCapture {
     }
   }
 
-  private func addToHistory(_ pngData: Data) throws {
+  private func deliverScreenshot(_ pngData: Data, present: () -> Void) throws {
+    let historyResult = try Self.deliverScreenshot(
+      pngData, copy: Clipboard.shared.copyScreenshot, saveHistory: saveInHistory, present: present
+    )
+    if case .failure = historyResult {
+      Task { [weak self] in
+        self?.showError("ScreenshotHistorySaveWarning", title: "ScreenshotHistorySaveWarningTitle")
+      }
+    }
+  }
+
+  static func deliverScreenshot(
+    _ pngData: Data, copy: (Data) -> Bool, saveHistory: (Data) throws -> Void, present: () -> Void
+  ) throws -> Result<Void, any Error> {
+    guard copy(pngData) else { throw ScreenshotCaptureSession.Failure.clipboardWrite }
+    let historyResult = Result { try saveHistory(pngData) }
+    present()
+    return historyResult
+  }
+
+  private func saveInHistory(_ pngData: Data) throws {
     let item = HistoryItem(contents: [
       HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData)
     ])
     item.application = Bundle.main.bundleIdentifier
     item.title = text("ScreenshotTitle")
 
-    guard Clipboard.shared.copyScreenshot(pngData) else {
-      throw ScreenshotCaptureSession.Failure.clipboardWrite
-    }
     if #unavailable(macOS 15.0) {
       try History.shared.insertIntoStorage(item)
     }
@@ -215,14 +233,16 @@ final class ScreenshotCapture {
       guard let self else { return }
       switch action {
       case .copy:
-        try addToHistory(data)
-        source?.replaceImage(rendered)
-        if source == nil {
-          showPreview(rendered, imageFrame: targetFrame)
+        try deliverScreenshot(data) {
+          source?.replaceImage(rendered)
+          if source == nil {
+            showPreview(rendered, imageFrame: targetFrame)
+          }
         }
       case .pin:
-        try addToHistory(data)
-        pinImage(rendered, anchor: anchor)
+        try deliverScreenshot(data) {
+          pinImage(rendered, anchor: anchor)
+        }
       case .apply:
         source?.replaceImage(rendered)
       }
@@ -268,12 +288,12 @@ final class ScreenshotCapture {
     }
   }
 
-  private func showError(_ message: String, localized: Bool = false) {
+  private func showError(_ message: String, localized: Bool = false, title: String = "ScreenshotErrorTitle") {
     guard !isShowingAlert else { return }
     isShowingAlert = true
     defer { isShowingAlert = false }
     let alert = NSAlert()
-    alert.messageText = text("ScreenshotErrorTitle")
+    alert.messageText = text(title)
     alert.informativeText = localized ? message : text(message)
     NSApp.activate(ignoringOtherApps: true)
     alert.runModal()

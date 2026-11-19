@@ -66,15 +66,17 @@ Each display uses its Core Graphics coordinates, including secondary displays ab
 of the main display. Only one capture can run at a time.
 An unfinished selection expires after 120 seconds; once the editing image is ready, that timer stops.
 Quitting terminates the task.
-The selection controller strongly retains its windows.
-They use the `.floating` level and draw only a 12% shadow outside the selection,
-not the `.screenSaver` level or an opaque black background.
-All selection windows close on completion, cancellation, timeout, display changes, or app exit.
+Only the temporary selection windows use the Core Graphics overlay level to appear above system search and
+other floating panels without activating the app. They can participate in other apps' full-screen Spaces
+and Stage Manager sets. Keyboard focus goes to the display under the pointer, falling back to the first display.
+The windows draw only a 12% shadow outside the selection and use neither the screen-saver level nor an opaque background.
+All selection windows close on completion, cancellation, timeout, display changes, Space changes, or app exit.
 
 Captures are temporarily stored locally in a directory with `0700` permissions.
 Temporary files are cleaned up on completion, cancellation, and failure.
-Successful captures are written to the clipboard and local Maccy history;
-pinned windows keep their images only in memory.
+Successful capture output is copied to the clipboard and saved to local Maccy history.
+If the history write fails after the clipboard succeeds, the preview or pinned image still appears,
+and the app warns about the history write error. Pinned windows keep their images only in memory.
 Images and recognized text are not sent to network services.
 
 ## Pinned Images and Zoom
@@ -367,8 +369,10 @@ Export creates a new flattened PNG without embedding the original or removable c
 Covers use the selected color at full opacity, align to whole pixels, and are drawn after all other annotations.
 Changing color opacity or adding text later cannot reveal the image beneath a cover.
 The text-recognition button runs Vision on the **flattened** image, including covers, with support for
-English and available Chinese models. If the first pass finds no text, the app retries with enlarged pixels
-when possible and without language correction. Results stay next to the toolbar in a scrollable card.
+English and available Chinese models. Narrow crops get a background-colored margin and are enlarged for OCR only.
+This does not change the screenshot or recover strokes outside the selected area; include whole characters when framing text.
+If the first pass finds no text, the app retries with enlarged pixels when possible and without language correction.
+Results stay next to the toolbar in a scrollable card.
 Select and copy a passage or click **Copy All Text**; nothing is copied automatically.
 This is not automatic redaction. No image or recognized text is sent to a
 server, network API, or training service.

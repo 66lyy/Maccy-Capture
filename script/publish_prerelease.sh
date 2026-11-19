@@ -41,18 +41,35 @@ grep -Fxq "Source revision: $GITHUB_SHA" "$DIST_DIR/BUILD-INFO.txt"
 NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/MaccyCaptureReleaseNotes.XXXXXX")"
 trap 'rm -f "$NOTES_FILE"' EXIT
 cat > "$NOTES_FILE" <<NOTES
+## English
+
 Unofficial Maccy Capture test build based on [p0deje/Maccy](https://github.com/p0deje/Maccy).
 This rolling prerelease is updated after successful default-branch builds.
 
-- Source revision: \`$GITHUB_SHA\`
+- Source revision and changes: [\`${GITHUB_SHA:0:12}\`](https://github.com/$GH_REPO/commit/$GITHUB_SHA).
 - Universal macOS application for Apple Silicon and Intel; requires macOS 14 or later.
-- Download the ZIP or DMG below. The ZIP contains \`Maccy Capture.app\`.
+- Download the ZIP or DMG below, extract or open it, and move \`Maccy Capture.app\` to Applications.
 - \`SHA256SUMS.txt\` verifies the downloads; \`BUILD-INFO.txt\` records build and signing details.
 - In-app updates use this repository's \`capture-appcast.xml\` and independently Ed25519-signed ZIP.
 - Install Update restarts the running modified app so the update takes effect immediately.
 - Packages include the upstream MIT license, English and Simplified Chinese distribution notices, and third-party licenses.
 - Ad-hoc signed, not Developer ID signed or notarized. Gatekeeper may block first launch, and permissions may need to be granted again.
 - This is not an official upstream release or a stable production release.
+
+## 简体中文
+
+这是基于 [p0deje/Maccy](https://github.com/p0deje/Maccy) 的 Maccy Capture 非官方测试版。
+默认分支构建成功后会更新这个滚动预发布版本。
+
+- 源码版本与变更：[\`${GITHUB_SHA:0:12}\`](https://github.com/$GH_REPO/commit/$GITHUB_SHA)。
+- 通用版支持 Apple 芯片和 Intel Mac，要求 macOS 14 或更高版本。
+- 下载下方 ZIP 或 DMG，解压或打开后，将 \`Maccy Capture.app\` 移到「应用程序」。
+- 使用 \`SHA256SUMS.txt\` 校验下载；\`BUILD-INFO.txt\` 记录构建和签名信息。
+- 应用内更新使用本仓库的 \`capture-appcast.xml\` 和独立 Ed25519 签名的 ZIP。
+- 安装更新后会重启正在运行的修改版，让更新立即生效。
+- 安装包包含上游 MIT 许可证、英中分发说明及第三方许可证。
+- 应用采用 Ad Hoc 签名，未使用 Developer ID 签名，也未通过 Apple 公证。首次启动可能被安全机制拦截，部分权限可能需要重新授权。
+- 这不是上游官方版本，也不是稳定版。
 NOTES
 
 if ! gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then

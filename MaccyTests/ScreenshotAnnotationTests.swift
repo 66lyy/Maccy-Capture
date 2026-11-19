@@ -316,6 +316,29 @@ struct ScreenshotAnnotationTests {
     #expect(result.contains("SAMPLE 42"))
   }
 
+  @Test("Vision reads small text in a tight dark crop without relying on cut-off characters",
+        arguments: [false, true])
+  func recognitionOfTightDarkCrop(clipped: Bool) throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(CGContext(
+      data: nil, width: clipped ? 128 : 52, height: clipped ? 12 : 13, bitsPerComponent: 8, bytesPerRow: 0,
+      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ))
+    context.setFillColor(NSColor.black.cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    let sample = clipped ? "截图测试 SAMPLE 42" : "截图测试"
+    (sample as NSString).draw(at: NSPoint(x: 0, y: clipped ? -3 : 0), withAttributes: [
+      .font: NSFont.systemFont(ofSize: clipped ? 15 : 11), .foregroundColor: NSColor.white
+    ])
+    NSGraphicsContext.restoreGraphicsState()
+    let image = try #require(context.makeImage())
+    let result = try ScreenshotTextRecognition.recognize(image)
+    #expect(result.contains("截图测试"))
+    if clipped { #expect(result.contains("SAMPLE")) }
+  }
+
   @Test("Vision reads synthetic text locally and does not see text behind a solid cover")
   func localRecognition() throws {
     let image = NSImage(size: NSSize(width: 640, height: 160), flipped: false) { rect in

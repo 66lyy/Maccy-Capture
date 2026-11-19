@@ -590,6 +590,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.png]
     panel.nameFieldStringValue = "Screenshot.png"
+    panel.level = max(panel.level, level)
     savePanel = panel
     panel.beginSheetModal(for: self) { [weak self] response in
       guard let self else { return }
@@ -623,7 +624,8 @@ enum ScreenshotTextRecognition {
     if !languages.isEmpty { request.recognitionLanguages = languages }
     request.automaticallyDetectsLanguage = true
     request.minimumTextHeight = 0
-    let text = try recognize(image, request: request)
+    let input = paddedNarrowImage(image) ?? image
+    let text = try recognize(input, request: request)
     guard text.isEmpty else { return text }
 
     let retry = VNRecognizeTextRequest()
@@ -641,6 +643,46 @@ enum ScreenshotTextRecognition {
     return (request.results ?? []).compactMap { observation in
       observation.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines)
     }.filter { !$0.isEmpty }.joined(separator: "\n")
+  }
+
+  nonisolated private static func paddedNarrowImage(_ image: CGImage) -> CGImage? {
+    let margin = 36
+    let maxContentSize = 3840 - 2 * margin
+    let longestSide = max(image.width, image.height)
+    guard min(image.width, image.height) < 48, longestSide <= maxContentSize,
+          let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+    let scale = min(3, Double(maxContentSize) / Double(longestSide))
+    let width = Int(Double(image.width) * scale)
+    let height = Int(Double(image.height) * scale)
+    guard let context = CGContext(
+      data: nil, width: width + 2 * margin, height: height + 2 * margin, bitsPerComponent: 8,
+      bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ) else { return nil }
+    context.setFillColor(cornerBackground(of: image, in: space))
+    context.fill(CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: margin, y: margin, width: width, height: height))
+    return context.makeImage()
+  }
+
+  nonisolated private static func cornerBackground(of image: CGImage, in space: CGColorSpace) -> CGColor {
+    let fallback = CGColor(gray: 1, alpha: 1)
+    guard let context = CGContext(
+      data: nil, width: 4, height: 1, bitsPerComponent: 8, bytesPerRow: 16,
+      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+    ), let data = context.data else { return fallback }
+    let corners = [(0, 0), (image.width - 1, 0), (0, image.height - 1), (image.width - 1, image.height - 1)]
+    for (index, corner) in corners.enumerated() {
+      guard let pixel = image.cropping(to: CGRect(x: corner.0, y: corner.1, width: 1, height: 1)) else {
+        return fallback
+      }
+      context.draw(pixel, in: CGRect(x: index, y: 0, width: 1, height: 1))
+    }
+    let pixels = data.assumingMemoryBound(to: UInt8.self)
+    let components = (0..<3).map { channel in
+      CGFloat((0..<4).reduce(0) { $0 + Int(pixels[$1 * 4 + channel]) }) / 1020
+    }
+    return CGColor(colorSpace: space, components: components + [1]) ?? fallback
   }
 
   nonisolated private static func enlargedImage(_ image: CGImage) -> CGImage? {

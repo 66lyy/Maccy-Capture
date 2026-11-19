@@ -52,7 +52,11 @@ struct ScreenshotSelectionTests {
     let windows = controller.windows
     #expect(windows.count == 2)
     for window in windows {
-      #expect(window.level == .floating)
+      #expect(window.level.rawValue == Int(CGWindowLevelForKey(.overlayWindow)))
+      #expect(window.level.rawValue > NSWindow.Level.popUpMenu.rawValue)
+      #expect(window.level.rawValue < NSWindow.Level.screenSaver.rawValue)
+      #expect(window.collectionBehavior.contains([.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]))
+      #expect(window.styleMask.contains(.nonactivatingPanel))
       #expect(!window.isOpaque)
       #expect(window.canBecomeKey)
       #expect(!window.isReleasedWhenClosed)
@@ -75,6 +79,25 @@ struct ScreenshotSelectionTests {
     #expect(windows.allSatisfy { !$0.isVisible && $0.onCancel == nil })
     controller.cancel()
     view.captureSelection(pinToScreen: true)
+  }
+
+  @Test("The pointer's display gets keyboard focus last, with a fallback outside any display",
+        arguments: [false, true])
+  func keyboardWindow(pointerOnSecondaryDisplay: Bool) async throws {
+    var presentation: [(window: ScreenshotSelectionWindow, wantsKeyboard: Bool)] = []
+    let pointer = pointerOnSecondaryDisplay ? NSPoint(x: -100, y: 100) : NSPoint(x: 800, y: 600)
+    let controller = controller(pointer: pointer) { window, wantsKeyboard in
+      presentation.append((window, wantsKeyboard))
+    }
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let keyboardIndex = pointerOnSecondaryDisplay ? 1 : 0
+    #expect(presentation.map(\.wantsKeyboard) == [false, true])
+    #expect(presentation.first?.window === controller.windows[1 - keyboardIndex])
+    #expect(presentation.last?.window === controller.windows[keyboardIndex])
+    controller.cancel()
+    #expect(try await task.value == nil)
   }
 
   @Test("The dedicated capture-and-pin action finishes as soon as the mouse is released")
@@ -347,17 +370,23 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
-  @Test("A display configuration change cancels selection without capturing")
-  func displayChange() async throws {
+  @Test("Display and Space changes cancel selection without capturing", arguments: [false, true])
+  func displayOrSpaceChange(switchSpace: Bool) async throws {
     let controller = controller()
     let task = Task { try await controller.select(pinImmediately: false) }
     try await waitForSelection(controller)
-    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    if switchSpace {
+      NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+    } else {
+      NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    }
     #expect(try await task.value == nil)
     #expect(controller.windows.isEmpty)
   }
 
-  private func controller() -> ScreenshotSelectionController {
+  private func controller(
+    pointer: NSPoint = .zero, presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { _, _ in }
+  ) -> ScreenshotSelectionController {
     ScreenshotSelectionController(displays: {
       [
         .init(
@@ -369,7 +398,7 @@ struct ScreenshotSelectionTests {
           captureFrame: NSRect(x: -800, y: 0, width: 800, height: 600), scale: 1
         )
       ]
-    }, presentWindow: { _ in }, captureRegion: { display, rectangle, _ in
+    }, pointerLocation: { pointer }, presentWindow: presentWindow, captureRegion: { display, rectangle, _ in
       #expect(display.frame.size == NSSize(width: 800, height: 600))
       return NSImage(size: rectangle.size, flipped: false) { bounds in
         NSColor.white.setFill()

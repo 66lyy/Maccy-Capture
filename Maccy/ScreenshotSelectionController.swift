@@ -30,11 +30,13 @@ final class ScreenshotSelectionController {
   var isSelecting: Bool { continuation != nil }
 
   private let displays: @MainActor () -> [Display]
-  private let presentWindow: @MainActor (ScreenshotSelectionWindow) -> Void
+  private let pointerLocation: @MainActor () -> NSPoint
+  private let presentWindow: @MainActor (ScreenshotSelectionWindow, Bool) -> Void
   private let captureRegion: @MainActor (Display, NSRect, Set<CGWindowID>) async throws -> NSImage
   private var continuation: CheckedContinuation<Selection?, any Error>?
   private var timeoutTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
+  private var spaceObserver: NSObjectProtocol?
 
   init(
     displays: @escaping @MainActor () -> [Display] = {
@@ -48,17 +50,17 @@ final class ScreenshotSelectionController {
         )
       }
     },
-    presentWindow: @escaping @MainActor (ScreenshotSelectionWindow) -> Void = { window in
+    pointerLocation: @escaping @MainActor () -> NSPoint = { NSEvent.mouseLocation },
+    presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { window, wantsKeyboard in
       window.orderFrontRegardless()
-      if window.frame.contains(NSEvent.mouseLocation) {
-        window.makeKeyAndOrderFront(nil)
-      }
+      if wantsKeyboard { window.makeKey() }
     },
     captureRegion: @escaping @MainActor (Display, NSRect, Set<CGWindowID>) async throws -> NSImage = {
       try await ScreenshotCaptureSession.captureSelection(on: $0, rectangle: $1, excluding: $2)
     }
   ) {
     self.displays = displays
+    self.pointerLocation = pointerLocation
     self.presentWindow = presentWindow
     self.captureRegion = captureRegion
   }
@@ -80,6 +82,11 @@ final class ScreenshotSelectionController {
         ) { [weak self] _ in
           MainActor.assumeIsolated { self?.cancel() }
         }
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+          forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+          MainActor.assumeIsolated { self?.cancel() }
+        }
         timeoutTask = Task { [weak self] in
           do {
             try await Task.sleep(for: timeout)
@@ -88,7 +95,11 @@ final class ScreenshotSelectionController {
             return
           }
         }
-        windows.forEach(presentWindow)
+        let pointer = pointerLocation()
+        if let keyWindow = windows.first(where: { $0.frame.contains(pointer) }) ?? windows.first {
+          for window in windows where window !== keyWindow { presentWindow(window, false) }
+          presentWindow(keyWindow, true)
+        }
       }
     } onCancel: {
       Task { @MainActor [weak self] in self?.cancel() }
@@ -121,7 +132,7 @@ final class ScreenshotSelectionController {
       frame: display.frame, visibleFrame: display.visibleFrame ?? display.frame,
       scale: display.scale, pinImmediately: pinImmediately
     )
-    window.onCancel = { [weak self] in self?.cancel() }
+    window.onCancel = { [weak self, weak window] in self?.finish(nil, closingWindow: window) }
     window.selectionView.movePointer = { point in
       CGWarpMouseCursorPosition(CGPoint(
         x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y
@@ -178,7 +189,7 @@ final class ScreenshotSelectionController {
     return window
   }
 
-  private func finish(_ selection: Selection?) {
+  private func finish(_ selection: Selection?, closingWindow: ScreenshotSelectionWindow? = nil) {
     guard let continuation else { return }
     self.continuation = nil
     timeoutTask?.cancel()
@@ -187,11 +198,17 @@ final class ScreenshotSelectionController {
       NotificationCenter.default.removeObserver(screenObserver)
       self.screenObserver = nil
     }
+    if let spaceObserver {
+      NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
+      self.spaceObserver = nil
+    }
     for window in windows {
       window.onCancel = nil
       window.selectionView.finishInteraction()
-      window.orderOut(nil)
-      window.close()
+      if window !== closingWindow {
+        window.orderOut(nil)
+        window.close()
+      }
     }
     windows.removeAll()
     continuation.resume(returning: selection)
@@ -208,6 +225,8 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
       frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately
     )
     super.init(display: frame, visibleFrame: visibleFrame)
+    level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
+    collectionBehavior.insert(.canJoinAllApplications)
     contentView = selectionView
     initialFirstResponder = selectionView
     selectionView.onCancel = { [weak self] in self?.cancelOperation(nil) }
@@ -227,7 +246,7 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     if canvas != nil || isPreparingImage {
       super.keyDown(with: event)
     } else if event.keyCode == 53 {
-      onCancel?()
+      cancelOperation(nil)
     } else {
       selectionView.keyDown(with: event)
     }

@@ -1,9 +1,48 @@
 import AppKit
+import CoreData
 import Testing
 @testable import Maccy
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("A history save failure does not block screenshot output", arguments: [false, true])
+  func deliverWithHistoryResult(historyFails: Bool) throws {
+    let data = try generatedPNG()
+    let storageError = CocoaError(.persistentStoreSave)
+    var steps: [String] = []
+    let result = try ScreenshotCapture.deliverScreenshot(data, copy: { copied in
+      #expect(copied == data)
+      steps.append("copy")
+      return true
+    }, saveHistory: { saved in
+      #expect(saved == data)
+      steps.append("save")
+      if historyFails { throw storageError }
+    }, present: {
+      steps.append("present")
+    })
+    #expect(steps == ["copy", "save", "present"])
+    switch result {
+    case .failure(let error):
+      #expect(historyFails)
+      #expect((error as? CocoaError)?.code == storageError.code)
+    case .success:
+      #expect(!historyFails)
+    }
+  }
+
+  @Test("A clipboard write failure does not add screenshot history")
+  func failedClipboardDelivery() throws {
+    let data = try generatedPNG()
+    #expect(throws: ScreenshotCaptureSession.Failure.clipboardWrite) {
+      try ScreenshotCapture.deliverScreenshot(data, copy: { _ in false }, saveHistory: { _ in
+        Issue.record("History was saved after a clipboard failure")
+      }, present: {
+        Issue.record("Output was presented after a clipboard failure")
+      })
+    }
+  }
+
   @Test("Capture is silent and noninteractive; region coordinates support displays left of the main display")
   func captureArguments() {
     let output = URL(fileURLWithPath: "/private/tmp/generated-capture.png")
