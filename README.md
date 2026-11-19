@@ -7,6 +7,8 @@ It retains the original clipboard history features and adds region and full-scre
 pinned screenshots, mouse-wheel and trackpad zoom, local image annotations, and language settings.
 This version uses a separate application identifier and disables the official automatic updater.
 Screenshots and annotations are processed locally, without cloud recognition or training services.
+Capture a region or the main display, then annotate directly in place using the attached
+Copy / Pin / Save toolbar—no separate annotation editor opens.
 
 ## Download and Build
 

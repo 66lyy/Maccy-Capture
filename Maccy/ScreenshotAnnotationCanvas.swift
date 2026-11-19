@@ -4,17 +4,20 @@ import AppKit
 final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   let document: ScreenshotAnnotationDocument
   var onChange: (() -> Void)?
+  var onCancel: (() -> Void)?
   var tool: ScreenshotAnnotationDocument.Tool = .arrow
   var color = NSColor.red
   var lineWidth: CGFloat = 3
   var fontSize: CGFloat = 24
+  var imageInset: CGFloat = 16
+  var canvasBackgroundColor = NSColor.underPageBackgroundColor
   private(set) var textField: NSTextField?
   private var textOrigin: NSPoint?
   private var textScale: CGFloat = 1
   private var pendingMark: ScreenshotAnnotationDocument.Mark?
 
   var imageRect: NSRect {
-    Self.imageRect(imageSize: document.imageSize, bounds: bounds.insetBy(dx: 16, dy: 16))
+    Self.imageRect(imageSize: document.imageSize, bounds: bounds.insetBy(dx: imageInset, dy: imageInset))
   }
   private var imageScale: CGFloat { imageRect.width / document.imageSize.width }
 
@@ -33,8 +36,8 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   }
 
   override func draw(_ dirtyRect: NSRect) {
-    NSColor.underPageBackgroundColor.setFill()
-    bounds.fill()
+    canvasBackgroundColor.setFill()
+    bounds.fill(using: .copy)
     guard let context = NSGraphicsContext.current?.cgContext, imageScale > 0 else { return }
     context.saveGState()
     context.translateBy(x: imageRect.minX, y: imageRect.minY)
@@ -55,6 +58,10 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
 
   override func mouseUp(with event: NSEvent) {
     endMark(at: convert(event.locationInWindow, from: nil))
+  }
+
+  override func rightMouseDown(with event: NSEvent) {
+    onCancel?()
   }
 
   func beginMark(at point: NSPoint) {

@@ -56,6 +56,10 @@ final class ScreenshotCapture {
 
   private func startCapture(mode: CaptureMode, pinToScreen: Bool) {
     guard captureTask == nil, !isShowingAlert else { return }
+    if let editor = annotationWindows.values.first {
+      editor.present()
+      return
+    }
     switch permission.authorize() {
     case .granted:
       break
@@ -76,15 +80,18 @@ final class ScreenshotCapture {
         let captureMode: ScreenshotCaptureSession.Mode
         var shouldPin = pinToScreen
         var pinAnchor: NSPoint?
-        var shouldAnnotate = false
+        var shouldAnnotate = true
+        var imageFrame: NSRect?
         switch mode {
         case .mainDisplay:
           captureMode = .mainDisplay
+          imageFrame = NSScreen.screens.first?.frame
         case .selection:
           guard let selection = try await selectionController.select(pinImmediately: pinToScreen) else { return }
           shouldPin = selection.pinToScreen
           shouldAnnotate = selection.annotate
           pinAnchor = selection.anchor
+          imageFrame = selection.screenRect
           captureMode = .region(selection.captureRect)
           try await Task.sleep(for: .milliseconds(120))
         }
@@ -94,13 +101,13 @@ final class ScreenshotCapture {
           throw ScreenshotCaptureSession.Failure.invalidImage
         }
         if shouldAnnotate {
-          annotateImage(image, originalWasCopied: false)
+          annotateImage(image, imageFrame: imageFrame, originalWasCopied: false)
         } else {
           try addToHistory(data)
           if shouldPin {
             pinImage(image, anchor: pinAnchor)
           } else {
-            showPreview(image, mode: mode)
+            showPreview(image, imageFrame: imageFrame)
           }
         }
         if Defaults[.screenshotSoundEnabled] {
@@ -153,17 +160,15 @@ final class ScreenshotCapture {
     window.makeKeyAndOrderFront(nil)
   }
 
-  private func showPreview(_ image: NSImage, mode: CaptureMode) {
-    let pointer = NSEvent.mouseLocation
-    let screen = mode == .mainDisplay
-      ? NSScreen.screens.first
-      : NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
+  private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil) {
+    let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     guard let screen else { return }
     let window = ScreenshotPreviewWindow(
       image: image, visibleFrame: screen.visibleFrame,
-      onAnnotate: { [weak self] in self?.annotateImage(image) }
+      onAnnotate: { [weak self] in self?.annotateImage(image, imageFrame: imageFrame) }
     ) {
-      [weak self] in self?.pinImage(image)
+      [weak self] in self?.pinImage(image, anchor: pointer)
     }
     window.onClose = { [weak self] in
       self?.previewWindow = nil
@@ -173,16 +178,25 @@ final class ScreenshotCapture {
   }
 
   private func annotateImage(
-    _ image: NSImage, source: PinnedScreenshotWindow? = nil, originalWasCopied: Bool = true
+    _ image: NSImage, source: PinnedScreenshotWindow? = nil, imageFrame: NSRect? = nil,
+    originalWasCopied: Bool = true
   ) {
     let sourceID = source.map(ObjectIdentifier.init)
     if let sourceID, let identifier = annotationSources[sourceID], let window = annotationWindows[identifier] {
       window.present()
       return
     }
-    guard let screen = source?.screen ?? NSScreen.main,
+    if let window = annotationWindows.values.first {
+      window.present()
+      return
+    }
+    dismissPreview()
+    let targetFrame = source?.frame ?? imageFrame
+    let anchor = targetFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    guard let screen = source?.screen ?? NSScreen.screens.first(where: { $0.frame.contains(anchor) }) ?? NSScreen.main,
           let window = ScreenshotAnnotationWindow(
-            image: image, visibleFrame: screen.visibleFrame, editingPin: source != nil,
+            image: image, visibleFrame: screen.visibleFrame, screenFrame: screen.frame, imageFrame: targetFrame,
+            editingPin: source != nil,
             originalWasCopied: originalWasCopied
           ) else {
       showError("AnnotationOutputFailed")
@@ -195,9 +209,12 @@ final class ScreenshotCapture {
       case .copy:
         try addToHistory(data)
         source?.replaceImage(rendered)
+        if source == nil {
+          showPreview(rendered, imageFrame: targetFrame)
+        }
       case .pin:
         try addToHistory(data)
-        pinImage(rendered)
+        pinImage(rendered, anchor: anchor)
       case .apply:
         source?.replaceImage(rendered)
       }

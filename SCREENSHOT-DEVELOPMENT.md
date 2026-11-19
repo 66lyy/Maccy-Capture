@@ -27,7 +27,12 @@ plus Capture Now or Pin to Screen buttons.
 
 ## Capture Previews and Region Selection
 
-After a screenshot is successfully copied to the clipboard and history, a compact preview of the
+Main-display capture and ordinary region capture now enter inline annotation first.
+The captured image stays at its original screen position, with a compact floating tool strip beside it,
+instead of opening a separate titled editor. Nothing is copied or added to history until you confirm
+Copy or Pin. Cancel discards the new capture.
+
+After confirming Copy, a compact preview of the
 actual image appears in the lower-right corner of the target display, up to 220 × 150 points.
 It includes small close, annotation, and pin buttons instead of a large text notification.
 The preview does not take keyboard focus and disappears after 2 seconds, even while hovered.
@@ -38,9 +43,13 @@ Previews are held only in memory.
 The success sound can be disabled in General settings; canceled and failed captures do not play it.
 
 Region capture uses the app's own crosshair and selection overlay.
-After dragging a region, a toolbar offers Cancel, Copy Image, Pin to Screen, and Annotate.
-Press Enter to copy, P to pin, or E to annotate; press Esc, ⌘W, or right-click to cancel.
-Drag again to change the selection.
+Release the mouse to capture the region and annotate directly on the selected image.
+The attached tool strip offers drawing tools, undo/redo, Cancel, Copy, Pin, and Save PNG.
+Press Enter or ⌘C to copy, P to pin, or ⌘S to save; press Esc or ⌘W to cancel.
+Clicking outside the image and toolbar also cancels; while entering text, Esc first discards that text.
+The toolbar is placed below the image when space allows, above it near the screen edge,
+or inside the available display area for full-screen captures. It is never part of the exported PNG.
+Drag its grip or empty background to move it away from content you want to annotate.
 The Capture and Pin shortcut captures and pins immediately when you release the mouse.
 
 After closing all selection windows, the app waits 120 milliseconds and silently captures
@@ -220,7 +229,7 @@ system policy, signature changes, and installation paths still require real-devi
 
 ```sh
 xcodebuild -project Maccy.xcodeproj -scheme Maccy -configuration Debug \
-  -destination 'platform=macOS' -derivedDataPath /private/tmp/MaccyDerivedData \
+  -destination 'platform=macOS' -derivedDataPath /private/tmp/MaccyCaptureAgentTests \
   -only-testing:MaccyTests/AppIdentityTests \
   -only-testing:MaccyTests/AppLanguageTests \
   -only-testing:MaccyTests/ScreenshotCaptureTests \
@@ -244,28 +253,29 @@ Real trackpad behavior still needs manual verification.
 Preview tests cover the default 2-second timeout, actual image binding, pin callbacks,
 non-activating windows, and multiple-display bounds.
 Selection tests use virtual displays and injected callbacks without showing windows.
-They cover dragging, coordinate conversion, Copy and Pin buttons, pinning on mouse release,
+They cover dragging, coordinate conversion, inline annotation and immediate pinning on mouse release,
 keyboard actions, empty selections, repeated triggers, cancellation, timeouts,
 and cleanup after display changes, without reading the desktop.
 Identity and permission tests use simulated authorization callbacks and an isolated preference domain.
 They cover request deduplication, reentrancy, externally granted permissions, preference migration,
 the separate identifier, disabled official updates, and full-path restart arguments.
 
-Tests use ad-hoc signing. Before everyday local use after testing,
-run the local build script again to restore the persistent signing identity.
+Tests use ad-hoc signing in a separate Derived Data directory.
+They do not overwrite the daily build's signature or replace or restart the installed app.
 These tests do not replace real-machine checks for screen recording permissions,
 shortcut conflicts, and selection interactions.
 
 ## Image Annotation
 
-There are three local editor entry points:
+All annotation entry points use a borderless in-place overlay, not a separate editor window:
 
-- After selecting a region, click Annotate or press E. Selection windows close before capture;
+- Release a normal region selection, or capture the main display. Selection windows close before capture;
   the original remains in memory without first entering the clipboard or history.
-- Click the pencil button in the 2-second capture preview. The editor opens and the preview closes
+- Click the pencil button in the 2-second preview after copying. The inline overlay opens and the preview closes
   immediately; its original automatic timeout is not extended.
 - Right-click a pinned image and choose Annotate…, or press ⌘E while it has keyboard focus.
-  Only one editor opens for each pinned image.
+  Edit over that image's current screen rectangle and apply changes back to the same pin.
+  Only one annotation session is allowed at a time; repeated capture shortcuts bring it forward.
 
 Tools include arrows, rectangles, ellipses, a freehand brush, single-line text,
 and opaque solid-black covers.
@@ -274,7 +284,10 @@ Click to enter text, press Enter to confirm, or Esc to cancel the current text.
 Undo and redo support ⌘Z / ⇧⌘Z.
 Line width and text size are chosen relative to the displayed canvas,
 while annotations are stored in original-image pixel coordinates.
-Resizing the editor does not discard annotations or reduce export resolution.
+The image keeps its capture rectangle and native aspect ratio; there is no independently resizable editor.
+Export retains the original pixel resolution regardless of the screen's backing scale.
+The compact toolbar uses icon buttons with localized hover labels and a color/stroke/text-size row.
+Narrow displays wrap the controls; display-configuration changes close the overlay without exporting.
 
 Copy and Finish writes only the flattened PNG to the local clipboard and history;
 when editing a pinned image, it also updates that image.
@@ -299,7 +312,7 @@ network APIs, or training services.
 
 The original behind a capture preview or pinned image may already be in the clipboard and history.
 Adding a cover later does not retroactively delete that original.
-To cover sensitive content before it enters history, use Region Selection → Annotate → Copy / Pin / Save,
+To cover sensitive content before it enters history, use Capture → Annotate In Place → Copy / Pin / Save,
 or save only to a local file.
 Canceling an annotate-first session discards it; its temporary capture files are still cleaned up
 by the original capture session.
@@ -308,7 +321,9 @@ Annotation tests use only generated color-block images and virtual windows.
 They cover PNG resolution and orientation, all tools, opaque cover pixels, undo and redo,
 invalid input, canvas coordinates and text entry, injected export callbacks,
 preserving edits after cancellation or failure, preview and pin entry points,
-the selection annotation branch, and window cleanup.
+the selection annotation branch, and window cleanup. Inline-overlay tests also cover screen-coordinate
+placement, borderless non-activating panels, full-screen and negative-coordinate displays, narrow-display
+toolbars, direct copy/pin buttons, keyboard completion, and display-change cancellation.
 Tests do not read the real clipboard, history, or desktop.
 The editor layout preview is rendered only from a hidden test window
 to `/private/tmp/maccy-annotation-editor-synthetic.png`.

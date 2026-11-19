@@ -30,13 +30,21 @@ struct ScreenshotSelectionTests {
       NSRect(x: -1100, y: 650, width: 300, height: 250))
     #expect(ScreenshotSelectionController.captureRectangle(local, display: above) ==
       NSRect(x: 100, y: -450, width: 300, height: 250))
+    let capture = ScreenshotSelectionController.captureRectangle(
+      NSRect(x: 10.2, y: 30.3, width: 100.4, height: 80.5), display: above
+    )
+    let screen = ScreenshotSelectionController.screenRectangle(capture, display: above)
+    #expect(screen == NSRect(x: 10, y: 930, width: 101, height: 81))
+    #expect(ScreenshotSelectionController.captureRectangle(
+      screen.offsetBy(dx: -above.frame.minX, dy: -above.frame.minY), display: above
+    ) == capture)
   }
 
-  @Test("Copy and pin buttons return distinct actions after all selection windows close",
+  @Test("Releasing a region enters inline annotation or dedicated pinning after every overlay closes",
         arguments: [false, true])
-  func selectionActions(pinToScreen: Bool) async throws {
+  func releaseActions(pinToScreen: Bool) async throws {
     let controller = controller()
-    let task = Task { try await controller.select(pinImmediately: false) }
+    let task = Task { try await controller.select(pinImmediately: pinToScreen) }
     try await waitForSelection(controller)
     let windows = controller.windows
     #expect(windows.count == 2)
@@ -49,19 +57,12 @@ struct ScreenshotSelectionTests {
     let view = try #require(windows.first?.selectionView)
     view.beginSelection(at: NSPoint(x: 10, y: 20))
     view.endSelection(at: NSPoint(x: 110, y: 80))
-    #expect(controller.isSelecting)
-    #expect(!view.actionBar.isHidden)
-    #expect(view.bounds.contains(view.actionBar.frame))
-    for button in view.actionBar.subviews {
-      #expect(button.frame.width >= 60)
-      #expect(view.actionBar.bounds.contains(button.frame))
-    }
-    let button = try #require(view.actionBar.subviews[pinToScreen ? 2 : 1] as? NSButton)
-    button.performClick(nil)
     let result = try #require(try await task.value)
     #expect(result.pinToScreen == pinToScreen)
+    #expect(result.annotate == !pinToScreen)
     #expect(result.captureRect == NSRect(x: 10, y: 520, width: 100, height: 60))
     #expect(result.anchor == NSPoint(x: 60, y: 50))
+    #expect(result.screenRect == NSRect(x: 10, y: 20, width: 100, height: 60))
     #expect(!controller.isSelecting)
     #expect(controller.windows.isEmpty)
     #expect(windows.allSatisfy { !$0.isVisible && $0.onCancel == nil })
@@ -83,7 +84,7 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
-  @Test("Annotating a region is a distinct action before copying, and releases every selection window")
+  @Test("A normal region goes directly to annotation without an extra button or copying the original")
   func annotateSelection() async throws {
     let controller = controller()
     let task = Task { try await controller.select(pinImmediately: false) }
@@ -92,8 +93,6 @@ struct ScreenshotSelectionTests {
     let view = try #require(windows.first?.selectionView)
     view.beginSelection(at: NSPoint(x: 20, y: 30))
     view.endSelection(at: NSPoint(x: 220, y: 180))
-    let button = try #require(view.actionBar.subviews.last as? NSButton)
-    button.performClick(nil)
     let result = try #require(try await task.value)
     #expect(result.annotate)
     #expect(!result.pinToScreen)
@@ -123,11 +122,10 @@ struct ScreenshotSelectionTests {
     let first = controller.windows[0].selectionView
     let second = controller.windows[1].selectionView
     first.beginSelection(at: NSPoint(x: 10, y: 10))
-    first.endSelection(at: NSPoint(x: 200, y: 100))
+    first.updateSelection(to: NSPoint(x: 200, y: 100))
     #expect(first.selectedRect != nil)
     second.beginSelection(at: NSPoint(x: 20, y: 20))
     #expect(first.selectedRect == nil)
-    #expect(first.actionBar.isHidden)
     controller.cancel()
     #expect(try await task.value == nil)
   }
@@ -161,7 +159,7 @@ struct ScreenshotSelectionTests {
     let window = try #require(controller.windows.first)
     let view = window.selectionView
     view.beginSelection(at: NSPoint(x: 10, y: 20))
-    view.endSelection(at: NSPoint(x: 110, y: 80))
+    view.updateSelection(to: NSPoint(x: 110, y: 80))
     let event = try #require(NSEvent.keyEvent(
       with: .keyDown, location: .zero, modifierFlags: [],
       timestamp: 0, windowNumber: window.windowNumber, context: nil,

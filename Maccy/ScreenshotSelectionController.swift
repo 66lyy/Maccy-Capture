@@ -14,6 +14,13 @@ final class ScreenshotSelectionController {
     let anchor: NSPoint
     let pinToScreen: Bool
     var annotate = false
+
+    var screenRect: NSRect {
+      NSRect(
+        x: anchor.x - captureRect.width / 2, y: anchor.y - captureRect.height / 2,
+        width: captureRect.width, height: captureRect.height
+      )
+    }
   }
 
   private(set) var windows: [ScreenshotSelectionWindow] = []
@@ -92,6 +99,14 @@ final class ScreenshotSelectionController {
     ).integral
   }
 
+  static func screenRectangle(_ captureRect: NSRect, display: Display) -> NSRect {
+    NSRect(
+      x: display.frame.minX + captureRect.minX - display.captureFrame.minX,
+      y: display.frame.maxY - (captureRect.maxY - display.captureFrame.minY),
+      width: captureRect.width, height: captureRect.height
+    )
+  }
+
   private func makeWindow(display: Display, pinImmediately: Bool) -> ScreenshotSelectionWindow {
     let window = ScreenshotSelectionWindow(frame: display.frame, scale: display.scale, pinImmediately: pinImmediately)
     window.onCancel = { [weak self] in self?.cancel() }
@@ -102,16 +117,20 @@ final class ScreenshotSelectionController {
       }
     }
     window.selectionView.onCapture = { [weak self] rectangle, pinToScreen in
+      let captureRect = Self.captureRectangle(rectangle, display: display)
+      let screenRect = Self.screenRectangle(captureRect, display: display)
       self?.finish(Selection(
-        captureRect: Self.captureRectangle(rectangle, display: display),
-        anchor: NSPoint(x: display.frame.minX + rectangle.midX, y: display.frame.minY + rectangle.midY),
+        captureRect: captureRect,
+        anchor: NSPoint(x: screenRect.midX, y: screenRect.midY),
         pinToScreen: pinToScreen
       ))
     }
     window.selectionView.onAnnotate = { [weak self] rectangle in
+      let captureRect = Self.captureRectangle(rectangle, display: display)
+      let screenRect = Self.screenRectangle(captureRect, display: display)
       self?.finish(Selection(
-        captureRect: Self.captureRectangle(rectangle, display: display),
-        anchor: NSPoint(x: display.frame.minX + rectangle.midX, y: display.frame.minY + rectangle.midY),
+        captureRect: captureRect,
+        anchor: NSPoint(x: screenRect.midX, y: screenRect.midY),
         pinToScreen: false, annotate: true
       ))
     }
@@ -207,7 +226,6 @@ final class ScreenshotSelectionView: NSView {
   var onAnnotate: ((NSRect) -> Void)?
   var onCancel: (() -> Void)?
   private(set) var selectedRect: NSRect?
-  private(set) var actionBar = NSView()
 
   private let scale: CGFloat
   private let pinImmediately: Bool
@@ -217,7 +235,6 @@ final class ScreenshotSelectionView: NSView {
     self.scale = scale
     self.pinImmediately = pinImmediately
     super.init(frame: frame)
-    configureActionBar()
     setAccessibilityLabel(localized("ScreenshotSelectionHint"))
   }
 
@@ -271,7 +288,6 @@ final class ScreenshotSelectionView: NSView {
     onBegin?()
     anchor = point
     selectedRect = nil
-    actionBar.isHidden = true
     needsDisplay = true
   }
 
@@ -291,15 +307,13 @@ final class ScreenshotSelectionView: NSView {
     if pinImmediately {
       captureSelection(pinToScreen: true)
     } else {
-      positionActionBar(beside: selectedRect)
-      actionBar.isHidden = false
+      annotateSelection()
     }
   }
 
   func clearSelection() {
     anchor = nil
     selectedRect = nil
-    actionBar.isHidden = true
     needsDisplay = true
   }
 
@@ -349,46 +363,6 @@ final class ScreenshotSelectionView: NSView {
     }
   }
 
-  private func configureActionBar() {
-    actionBar.wantsLayer = true
-    actionBar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-    actionBar.layer?.cornerRadius = 8
-    actionBar.isHidden = true
-    let buttons = [
-      actionButton("ScreenshotCancel", symbol: "xmark", action: #selector(cancelSelection)),
-      actionButton("ScreenshotCopy", symbol: "doc.on.doc", action: #selector(copySelection)),
-      actionButton("ScreenshotPinImage", symbol: "pin.fill", action: #selector(pinSelection)),
-      actionButton("AnnotationEdit", symbol: "pencil.tip", action: #selector(annotateSelection))
-    ]
-    var offset: CGFloat = 8
-    for button in buttons {
-      button.frame = NSRect(x: offset, y: 7, width: max(60, button.fittingSize.width), height: 28)
-      actionBar.addSubview(button)
-      offset = button.frame.maxX + 8
-    }
-    actionBar.frame.size = NSSize(width: offset, height: 42)
-    addSubview(actionBar)
-  }
-
-  private func actionButton(_ key: String, symbol: String, action: Selector) -> NSButton {
-    let button = NSButton(title: localized(key), target: self, action: action)
-    button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
-    button.imagePosition = .imageLeading
-    button.bezelStyle = .rounded
-    button.setAccessibilityLabel(localized(key))
-    return button
-  }
-
-  private func positionActionBar(beside rectangle: NSRect) {
-    let size = actionBar.frame.size
-    let below = rectangle.minY - size.height - 8
-    actionBar.frame = NSRect(
-      x: max(8, min(rectangle.maxX - size.width, bounds.maxX - size.width - 8)),
-      y: max(8, min(below >= 8 ? below : rectangle.maxY + 8, bounds.maxY - size.height - 8)),
-      width: size.width, height: size.height
-    )
-  }
-
   private func drawPill(_ text: String, near point: NSPoint) {
     let attributes: [NSAttributedString.Key: Any] = [
       .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white
@@ -403,10 +377,6 @@ final class ScreenshotSelectionView: NSView {
     NSBezierPath(roundedRect: rectangle, xRadius: 6, yRadius: 6).fill()
     (text as NSString).draw(at: NSPoint(x: rectangle.minX + 8, y: rectangle.minY + 6), withAttributes: attributes)
   }
-
-  @objc private func cancelSelection() { onCancel?() }
-  @objc private func copySelection() { captureSelection(pinToScreen: false) }
-  @objc private func pinSelection() { captureSelection(pinToScreen: true) }
 
   private func localized(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
