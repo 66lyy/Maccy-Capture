@@ -77,6 +77,11 @@ bash script/setup_local_signing.sh
 
 流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的五组回归测试，
 只使用生成图片和模拟输入，不读取开发者机器上的桌面、剪贴板、历史或钥匙串。
+已在该运行器上观察到 Apple Swift 6.3.3 的 Intel Release 优化器在原项目
+`FloatingPanel` 析构函数内崩溃。打包脚本仅检测到这一编译器版本时，
+通过临时 xcconfig 对 `x86_64` 使用 `-Onone`；Apple Silicon 仍使用项目原有优化级别，
+其他编译器版本不应用此兼容设置。此设置可能降低 Intel 版性能，构建信息中会明确记录；
+不通过删除功能、修改窗口生命周期或降低权限检查来规避编译器问题。
 通过后使用 `script/package_release.sh` 构建 Release 通用架构应用，检查代码签名、修改版标识
 和 `arm64` / `x86_64` 架构，然后生成：
 

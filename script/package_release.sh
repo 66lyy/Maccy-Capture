@@ -8,6 +8,15 @@ APP_BUNDLE="$DERIVED_DATA/Build/Products/Release/Maccy.app"
 BUILD_LOG="$DERIVED_DATA/maccy-release-build.log"
 
 mkdir -p "$DERIVED_DATA" "$DIST_DIR"
+BUILD_OPTIONS=('ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO)
+INTEL_OPTIMIZATION="project default"
+if [[ "$(xcrun swiftc --version)" == *"Apple Swift version 6.3.3 "* ]]; then
+  COMPATIBILITY_CONFIG="$DERIVED_DATA/MaccyCaptureCompatibility.xcconfig"
+  printf 'SWIFT_OPTIMIZATION_LEVEL[arch=x86_64] = -Onone\n' > "$COMPATIBILITY_CONFIG"
+  BUILD_OPTIONS+=(-xcconfig "$COMPATIBILITY_CONFIG")
+  INTEL_OPTIMIZATION="-Onone; Swift 6.3.3 Intel optimizer crash workaround"
+  printf 'Applying Intel-only optimizer workaround for Apple Swift 6.3.3.\n'
+fi
 if ! xcodebuild \
   -project "$PROJECT_ROOT/Maccy.xcodeproj" \
   -scheme Maccy \
@@ -16,8 +25,7 @@ if ! xcodebuild \
   -derivedDataPath "$DERIVED_DATA" \
   -onlyUsePackageVersionsFromResolvedFile \
   -skipMacroValidation \
-  'ARCHS=arm64 x86_64' \
-  ONLY_ACTIVE_ARCH=NO \
+  "${BUILD_OPTIONS[@]}" \
   CODE_SIGN_IDENTITY=- \
   CODE_SIGN_STYLE=Manual \
   DEVELOPMENT_TEAM= \
@@ -110,6 +118,7 @@ Version: $VERSION
 Bundle identifier: $BUNDLE_ID
 Source revision: $REVISION
 Architectures: arm64, x86_64
+Intel optimization: $INTEL_OPTIMIZATION
 Minimum macOS: 14.0
 Signing: ad-hoc; not Developer ID signed or notarized
 
