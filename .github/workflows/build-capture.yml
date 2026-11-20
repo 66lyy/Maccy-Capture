@@ -55,7 +55,7 @@ jobs:
 
       - name: Validate update scripts and synthetic feed generation
         run: |
-          for script in script/package_release.sh script/setup_release_signing.sh script/publish_prerelease.sh script/sign_update_archive.sh; do
+          for script in script/package_release.sh script/setup_release_signing.sh script/publish_prerelease.sh script/publish_stable.sh script/sign_update_archive.sh; do
             bash -n "$script"
           done
           python3 -m unittest discover -s script -p 'test_update_feed.py'
