@@ -5,6 +5,13 @@ enum LiquidGlass {
     guard #available(macOS 26.0, *) else { return false }
     return !reduceTransparency
   }
+
+  // Light dimming laid over clear glass so text stays readable on busy backgrounds.
+  static let clearDimming = NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      ? NSColor.black.withAlphaComponent(0.22)
+      : NSColor.white.withAlphaComponent(0.18)
+  }
 }
 
 struct GlassEffectView: NSViewRepresentable {
@@ -37,9 +44,10 @@ class GlassSurfaceView: NSView {
       let glass = NSGlassEffectView(frame: surfaceBounds)
       let controls = NSView(frame: surfaceBounds)
       controls.autoresizingMask = [.width, .height]
-      glass.style = .regular
+      let reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+      glass.style = reduceTransparency ? .regular : .clear
       glass.cornerRadius = cornerRadius
-      glass.tintColor = tintColor
+      glass.tintColor = tintColor ?? (reduceTransparency ? nil : LiquidGlass.clearDimming)
       glass.contentView = controls
       controlsView = controls
       effectView = glass

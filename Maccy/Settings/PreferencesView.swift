@@ -19,15 +19,19 @@ final class PreferencesWindowController: NSWindowController {
     window.isReleasedWhenClosed = false
     let contentView: NSView
     if #available(macOS 26.0, *), !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
-      let backdrop = NSVisualEffectView(frame: contentRect)
-      backdrop.material = .underWindowBackground
-      backdrop.blendingMode = .behindWindow
-      backdrop.state = .followsWindowActiveState
-      contentView = backdrop
+      let glass = NSGlassEffectView(frame: contentRect)
+      glass.style = .clear
+      glass.tintColor = LiquidGlass.clearDimming
+      let content = NSView(frame: contentRect)
+      content.autoresizingMask = [.width, .height]
+      glass.contentView = content
+      contentView = content
+      window.contentView = glass
       window.backgroundColor = .clear
       window.isOpaque = false
     } else {
       contentView = NSView(frame: contentRect)
+      window.contentView = contentView
       window.backgroundColor = .windowBackgroundColor
     }
     let hostingView = NSHostingView(rootView: PreferencesView(page: page, onLayout: onLayout))
@@ -35,7 +39,6 @@ final class PreferencesWindowController: NSWindowController {
     hostingView.frame = contentView.bounds
     hostingView.autoresizingMask = [.width, .height]
     contentView.addSubview(hostingView)
-    window.contentView = contentView
     window.contentMinSize = NSSize(width: min(700, availableWidth), height: min(530, availableHeight))
     window.setContentSize(initialSize)
     window.setFrameOrigin(NSPoint(x: visibleFrame.midX - window.frame.width / 2,
@@ -108,7 +111,7 @@ struct PreferencesView: View {
       Color(nsColor: .windowBackgroundColor)
         .opacity(LiquidGlass.isActive(reduceTransparency: reduceTransparency) ? 0 : 1)
         .overlay {
-          if !reduceTransparency {
+          if !reduceTransparency, !LiquidGlass.isActive(reduceTransparency: reduceTransparency) {
             let strength = colorScheme == .dark ? 0.21 : 0.27
             RadialGradient(colors: [.blue.opacity(strength), .clear],
                            center: .topLeading, startRadius: 16, endRadius: 560)
@@ -244,7 +247,7 @@ private struct PreferencesGlassSurface: ViewModifier {
       if reduceTransparency {
         content.background(Color(nsColor: .controlBackgroundColor), in: shape)
       } else if #available(macOS 26.0, *) {
-        content.glassEffect(.regular, in: shape)
+        content.glassEffect(.clear.tint(Color(nsColor: LiquidGlass.clearDimming)), in: shape)
       } else {
         content.background(.regularMaterial, in: shape)
       }
