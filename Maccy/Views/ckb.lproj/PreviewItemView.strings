@@ -11,3 +11,10 @@
 "Size" = "قەبارەی فایل:";
 "CopyExtractedText" = "دەقی دەرهێنراو کۆپی بکە.";
 "EditItem" = "دەستکاری بڕگە";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

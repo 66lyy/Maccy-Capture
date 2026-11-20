@@ -11,3 +11,10 @@
 "Size" = "Lielums:";
 "CopyExtractedText" = "Kopēt izgūto tekstu.";
 "EditItem" = "Rediģēt vienumu";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

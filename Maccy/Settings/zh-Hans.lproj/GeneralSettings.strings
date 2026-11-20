@@ -178,3 +178,4 @@
 "LanguageRestartNotice" = "重启会关闭临时贴图窗口，但不会清空剪贴板历史。";
 "ShortcutGroupExpanded" = "已展开";
 "ShortcutGroupCollapsed" = "已折叠";
+"FormatJSON" = "格式化 JSON 预览";

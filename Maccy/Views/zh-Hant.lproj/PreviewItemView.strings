@@ -11,3 +11,10 @@
 "Size" = "檔案大小:";
 "CopyExtractedText" = "複製擷取的文字。";
 "EditItem" = "編輯項目";
+"JSONPretty" = "美化";
+"JSONCompact" = "緊湊";
+"JSONStyle" = "JSON 樣式";
+"CopyFormattedJSON" = "複製格式化文字";
+"ValidJSON" = "有效的 JSON";
+"ValidateJSON" = "驗證 JSON";
+"JSONError" = "%@: 第 %ld 行，第 %ld 欄";

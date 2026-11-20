@@ -8,3 +8,10 @@
 "ClosePreview" = "Paina {previewKey} piilottaaksesi esikatselun.";
 "EditItem" = "Muokkaa kohdetta";
 "Size" = "Koko:";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

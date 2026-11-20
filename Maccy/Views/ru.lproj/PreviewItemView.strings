@@ -11,3 +11,10 @@
 "Size" = "Размер:";
 "CopyExtractedText" = "Скопировать извлеченный текст.";
 "EditItem" = "Редактировать элемент";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

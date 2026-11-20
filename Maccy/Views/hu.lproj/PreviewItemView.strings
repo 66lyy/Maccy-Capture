@@ -11,3 +11,10 @@
 "Size" = "Fájlméret:";
 "CopyExtractedText" = "Kinyert szöveg másolása.";
 "EditItem" = "Elem szerkesztése";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

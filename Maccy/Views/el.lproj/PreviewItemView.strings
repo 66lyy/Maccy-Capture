@@ -11,3 +11,10 @@
 "Size" = "Μέγεθος:";
 "CopyExtractedText" = "Αντιγραφή εξαγμένου κειμένου.";
 "EditItem" = "Επεξεργασία στοιχείου";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

@@ -11,3 +11,10 @@
 "Size" = "Taille :";
 "CopyExtractedText" = "Copier le texte extrait.";
 "EditItem" = "Modifier l’élément";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

@@ -11,3 +11,10 @@
 "Size" = "الحجم:";
 "CopyExtractedText" = "انسخ النص المستخرج.";
 "EditItem" = "تعديل العنصر";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

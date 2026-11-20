@@ -62,6 +62,7 @@ nonisolated extension Defaults.Keys {
   static let removeFormattingByDefault = Key<Bool>("removeFormattingByDefault", default: false, suite: preferencesSuite)
   static let searchMode = Key<Search.Mode>("searchMode", default: .exact, suite: preferencesSuite)
   static let screenshotSoundEnabled = Key<Bool>("screenshotSoundEnabled", default: true, suite: preferencesSuite)
+  static let formatJSON = Key<Bool>("formatJSON", default: true, suite: preferencesSuite)
   static let scopedShortcuts = Key<[String: Data]>("scopedShortcuts", default: [:], suite: preferencesSuite)
   static let showFooter = Key<Bool>("showFooter", default: true, suite: preferencesSuite)
   static let showInStatusBar = Key<Bool>("showInStatusBar", default: true, suite: preferencesSuite)

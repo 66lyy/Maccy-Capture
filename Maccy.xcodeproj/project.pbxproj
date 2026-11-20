@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F1404A720000000000000001 /* JSONFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1404A720000000000000002 /* JSONFormatter.swift */; };
+		F1404A720000000000000003 /* JSONFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1404A720000000000000004 /* JSONFormatterTests.swift */; };
 		B9ACD419E2F67A01C5D86001 /* RepositoryUpdateFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */; };
 		B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */; };
 		B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */; };
@@ -222,6 +224,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F1404A720000000000000002 /* JSONFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFormatter.swift; sourceTree = "<group>"; };
+		F1404A720000000000000004 /* JSONFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFormatterTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryUpdateFeed.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdaterTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationDocument.swift; sourceTree = "<group>"; };
@@ -841,6 +845,7 @@
 				AC1811260000000000000002 /* ScreenshotCaptureTests.swift */,
 				AC1811180000000000000008 /* ScreenshotSelectionTests.swift */,
 				B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */,
+				F1404A720000000000000004 /* JSONFormatterTests.swift */,
 				B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */,
 				B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */,
 				B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */,
@@ -947,6 +952,7 @@
 				DA6D98E12AEABE03008A77CE /* Accessibility.swift */,
 				DAEE38461E3DBEB100DD2966 /* AppDelegate.swift */,
 				B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */,
+				F1404A720000000000000002 /* JSONFormatter.swift */,
 				B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */,
 				B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */,
 				B9ACD419E2F67A01C5D85004 /* ScreenshotAnnotationCanvas.swift */,
@@ -1212,6 +1218,7 @@
 				DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */,
 				4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */,
 				B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */,
+				F1404A720000000000000003 /* JSONFormatterTests.swift in Sources */,
 				B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */,
 				B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */,
 				B9ACD419E2F67A01C5D85007 /* ScreenshotAnnotationTests.swift in Sources */,
@@ -1288,6 +1295,7 @@
 				2F5C8A01001A0F9D00BEEF00 /* ScreenshotCapture.swift in Sources */,
 				A601FB1D645F0D91D796D9CE /* ScreenshotCaptureSession.swift in Sources */,
 				B9ACD419E2F67A01C5D83F11 /* AppIdentity.swift in Sources */,
+				F1404A720000000000000001 /* JSONFormatter.swift in Sources */,
 				B9ACD419E2F67A01C5D84011 /* AppLanguage.swift in Sources */,
 				B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */,
 				B9ACD419E2F67A01C5D85003 /* ScreenshotAnnotationCanvas.swift in Sources */,

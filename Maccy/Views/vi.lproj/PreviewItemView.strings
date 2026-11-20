@@ -11,3 +11,10 @@
 "Size" = "Dung lượng:";
 "CopyExtractedText" = "Sao chép văn bản đã trích xuất.";
 "EditItem" = "Chỉnh sửa mục";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

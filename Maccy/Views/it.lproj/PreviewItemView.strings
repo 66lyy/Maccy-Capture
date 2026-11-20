@@ -11,3 +11,10 @@
 "Size" = "Dimensione file:";
 "CopyExtractedText" = "Copia il testo estratto.";
 "EditItem" = "Modifica elemento";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

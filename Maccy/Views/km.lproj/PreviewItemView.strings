@@ -12,3 +12,10 @@
 "OpenPreview" = "ចុច {previewKey} ដើម្បីបង្ហាញការមើលជាមុន។";
 "ClosePreview" = "ចុច {previewKey} ដើម្បីលាក់ការមើលជាមុន។";
 "EditItem" = "កែសម្រួលធាតុ";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

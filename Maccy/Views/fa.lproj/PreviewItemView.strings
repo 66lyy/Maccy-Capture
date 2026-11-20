@@ -11,3 +11,10 @@
 "Size" = "حجم:";
 "CopyExtractedText" = "متن استخراج‌شده را کپی کنید.";
 "EditItem" = "ویرایش مورد";
+"JSONPretty" = "Pretty";
+"JSONCompact" = "Compact";
+"JSONStyle" = "JSON style";
+"CopyFormattedJSON" = "Copy formatted";
+"ValidJSON" = "Valid JSON";
+"ValidateJSON" = "Validate JSON";
+"JSONError" = "%@: line %ld, column %ld";

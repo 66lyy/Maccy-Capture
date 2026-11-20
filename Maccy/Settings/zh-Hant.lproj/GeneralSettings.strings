@@ -94,3 +94,4 @@
 "LanguageHelp" = "選擇應用程式介面語言，重新啟動後選單與設定將一併切換。";
 "LanguageRestart" = "重新啟動以套用";
 "LanguageRestartNotice" = "重新啟動會關閉暫時的貼圖視窗，但不會清除剪貼簿歷史記錄。";
+"FormatJSON" = "格式化 JSON 預覽";
