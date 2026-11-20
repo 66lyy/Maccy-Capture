@@ -44,7 +44,7 @@ struct PreviewItemView: View {
           .pickerStyle(.segmented)
           .labelsHidden()
           .frame(maxWidth: 180)
-        Button { Clipboard.shared.copyInMaccy(document.text) } label: {
+        Button { Clipboard.shared.copyInMaccy(document.text, rtf: JSONTextView.rtf(for: document)) } label: {
           Text("CopyFormattedJSON", tableName: "PreviewItemView")
         }
         .glassButtonStyle()
@@ -204,16 +204,11 @@ private struct JSONTextView: NSViewRepresentable {
     Coordinator()
   }
 
-  func makeNSView(context: Context) -> NSScrollView {
-    LargeTextView.makeScrollView(text: "")
-  }
-
-  func updateNSView(_ scrollView: NSScrollView, context: Context) {
-    guard context.coordinator.lastText != document.text || context.coordinator.lastStyle != style else { return }
-    guard let textView = scrollView.documentView as? NSTextView else { return }
-    let font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+  static func attributedString(
+    for document: JSONFormatter.Document, font: NSFont, color resolve: (NSColor) -> NSColor
+  ) -> NSMutableAttributedString {
     let attributed = NSMutableAttributedString(string: document.text, attributes: [
-      .font: font, .foregroundColor: NSColor.labelColor
+      .font: font, .foregroundColor: resolve(.labelColor)
     ])
     let prefix = document.text.utf8.prefix(200 * 1024)
     let colorLimit = String(decoding: prefix, as: UTF8.self).utf16.count
@@ -227,8 +222,36 @@ private struct JSONTextView: NSViewRepresentable {
       case .literal: color = .systemPurple
       case .punctuation: color = .labelColor
       }
-      attributed.addAttribute(.foregroundColor, value: color, range: token.range)
+      attributed.addAttribute(.foregroundColor, value: resolve(color), range: token.range)
     }
+    return attributed
+  }
+
+  // RTF keeps the indentation monospaced in rich-text apps; it needs a named font and static colors.
+  static func rtf(for document: JSONFormatter.Document) -> Data? {
+    let font = NSFont(name: "Menlo", size: NSFont.systemFontSize)
+      ?? NSFont.userFixedPitchFont(ofSize: NSFont.systemFontSize)
+      ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+    let appearance = NSAppearance(named: .aqua)
+    let attributed = attributedString(for: document, font: font) { color in
+      var resolved = color
+      appearance?.performAsCurrentDrawingAppearance {
+        resolved = color.usingColorSpace(.sRGB) ?? color
+      }
+      return resolved
+    }
+    return attributed.rtf(from: NSRange(location: 0, length: attributed.length), documentAttributes: [:])
+  }
+
+  func makeNSView(context: Context) -> NSScrollView {
+    LargeTextView.makeScrollView(text: "")
+  }
+
+  func updateNSView(_ scrollView: NSScrollView, context: Context) {
+    guard context.coordinator.lastText != document.text || context.coordinator.lastStyle != style else { return }
+    guard let textView = scrollView.documentView as? NSTextView else { return }
+    let font = NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+    let attributed = Self.attributedString(for: document, font: font) { $0 }
     textView.isSelectable = true
     textView.textStorage?.setAttributedString(attributed)
     context.coordinator.lastText = document.text
