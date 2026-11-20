@@ -6,6 +6,7 @@ struct SearchFieldView: View {
   var isFocused = false
 
   @Environment(AppState.self) private var appState
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   var body: some View {
     HStack(spacing: 6) {
@@ -38,10 +39,15 @@ struct SearchFieldView: View {
     }
     .padding(.horizontal, 8)
     .frame(height: 28)
-    .background {
+    .liquidGlass(in: Capsule(), interactive: true) {
       RoundedRectangle(cornerRadius: 8)
         .fill(Color.secondary.opacity(0.09))
         .strokeBorder(isFocused ? Color.accentColor.opacity(0.55) : Color.secondary.opacity(0.18))
+    }
+    .overlay {
+      if isFocused, LiquidGlass.isActive(reduceTransparency: reduceTransparency) {
+        Capsule().strokeBorder(Color.accentColor.opacity(0.45)).allowsHitTesting(false)
+      }
     }
   }
 }

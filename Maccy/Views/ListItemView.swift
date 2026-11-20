@@ -47,6 +47,9 @@ struct ListItemView<Title: View, ID: Hashable>: View {
   @Default(.showApplicationIcons) private var showIcons
   @Environment(AppState.self) private var appState
   @Environment(ModifierFlags.self) private var modifierFlags
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  private var usesGlass: Bool { LiquidGlass.isActive(reduceTransparency: reduceTransparency) }
 
   // Use the same selection number for the visible badge and accessibility value.
   private var displaySelectionIndex: String? {
@@ -97,11 +100,10 @@ struct ListItemView<Title: View, ID: Hashable>: View {
             .font(.caption)
             .frame(minWidth: 10, alignment: .center)
             .padding(3)
-            .background(
-              Color.secondary.opacity(isSelected ? 0.5 : 0.8),
-              in: Capsule()
-            )
-            .foregroundStyle(Color.white)
+            .liquidGlass(in: Capsule()) {
+              Capsule().fill(Color.secondary.opacity(isSelected ? 0.5 : 0.8))
+            }
+            .foregroundStyle(usesGlass ? Color.primary : Color.white)
             .accessibilityHidden(true)
         }
 
@@ -113,10 +115,11 @@ struct ListItemView<Title: View, ID: Hashable>: View {
                 .font(.caption.weight(.medium))
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
-                .background(
-                  isSelected ? Color.white.opacity(0.18) : Color.secondary.opacity(0.10),
-                  in: RoundedRectangle(cornerRadius: 4)
-                )
+                .foregroundStyle(usesGlass ? Color.primary : (isSelected ? Color.white : Color.primary))
+                .liquidGlass(in: Capsule()) {
+                  RoundedRectangle(cornerRadius: 4)
+                    .fill(isSelected ? Color.white.opacity(0.18) : Color.secondary.opacity(0.10))
+                }
                 .opacity(visible ? 1 : 0)
                 .accessibilityHidden(true)
                 .frame(width: visible ? nil : 0)
@@ -132,10 +135,16 @@ struct ListItemView<Title: View, ID: Hashable>: View {
     .foregroundStyle(isSelected ? Color.white : .primary)
     // macOS 26 broke hovering if no background is present.
     // The slight opcaity white background is a workaround
-    .background(
-      isSelected ? Color.accentColor.opacity(0.8) : .white.opacity(0.001),
-      in: selectionAppearance.rect(cornerRadius: Popup.cornerRadius)
-    )
+    .background(.white.opacity(0.001), in: selectionAppearance.rect(cornerRadius: Popup.cornerRadius))
+    .background {
+      if isSelected {
+        selectionAppearance.rect(cornerRadius: Popup.cornerRadius)
+          .fill(Color.accentColor.opacity(usesGlass ? 0.7 : 0.8))
+      }
+    }
+    .liquidGlass(in: selectionAppearance.rect(cornerRadius: Popup.cornerRadius), tint: .accentColor, enabled: isSelected) {
+      EmptyView()
+    }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Text(accessibilityLabel))
     .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -144,3 +153,4 @@ struct ListItemView<Title: View, ID: Hashable>: View {
     .help(help ?? "")
   }
 }
+

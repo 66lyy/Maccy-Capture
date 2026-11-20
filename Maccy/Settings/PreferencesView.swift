@@ -16,9 +16,20 @@ final class PreferencesWindowController: NSWindowController {
     )
     window.title = String(localized: "PreferencesWindowTitle", defaultValue: "Settings", table: "GeneralSettings")
     window.titlebarAppearsTransparent = true
-    window.backgroundColor = .windowBackgroundColor
     window.isReleasedWhenClosed = false
-    let contentView = NSView(frame: contentRect)
+    let contentView: NSView
+    if #available(macOS 26.0, *), !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
+      let backdrop = NSVisualEffectView(frame: contentRect)
+      backdrop.material = .underWindowBackground
+      backdrop.blendingMode = .behindWindow
+      backdrop.state = .followsWindowActiveState
+      contentView = backdrop
+      window.backgroundColor = .clear
+      window.isOpaque = false
+    } else {
+      contentView = NSView(frame: contentRect)
+      window.backgroundColor = .windowBackgroundColor
+    }
     let hostingView = NSHostingView(rootView: PreferencesView(page: page, onLayout: onLayout))
     hostingView.sizingOptions = []
     hostingView.frame = contentView.bounds
@@ -95,6 +106,7 @@ struct PreferencesView: View {
     .coordinateSpace(name: "preferences")
     .background {
       Color(nsColor: .windowBackgroundColor)
+        .opacity(LiquidGlass.isActive(reduceTransparency: reduceTransparency) ? 0 : 1)
         .overlay {
           if !reduceTransparency {
             let strength = colorScheme == .dark ? 0.21 : 0.27
@@ -188,11 +200,7 @@ struct PreferencesView: View {
       }
       .padding(.horizontal, 9)
       .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-      .background {
-        if isSelected {
-          RoundedRectangle(cornerRadius: 8).fill(Color.accentColor.opacity(0.16))
-        }
-      }
+      .modifier(GlassSelection(isSelected: isSelected, cornerRadius: 8, fallbackOpacity: 0.16))
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
@@ -256,6 +264,19 @@ private struct PreferencesGlassSurface: ViewModifier {
             .allowsHitTesting(false)
         }
       }
+  }
+}
+
+struct GlassSelection: ViewModifier {
+  let isSelected: Bool
+  let cornerRadius: CGFloat
+  let fallbackOpacity: Double
+
+  func body(content: Content) -> some View {
+    let shape = RoundedRectangle(cornerRadius: cornerRadius)
+    content.liquidGlass(in: shape, tint: Color.accentColor.opacity(0.25), interactive: true, enabled: isSelected) {
+      shape.fill(Color.accentColor.opacity(fallbackOpacity))
+    }
   }
 }
 

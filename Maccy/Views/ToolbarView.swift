@@ -38,11 +38,22 @@ struct ToolbarButton<Label: View>: View {
   let label: () -> Label
 
   var body: some View {
-    Button(action: action) {
-      label()
+    Group {
+      if #available(macOS 26.0, *) {
+        Button(action: action) {
+          label()
+            .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+      } else {
+        Button(action: action) {
+          label()
+        }
+        .buttonStyle(.plain)
+        .frame(height: 23)
+      }
     }
-    .buttonStyle(.plain)
-    .frame(height: 23)
     .excludeFromWindowMovableByBackground()
   }
 
@@ -114,120 +125,122 @@ struct ToolbarView: View {
   }
 
   var body: some View {
-    HStack {
-      Menu {
-        Button {
-          ScreenshotCapture.shared.captureSelection()
-        } label: {
-          Label {
-            Text("ScreenshotSelection", tableName: "GeneralSettings")
-          } icon: {
-            Image(systemName: "crop")
-          }
-        }
-        Button {
-          ScreenshotCapture.shared.captureMainDisplay()
-        } label: {
-          Label {
-            Text("Screenshot", tableName: "GeneralSettings")
-          } icon: {
-            Image(systemName: "display")
-          }
-        }
-        Button {
-          ScreenshotCapture.shared.captureSelection(pinToScreen: true)
-        } label: {
-          Label {
-            Text("PinScreenshot", tableName: "GeneralSettings")
-          } icon: {
-            Image(systemName: "pin")
-          }
-        }
-        Divider()
-        Button {
-          ScreenshotCapture.shared.pinClipboardImage()
-        } label: {
-          Label {
-            Text("PinClipboardImage", tableName: "GeneralSettings")
-          } icon: {
-            Image(systemName: "photo.on.rectangle")
-          }
-        }
-      } label: {
-        Label {
-          Text("ScreenshotMenu", tableName: "GeneralSettings")
-        } icon: {
-          Image(systemName: "viewfinder")
-        }
-      }
-      .menuStyle(.borderlessButton)
-      .fixedSize()
-      .help(Text("ScreenshotSelectionHint", tableName: "GeneralSettings"))
-      .excludeFromWindowMovableByBackground()
-
-      if !appState.navigator.selection.isEmpty {
-        Spacer()
-
-        if selectedImageItem != nil {
-          ToolbarButton {
-            guard let selectedImageText else { return }
-            Clipboard.shared.copyInMaccy(selectedImageText)
+    GlassGroup {
+      HStack {
+        Menu {
+          Button {
+            ScreenshotCapture.shared.captureSelection()
           } label: {
-            Image(systemName: "text.viewfinder")
+            Label {
+              Text("ScreenshotSelection", tableName: "GeneralSettings")
+            } icon: {
+              Image(systemName: "crop")
+            }
           }
-          .shortcutKeyHelp(key: "CopyExtractedText", tableName: "PreviewItemView")
-          .disabled(selectedImageText == nil)
-        }
-
-        ToolbarButton {
-          withAnimation {
-            appState.togglePin()
+          Button {
+            ScreenshotCapture.shared.captureMainDisplay()
+          } label: {
+            Label {
+              Text("Screenshot", tableName: "GeneralSettings")
+            } icon: {
+              Image(systemName: "display")
+            }
+          }
+          Button {
+            ScreenshotCapture.shared.captureSelection(pinToScreen: true)
+          } label: {
+            Label {
+              Text("PinScreenshot", tableName: "GeneralSettings")
+            } icon: {
+              Image(systemName: "pin")
+            }
+          }
+          Divider()
+          Button {
+            ScreenshotCapture.shared.pinClipboardImage()
+          } label: {
+            Label {
+              Text("PinClipboardImage", tableName: "GeneralSettings")
+            } icon: {
+              Image(systemName: "photo.on.rectangle")
+            }
           }
         } label: {
-          if (appState.navigator.selection.items.allSatisfy { $0.isPinned }) {
-            Image(systemName: "pin.slash.fill")
-          } else {
-            Image(systemName: "pin")
+          Label {
+            Text("ScreenshotMenu", tableName: "GeneralSettings")
+          } icon: {
+            Image(systemName: "viewfinder")
           }
         }
-        .shortcutKeyHelp(
-          name: .pin,
-          key: shouldUnpin ? "UnpinKey" : "PinKey",
-          tableName: "PreviewItemView",
-          replacementKey: "pinKey"
-        )
-        .disabled(pinActionDisabled)
+        .screenshotMenuStyle()
+        .fixedSize()
+        .help(Text("ScreenshotSelectionHint", tableName: "GeneralSettings"))
+        .excludeFromWindowMovableByBackground()
 
-        ToolbarButton {
-          appState.isEditingItem = true
-          editingItem = editableItem
-        } label: {
-          Image(systemName: "pencil.and.list.clipboard")
-        }
-        .shortcutKeyHelp(key: "EditItem", tableName: "PreviewItemView")
-        .disabled(!editItemEnabled)
-        .accessibilityIdentifier("edit-item")
+        if !appState.navigator.selection.isEmpty {
+          Spacer()
 
-        ToolbarButton {
-          appState.deleteSelection()
-        } label: {
-          Image(systemName: "trash")
-        }
-        .shortcutKeyHelp(
-          name: .delete,
-          key: "DeleteKey",
-          tableName: "PreviewItemView",
-          replacementKey: "deleteKey"
-        )
-      }
+          if selectedImageItem != nil {
+            ToolbarButton {
+              guard let selectedImageText else { return }
+              Clipboard.shared.copyInMaccy(selectedImageText)
+            } label: {
+              Image(systemName: "text.viewfinder")
+            }
+            .shortcutKeyHelp(key: "CopyExtractedText", tableName: "PreviewItemView")
+            .disabled(selectedImageText == nil)
+          }
 
-      if appState.navigator.pasteStackSelected {
-        ToolbarButton {
-          appState.removePasteStack()
-        } label: {
-          Image(systemName: "stop")
+          ToolbarButton {
+            withAnimation {
+              appState.togglePin()
+            }
+          } label: {
+            if (appState.navigator.selection.items.allSatisfy { $0.isPinned }) {
+              Image(systemName: "pin.slash.fill")
+            } else {
+              Image(systemName: "pin")
+            }
+          }
+          .shortcutKeyHelp(
+            name: .pin,
+            key: shouldUnpin ? "UnpinKey" : "PinKey",
+            tableName: "PreviewItemView",
+            replacementKey: "pinKey"
+          )
+          .disabled(pinActionDisabled)
+
+          ToolbarButton {
+            appState.isEditingItem = true
+            editingItem = editableItem
+          } label: {
+            Image(systemName: "pencil.and.list.clipboard")
+          }
+          .shortcutKeyHelp(key: "EditItem", tableName: "PreviewItemView")
+          .disabled(!editItemEnabled)
+          .accessibilityIdentifier("edit-item")
+
+          ToolbarButton {
+            appState.deleteSelection()
+          } label: {
+            Image(systemName: "trash")
+          }
+          .shortcutKeyHelp(
+            name: .delete,
+            key: "DeleteKey",
+            tableName: "PreviewItemView",
+            replacementKey: "deleteKey"
+          )
         }
-        .accessibilityLabel(Text("toolbar_remove_paste_stack_action"))
+
+        if appState.navigator.pasteStackSelected {
+          ToolbarButton {
+            appState.removePasteStack()
+          } label: {
+            Image(systemName: "stop")
+          }
+          .accessibilityLabel(Text("toolbar_remove_paste_stack_action"))
+        }
       }
     }
     .sheet(item: $editingItem, onDismiss: {
@@ -240,5 +253,16 @@ struct ToolbarView: View {
   private func finishEditingPinnedItem() {
     editingItem = nil
     appState.isEditingItem = false
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func screenshotMenuStyle() -> some View {
+    if #available(macOS 26.0, *) {
+      menuStyle(.button).buttonStyle(.glass)
+    } else {
+      menuStyle(.borderlessButton)
+    }
   }
 }

@@ -39,7 +39,9 @@ struct PinsView: View {
                 index: index
               )
             }
-            .background(.regularMaterial)
+            .liquidGlass(in: SelectionAppearance.none.rect(cornerRadius: Popup.cornerRadius)) {
+              Rectangle().fill(.regularMaterial)
+            }
             .clipShape(SelectionAppearance.none.rect(cornerRadius: Popup.cornerRadius))
           },
           selection: Binding(

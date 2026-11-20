@@ -26,21 +26,25 @@ struct IgnoreSettingsPane: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 6) {
-          ForEach(Category.allCases, id: \.self) { category in
-            categoryButton(category, allowsWrapping: false)
+      GlassGroup {
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: 6) {
+            ForEach(Category.allCases, id: \.self) { category in
+              categoryButton(category, allowsWrapping: false)
+            }
           }
-        }
-        VStack(spacing: 4) {
-          ForEach(Category.allCases, id: \.self) { category in
-            categoryButton(category, allowsWrapping: true)
-              .frame(maxWidth: .infinity, alignment: .leading)
+          VStack(spacing: 4) {
+            ForEach(Category.allCases, id: \.self) { category in
+              categoryButton(category, allowsWrapping: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
           }
         }
       }
       .padding(4)
-      .background(.primary.opacity(0.045), in: .rect(cornerRadius: 10))
+      .liquidGlass(in: .rect(cornerRadius: 12)) {
+        RoundedRectangle(cornerRadius: 10).fill(.primary.opacity(0.045))
+      }
 
       PreferencesGroup(title: selection.title, symbol: selection.symbol) {
         Group {
@@ -67,7 +71,7 @@ struct IgnoreSettingsPane: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .frame(maxWidth: allowsWrapping ? .infinity : nil, alignment: .leading)
-        .background(isSelected ? Color.accentColor.opacity(0.18) : .clear, in: .rect(cornerRadius: 7))
+        .modifier(GlassSelection(isSelected: isSelected, cornerRadius: 8, fallbackOpacity: 0.18))
         .contentShape(.rect)
     }
     .buttonStyle(.plain)

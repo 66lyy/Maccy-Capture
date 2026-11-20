@@ -47,6 +47,7 @@ struct PreviewItemView: View {
         Button { Clipboard.shared.copyInMaccy(document.text) } label: {
           Text("CopyFormattedJSON", tableName: "PreviewItemView")
         }
+        .glassButtonStyle()
         Text("ValidJSON", tableName: "PreviewItemView").foregroundStyle(.secondary)
       }
       .padding(.bottom, 6)
@@ -62,6 +63,7 @@ struct PreviewItemView: View {
         Button { validateJSON = true } label: {
           Text("ValidateJSON", tableName: "PreviewItemView")
         }
+        .glassButtonStyle()
       }
     }
   }

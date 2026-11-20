@@ -109,10 +109,12 @@ struct ItemEditorView: View {
           dismiss()
         }
         .keyboardShortcut(.cancelAction)
+        .glassButtonStyle()
 
         Button(Self.doneButtonTitle, action: saveChanges)
           .keyboardShortcut(ScopedShortcut.saveHistoryEdit.current?.toSwiftUI)
           .disabled(!hasChangesToApply)
+          .glassButtonStyle(prominent: true)
       }
     }
     .padding(16)

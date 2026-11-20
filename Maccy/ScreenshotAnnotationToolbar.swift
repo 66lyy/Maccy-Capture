@@ -102,8 +102,15 @@ extension ScreenshotAnnotationWindow {
     stack.spacing = 3
     stack.translatesAutoresizingMaskIntoConstraints = false
     let controls = annotationToolbar.controlsView
-    controls.addSubview(stack)
+    let group = GlassContainerView(frame: controls.bounds)
+    group.translatesAutoresizingMaskIntoConstraints = false
+    group.controlsView.addSubview(stack)
+    controls.addSubview(group)
     NSLayoutConstraint.activate([
+      group.leadingAnchor.constraint(equalTo: controls.leadingAnchor),
+      group.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
+      group.topAnchor.constraint(equalTo: controls.topAnchor),
+      group.bottomAnchor.constraint(equalTo: controls.bottomAnchor),
       stack.leadingAnchor.constraint(equalTo: controls.leadingAnchor, constant: 10),
       stack.trailingAnchor.constraint(lessThanOrEqualTo: controls.trailingAnchor, constant: -10),
       stack.centerYAnchor.constraint(equalTo: controls.centerYAnchor)
@@ -135,6 +142,7 @@ extension ScreenshotAnnotationWindow {
     button.isBordered = false
     button.imagePosition = .imageOnly
     button.contentTintColor = .labelColor
+    if !symbol.isEmpty { button.usesGlass = button.applyGlassBezel() }
     button.toolTip = text(key)
     button.setAccessibilityLabel(text(key))
     button.translatesAutoresizingMaskIntoConstraints = false
@@ -215,29 +223,62 @@ extension ScreenshotAnnotationWindow {
 
 @MainActor
 final class ScreenshotToolbarButton: NSButton {
-  var isChosen = false { didSet { needsDisplay = true; setAccessibilityValue(isChosen) } }
-  var swatchColor: NSColor? { didSet { needsDisplay = true } }
+  var isChosen = false {
+    didSet {
+      setAccessibilityValue(isChosen)
+      refreshAppearance()
+    }
+  }
+  var swatchColor: NSColor? { didSet { refreshAppearance() } }
+  // Tool buttons use the macOS 26 glass bezel, tinted with the accent color while chosen.
+  var usesGlass = false { didSet { refreshAppearance() } }
 
   override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 
-  override func draw(_ dirtyRect: NSRect) {
-    let tile = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6)
-    if isChosen || cell?.isHighlighted == true {
-      let color = isChosen ? NSColor.controlAccentColor : NSColor.labelColor
-      color.withAlphaComponent(isChosen ? 0.22 : 0.10).setFill()
-      tile.fill()
-    }
+  override func highlight(_ flag: Bool) {
+    super.highlight(flag)
+    refreshAppearance(pressed: flag)
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    refreshAppearance()
+  }
+
+  private func refreshAppearance(pressed: Bool = false) {
     if let swatchColor {
-      let dot = NSBezierPath(ovalIn: NSRect(x: bounds.midX - 7, y: bounds.midY - 7, width: 14, height: 14))
-      swatchColor.setFill()
-      dot.fill()
-      let outline = isChosen ? NSColor.controlAccentColor : NSColor.labelColor.withAlphaComponent(0.35)
-      outline.setStroke()
-      dot.lineWidth = isChosen ? 2 : 1
-      dot.stroke()
-    } else {
-      super.draw(dirtyRect)
+      image = swatchImage(swatchColor)
     }
+    if usesGlass {
+      applyGlassBezel(tint: isChosen ? .controlAccentColor : nil)
+      contentTintColor = isChosen ? .white : .labelColor
+      return
+    }
+    wantsLayer = true
+    layer?.cornerRadius = 6
+    layer?.cornerCurve = .continuous
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      let fill = isChosen
+        ? NSColor.controlAccentColor.withAlphaComponent(0.22)
+        : pressed ? NSColor.labelColor.withAlphaComponent(0.10) : NSColor.clear
+      layer?.backgroundColor = fill.cgColor
+    }
+  }
+
+  private func swatchImage(_ color: NSColor) -> NSImage {
+    let chosen = isChosen
+    let image = NSImage(size: NSSize(width: 16, height: 16), flipped: false) { rect in
+      let dot = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+      color.setFill()
+      dot.fill()
+      let outline = chosen ? NSColor.controlAccentColor : NSColor.labelColor.withAlphaComponent(0.35)
+      outline.setStroke()
+      dot.lineWidth = chosen ? 2 : 1
+      dot.stroke()
+      return true
+    }
+    image.isTemplate = false
+    return image
   }
 }
 

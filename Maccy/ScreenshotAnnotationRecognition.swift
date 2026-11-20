@@ -105,6 +105,7 @@ final class ScreenshotRecognitionResults: GlassSurfaceView {
     heading.font = .systemFont(ofSize: 13, weight: .semibold)
     let close = ScreenshotToolbarButton(frame: .zero)
     close.isBordered = false
+    close.usesGlass = close.applyGlassBezel()
     close.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: closeTitle)
     close.toolTip = closeTitle
     close.setAccessibilityLabel(closeTitle)
@@ -119,6 +120,12 @@ final class ScreenshotRecognitionResults: GlassSurfaceView {
     textView.font = .systemFont(ofSize: 14)
     textView.textContainerInset = NSSize(width: 8, height: 6)
     textView.setAccessibilityLabel(title)
+    if #available(macOS 26.0, *) {
+      textView.drawsBackground = false
+      scroll.drawsBackground = false
+      scroll.contentView.drawsBackground = false
+      copyButton.applyGlassBezel()
+    }
     scroll.hasHorizontalScroller = false
     scroll.hasVerticalScroller = true
     copyButton.isEnabled = copyEnabled
