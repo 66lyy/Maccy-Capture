@@ -38,7 +38,8 @@ grep -Fxq "Source revision: $GITHUB_SHA" "$DIST_DIR/BUILD-INFO.txt"
 )
 
 NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/MaccyCaptureReleaseNotes.XXXXXX")"
-trap 'rm -f "$NOTES_FILE"' EXIT
+COMPARE_FILE="$(mktemp "${TMPDIR:-/tmp}/MaccyCaptureCompare.XXXXXX")"
+trap 'rm -f "$NOTES_FILE" "$COMPARE_FILE"' EXIT
 cat > "$NOTES_FILE" <<NOTES
 ## English
 
@@ -110,15 +111,15 @@ TITLE="Maccy Capture $SHORT_VERSION test build $BUILD_VERSION"
 PREVIOUS_TAG="$(gh api "repos/$GH_REPO/releases?per_page=30" | jq -r --arg tag "$RELEASE_TAG" \
   '[.[] | select(.draft == false and (.tag_name | startswith("maccy-capture-v")) and .tag_name != $tag)] | max_by(.published_at) | .tag_name // empty')"
 printf '\n## Changes / 更新内容\n\n' >> "$NOTES_FILE"
-COMPARE=''
 if [[ -n "$PREVIOUS_TAG" ]]; then
-  COMPARE="$(gh api "repos/$GH_REPO/compare/$PREVIOUS_TAG...$GITHUB_SHA" 2>/dev/null || true)"
+  gh api "repos/$GH_REPO/compare/$PREVIOUS_TAG...$GITHUB_SHA" > "$COMPARE_FILE" 2>/dev/null || true
 fi
-python3 - "$GH_REPO" "$GITHUB_SHA" "$PREVIOUS_TAG" "$COMPARE" >> "$NOTES_FILE" <<'PY'
+python3 - "$GH_REPO" "$GITHUB_SHA" "$PREVIOUS_TAG" "$COMPARE_FILE" >> "$NOTES_FILE" <<'PY'
 import json, subprocess, sys
-repo, revision, previous, comparison = sys.argv[1:]
+repo, revision, previous, comparison_file = sys.argv[1:]
 try:
-    commits = [c for c in json.loads(comparison)['commits'] if len(c['parents']) < 2][::-1]
+    with open(comparison_file, encoding='utf-8') as comparison:
+        commits = [c for c in json.load(comparison)['commits'] if len(c['parents']) < 2][::-1]
 except (ValueError, KeyError, TypeError):
     commits = []
 if not commits:
