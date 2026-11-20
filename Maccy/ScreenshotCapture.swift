@@ -71,6 +71,8 @@ final class ScreenshotCapture {
   private var annotationSources: [ObjectIdentifier: UUID] = [:]
   private var isShowingAlert = false
 
+  var isCapturing: Bool { captureTask != nil }
+
   var hasActiveCapture: Bool {
     captureTask != nil || !annotationWindows.isEmpty
   }
@@ -123,10 +125,12 @@ final class ScreenshotCapture {
     }
 
     dismissPreview()
-    AppState.shared.popup.close()
     captureTask = Task { [weak self] in
       guard let self else { return }
-      defer { captureTask = nil }
+      defer {
+        captureTask = nil
+        AppState.shared.appDelegate?.panel.restoreFocusAfterScreenshot()
+      }
       do {
         try await Task.sleep(for: .milliseconds(180))
         let result: ScreenshotCaptureSession.ValidatedImage

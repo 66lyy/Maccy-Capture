@@ -18,7 +18,7 @@ class AppState: Sendable {
 
   var isEditingItem: Bool = false
   var suppressPopupAutoClose: Bool {
-    return navigator.isDragAndDropInProgress || isEditingItem
+    return navigator.isDragAndDropInProgress || isEditingItem || ScreenshotCapture.shared.isCapturing
   }
 
   var searchVisible: Bool {

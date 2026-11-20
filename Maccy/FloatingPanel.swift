@@ -215,6 +215,12 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     }
   }
 
+  func restoreFocusAfterScreenshot() {
+    guard isPresented, !isKeyWindow, !NSApp.windows.contains(where: \.isKeyWindow) else { return }
+    orderFrontRegardless()
+    makeKey()
+  }
+
   override func close() {
     super.close()
     let appState = AppState.shared
