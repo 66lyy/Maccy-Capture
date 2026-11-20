@@ -22,6 +22,7 @@ final class ScreenshotSelectionView: NSView {
   private let scale: CGFloat
   private let pinImmediately: Bool
   private var drag: Drag?
+  private var clickSnap: NSRect?
   private var pointer: NSPoint?
   private var snapRects: [NSRect] = []
   private var snapIndex = 0
@@ -71,7 +72,7 @@ final class ScreenshotSelectionView: NSView {
 
   override func mouseMoved(with event: NSEvent) {
     pointer = convert(event.locationInWindow, from: nil)
-    updateProbe(enabled: event.modifierFlags.contains(.option))
+    updateProbe(enabled: true)
   }
 
   override func mouseExited(with event: NSEvent) {
@@ -81,7 +82,7 @@ final class ScreenshotSelectionView: NSView {
 
   override func flagsChanged(with event: NSEvent) {
     pointer = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
-    updateProbe(enabled: event.modifierFlags.contains(.option))
+    updateProbe(enabled: true)
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -103,7 +104,6 @@ final class ScreenshotSelectionView: NSView {
       updateControls()
       return
     }
-    updateProbe(enabled: false)
     beginSelection(at: point)
   }
 
@@ -180,6 +180,8 @@ final class ScreenshotSelectionView: NSView {
 
   func beginSelection(at point: NSPoint) {
     guard canAdjustSelection?() != false else { return }
+    clickSnap = selectedRect == nil ? snapRectangle(near: point) : nil
+    updateProbe(enabled: false)
     if let selectedRect, !pinImmediately {
       let corners = Self.corners(of: selectedRect)
       if let index = corners.firstIndex(where: { hypot($0.x - point.x, $0.y - point.y) <= 8 }) {
@@ -211,9 +213,15 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func endSelection(at point: NSPoint) {
-    guard drag != nil else { return }
+    guard let drag else { return }
     updateSelection(to: point)
-    drag = nil
+    if case .new = drag, let selectedRect,
+       selectedRect.width < 3 || selectedRect.height < 3,
+       let clickSnap {
+      self.selectedRect = clickSnap
+    }
+    self.drag = nil
+    clickSnap = nil
     guard let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else {
       clearSelection()
       return
@@ -226,6 +234,7 @@ final class ScreenshotSelectionView: NSView {
 
   func clearSelection() {
     drag = nil
+    clickSnap = nil
     selectedRect = nil
     updateProbe(enabled: false)
     updateControls()

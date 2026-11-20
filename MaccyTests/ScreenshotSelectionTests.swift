@@ -267,7 +267,7 @@ struct ScreenshotSelectionTests {
     view.findElements = { _ in [child, parent] }
     defer { view.finishInteraction() }
     let hover = try #require(NSEvent.mouseEvent(
-      with: .mouseMoved, location: point, modifierFlags: .option,
+      with: .mouseMoved, location: point, modifierFlags: [],
       timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
     ))
     view.mouseMoved(with: hover)
@@ -282,19 +282,108 @@ struct ScreenshotSelectionTests {
     ))
     view.keyDown(with: tab)
     #expect(view.snapRectangle(near: point) == parent)
+    let movedPoint = NSPoint(x: 54, y: 40)
+    let moved = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: movedPoint, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: moved)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: movedPoint) != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: movedPoint) == child)
+    view.keyDown(with: tab)
     if !useParent {
       let back = try #require(NSEvent.keyEvent(
-        with: .keyDown, location: point, modifierFlags: [.option, .shift], timestamp: 0, windowNumber: 0,
+        with: .keyDown, location: movedPoint, modifierFlags: [.option, .shift], timestamp: 0, windowNumber: 0,
         context: nil, characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
       ))
       view.keyDown(with: back)
     }
     let click = try #require(NSEvent.mouseEvent(
-      with: .leftMouseDown, location: point, modifierFlags: .option,
+      with: .leftMouseDown, location: movedPoint, modifierFlags: .option,
       timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
     ))
     view.mouseDown(with: click)
     #expect(view.selectedRect == (useParent ? parent : child))
+  }
+
+  @Test("Unmodified hover detects elements; a click selects them and a drag stays free-form",
+        arguments: [false, true], [false, true])
+  func automaticElementSelection(drag: Bool, pinImmediately: Bool) async throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: pinImmediately
+    )
+    let child = NSRect(x: 20, y: 30, width: 60, height: 30)
+    let parent = NSRect(x: 10, y: 15, width: 180, height: 160)
+    let point = NSPoint(x: 50, y: 40)
+    view.findElements = { _ in [child, parent] }
+    defer { view.finishInteraction() }
+    var captures: [NSRect] = []
+    var begins = 0
+    view.onCapture = { rectangle, pin in
+      #expect(pin)
+      captures.append(rectangle)
+    }
+    view.onBegin = { begins += 1 }
+    let hover = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: point, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: hover)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: point) != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: point) == child)
+    #expect(view.selectedRect == nil)
+    let down = try #require(NSEvent.mouseEvent(
+      with: .leftMouseDown, location: point, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+    ))
+    view.mouseDown(with: down)
+    #expect(view.selectedRect == nil)
+    #expect(view.snapRectangle(near: point) == nil)
+    let end = NSPoint(x: point.x + (drag ? 3 : 1), y: point.y + (drag ? 3 : 1))
+    let dragged = try #require(NSEvent.mouseEvent(
+      with: .leftMouseDragged, location: end, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+    ))
+    view.mouseDragged(with: dragged)
+    let up = try #require(NSEvent.mouseEvent(
+      with: .leftMouseUp, location: end, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 0
+    ))
+    view.mouseUp(with: up)
+    let expected = drag ? NSRect(x: 50, y: 40, width: 3, height: 3) : child
+    #expect(view.selectedRect == expected)
+    #expect(begins == 1)
+    #expect(captures == (pinImmediately ? [expected] : []))
+    #expect(view.snapRectangle(near: end) == nil)
+  }
+
+  @Test("Hovering without accessible elements leaves a plain click empty")
+  func automaticElementSelectionWithoutCandidates() async throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: true
+    )
+    view.findElements = { _ in [] }
+    defer { view.finishInteraction() }
+    var captures = 0
+    view.onCapture = { _, _ in captures += 1 }
+    let point = NSPoint(x: 50, y: 40)
+    let hover = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: point, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: hover)
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(view.snapRectangle(near: point) == nil)
+    view.beginSelection(at: point)
+    view.endSelection(at: point)
+    #expect(view.selectedRect == nil)
+    #expect(captures == 0)
   }
 
   @Test("Clicking without a usable selection does not capture an empty image")

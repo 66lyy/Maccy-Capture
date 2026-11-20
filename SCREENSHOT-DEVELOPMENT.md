@@ -58,9 +58,9 @@ The success sound can be disabled in General settings; canceled and failed captu
 Region capture uses the app's own crosshair and selection overlay.
 After releasing the mouse, drag inside the box to move it or drag a corner to resize.
 Arrow keys move the pointer before selection, or the box after selection, by one screen point;
-hold Shift to move by ten. Hold Option over a window to preview its bounds;
+hold Shift to move by ten. Hover over a window to automatically preview its bounds;
 with Accessibility permission, Option-Tab moves to a parent and Option-Shift-Tab returns to a finer hovered element.
-Click the highlighted element to select it. Apps without accessible elements fall back to their window.
+Click the highlighted element to select it, or drag to select a free-form region. Apps without accessible elements fall back to their window.
 Releasing the selection shows drawing, undo/redo, OCR, Cancel, Copy, Pin, and Save PNG on one toolbar.
 Click a drawing tool to start in the same selection, or press E to select the arrow.
 Move or resize the selection before choosing a tool.

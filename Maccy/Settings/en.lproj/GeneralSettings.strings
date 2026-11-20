@@ -103,7 +103,7 @@
 "ScreenshotMainHint" = "Capture the main display and annotate in place. Use the attached toolbar to copy, pin, or save.";
 "ScreenshotSelectionHint" = "Drag to select. Move inside the box or drag a corner, then use the toolbar to annotate, copy, or pin. Esc cancels.";
 "ScreenshotPinHint" = "Drag to select an area. Release to pin it on screen; press Esc to cancel.";
-"ScreenshotSelectionInstructions" = "Drag to select · ⌥ to detect elements · Arrow keys for precision · Esc cancels";
+"ScreenshotSelectionInstructions" = "Click an element or drag to select · Arrow keys for precision · Esc cancels";
 "ScreenshotEditSelection" = "Annotate";
 "ScreenshotElementHint" = "Click to select · ⌥Tab parent · ⌥⇧Tab child";
 "ScreenshotElementPermissionHint" = "Window only · Enable Accessibility for parent and child elements";

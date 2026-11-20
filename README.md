@@ -7,7 +7,7 @@ It retains the original clipboard history features and adds region and full-scre
 pinned screenshots, mouse-wheel and trackpad zoom, local image annotations, and language settings.
 This version uses a separate application identifier and disables the official automatic updater.
 Screenshots, annotations, and OCR are processed locally, without cloud recognition or training services.
-Move or resize a selected region, or hold Option to detect the window or accessible UI element under the pointer.
+Move or resize a selected region, or hover to automatically detect the window or accessible UI element under the pointer. Click the highlighted element to select it, or drag to select a free-form region.
 Choose **Annotate** to open the attached drawing, OCR, Copy, Pin, and Save toolbar—no separate annotation editor opens.
 
 Default global capture shortcuts are **F1** for region capture and **F3** for capture-and-pin,

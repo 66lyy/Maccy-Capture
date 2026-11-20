@@ -62,7 +62,7 @@
 "ScreenshotMainHint" = "擷取整個主螢幕，右下角顯示圖片縮圖，2 秒後自動收起。";
 "ScreenshotSelectionHint" = "拖曳框選後可複製、貼圖或標註；Enter 複製，P 貼圖，E 先標註再複製，Esc 取消。";
 "ScreenshotPinHint" = "拖曳框選，放開滑鼠直接貼到螢幕；按 Esc 取消。";
-"ScreenshotSelectionInstructions" = "拖曳框選 · 複製、貼圖或標註 · E 標註 · Esc 取消";
+"ScreenshotSelectionInstructions" = "點擊元素或拖曳框選 · 方向鍵微調 · Esc 取消";
 "ScreenshotSelectionPinInstructions" = "拖曳框選 · 放開即貼圖 · Esc 取消";
 "ScreenshotClipboardHint" = "將剪貼簿中已有的圖片懸浮顯示，不會重新截圖。";
 "ScreenshotSound" = "截圖成功時播放提示音";

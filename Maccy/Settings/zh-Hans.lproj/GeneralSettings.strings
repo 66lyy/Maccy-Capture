@@ -98,7 +98,7 @@
 "ScreenshotMainHint" = "截取整个主显示器后直接原位标注，通过图片旁的工具条复制、钉屏或保存。";
 "ScreenshotSelectionHint" = "拖动框选，框内拖动可移动，四角可调整大小。使用工具条标注、复制或贴屏，按 Esc 取消。";
 "ScreenshotPinHint" = "拖动框选，松开鼠标直接贴屏；按 Esc 取消。";
-"ScreenshotSelectionInstructions" = "拖动框选 · ⌥ 检测元素 · 方向键微调 · Esc 取消";
+"ScreenshotSelectionInstructions" = "点击元素或拖动框选 · 方向键微调 · Esc 取消";
 "ScreenshotEditSelection" = "标注";
 "ScreenshotElementHint" = "点击选中 · ⌥Tab 父元素 · ⌥⇧Tab 子元素";
 "ScreenshotElementPermissionHint" = "仅检测窗口 · 授予辅助功能权限后可检测父／子元素";
