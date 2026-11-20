@@ -1,4 +1,5 @@
 import AppKit
+import Defaults
 import Testing
 @testable import Maccy
 
@@ -112,7 +113,7 @@ struct ScreenshotAnnotationTests {
     let original = try #require(document.pngData())
     #expect(document.append(.init(
       tool: tool, points: [NSPoint(x: 30, y: 30), NSPoint(x: 160, y: 150)],
-      color: .red, lineWidth: 6, text: "Value 42", fontSize: 24
+      color: .red, lineWidth: 6, text: tool == .number ? "42" : "Value 42", fontSize: 24
     )))
     let output = try #require(document.pngData())
     #expect(output != original)
@@ -372,7 +373,7 @@ struct ScreenshotAnnotationTests {
     let content = try #require(window.contentView)
     content.layoutSubtreeIfNeeded()
     #expect(window.canvas.frame.width > 500 && window.canvas.frame.height > 200)
-    #expect(window.toolButtons.count == 8)
+    #expect(window.toolButtons.count == ScreenshotAnnotationDocument.Tool.allCases.count)
     for button in window.toolButtons {
       #expect(abs(button.frame.width - window.copyButton.frame.width) <= 1)
       #expect(abs(button.frame.height - window.copyButton.frame.height) <= 1)
@@ -417,7 +418,7 @@ struct ScreenshotAnnotationTests {
     defer { window.close() }
     let canvas = try #require(window.canvas)
     window.swatches[3].performClick(nil)
-    window.toolButtons[5].performClick(nil)
+    window.toolButtons[7].performClick(nil)
     #expect(canvas.tool == .redact)
     #expect(window.swatches[3].isChosen)
     #expect(!window.styleSlider.isEnabled)
@@ -440,8 +441,198 @@ struct ScreenshotAnnotationTests {
     window.colorWell.sendAction(window.colorWell.action, to: window.colorWell.target)
     #expect(canvas.color == window.colorWell.color && canvas.color.alphaComponent == 1)
     #expect(window.swatches.allSatisfy { !$0.isChosen })
-    window.toolButtons[5].performClick(nil)
+    window.toolButtons[7].performClick(nil)
     #expect(canvas.color == window.colorWell.color)
+  }
+
+  @Test("Numbered markers count up, keep their numbers after removal and render as filled circles")
+  func numberMarkers() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 240, height: 160)
+    canvas.imageInset = 0
+    canvas.tool = .number
+    canvas.color = .red
+    canvas.fontSize = 24
+    for x in [40.0, 100.0, 160.0] {
+      canvas.beginMark(at: NSPoint(x: x, y: 80))
+      canvas.endMark(at: NSPoint(x: x, y: 80))
+    }
+    #expect(document.marks.map(\.text) == ["1", "2", "3"])
+    #expect(document.removeMarks(at: [0]))
+    #expect(document.marks.map(\.text) == ["2", "3"] && document.nextNumber == 4)
+    document.undo()
+    document.undo()
+    #expect(document.marks.map(\.text) == ["1", "2"] && document.nextNumber == 3)
+    let image = try bitmap(document)
+    let fill = try color(image, x: 40 + 15, y: 79)
+    #expect(fill.redComponent > 0.9 && fill.greenComponent < 0.2 && fill.blueComponent < 0.2)
+    #expect(document.markIndex(at: NSPoint(x: 100, y: 95), tolerance: 0) == 1)
+  }
+
+  @Test("The magnifier enlarges the original screenshot inside its lens")
+  func magnifier() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let before = try bitmap(document)
+    document.append(.init(tool: .text, points: [NSPoint(x: 100, y: 70)], color: .black, text: "Mark"))
+    let lens = NSRect(x: 60, y: 30, width: 100, height: 100)
+    #expect(document.append(.init(
+      tool: .magnifier, points: [lens.origin, NSPoint(x: lens.maxX, y: lens.maxY)], lineWidth: 2, zoom: 3
+    )))
+    let after = try bitmap(document)
+    var compared = 0
+    for y in stride(from: 50, through: 110, by: 6) {
+      for x in stride(from: 80, through: 140, by: 6) {
+        let sourceX = Int((lens.midX + (CGFloat(x) + 0.5 - lens.midX) / 3).rounded(.down))
+        let sourceY = Int((lens.midY + (CGFloat(y) + 0.5 - lens.midY) / 3).rounded(.down))
+        let expected = try color(before, x: sourceX, y: 159 - sourceY)
+        let neighbors = try [(-1, 0), (1, 0), (0, -1), (0, 1)].map { try color(before, x: sourceX + $0.0, y: 159 - sourceY + $0.1) }
+        guard neighbors.allSatisfy({ abs($0.blueComponent - expected.blueComponent) < 0.01 && abs($0.redComponent - expected.redComponent) < 0.01 }) else { continue }
+        let actual = try color(after, x: x, y: 159 - y)
+        #expect(abs(actual.redComponent - expected.redComponent) < 0.1 && abs(actual.blueComponent - expected.blueComponent) < 0.1)
+        compared += 1
+      }
+    }
+    #expect(compared > 20)
+    #expect(document.markIndex(at: NSPoint(x: lens.midX, y: lens.midY), tolerance: 0) == 1)
+    document.undo()
+    #expect(document.marks.count == 1)
+  }
+
+  @Test("A finished mark is selected and can be moved, resized and deleted with one undo step each")
+  func moveAndResizeMarks() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 240, height: 160)
+    canvas.imageInset = 0
+    canvas.tool = .rectangle
+    canvas.beginMark(at: NSPoint(x: 40, y: 40))
+    canvas.updateMark(to: NSPoint(x: 100, y: 100))
+    canvas.endMark(at: NSPoint(x: 100, y: 100))
+    #expect(canvas.selectedMarkIndex == 0)
+    let original = NSRect(x: 40, y: 40, width: 60, height: 60)
+    #expect(document.marks.first?.shapeBounds == original)
+
+    canvas.beginMark(at: NSPoint(x: 40, y: 70))
+    #expect(canvas.isMovingMark)
+    canvas.updateMark(to: NSPoint(x: 50, y: 75))
+    #expect(document.marks.first?.shapeBounds == original)
+    canvas.endMark(at: NSPoint(x: 60, y: 90))
+    let moved = NSRect(x: 60, y: 60, width: 60, height: 60)
+    #expect(document.marks.count == 1 && document.marks.first?.shapeBounds == moved)
+
+    canvas.beginMark(at: NSPoint(x: 120, y: 120))
+    canvas.updateMark(to: NSPoint(x: 150, y: 140))
+    canvas.endMark(at: NSPoint(x: 150, y: 140))
+    let resized = NSRect(x: 60, y: 60, width: 90, height: 80)
+    #expect(document.marks.first?.shapeBounds == resized)
+
+    canvas.beginMark(at: NSPoint(x: 150, y: 100))
+    canvas.endMark(at: NSPoint(x: 400, y: 100))
+    #expect(document.marks.first?.shapeBounds.maxX == 240)
+    document.undo()
+    #expect(document.marks.first?.shapeBounds == resized)
+    document.undo()
+    #expect(document.marks.first?.shapeBounds == moved)
+    document.undo()
+    #expect(document.marks.first?.shapeBounds == original)
+    document.redo()
+    #expect(document.marks.first?.shapeBounds == moved)
+
+    canvas.beginMark(at: NSPoint(x: 60, y: 90))
+    canvas.endMark(at: NSPoint(x: 60, y: 90))
+    #expect(canvas.selectedMarkIndex == 0 && canvas.deleteSelectedMark())
+    #expect(document.marks.isEmpty && canvas.selectedMarkIndex == nil)
+    document.undo()
+    #expect(document.marks.first?.shapeBounds == moved)
+
+    canvas.tool = .arrow
+    canvas.beginMark(at: NSPoint(x: 10, y: 10))
+    canvas.endMark(at: NSPoint(x: 30, y: 20))
+    canvas.beginMark(at: NSPoint(x: 30, y: 20))
+    canvas.endMark(at: NSPoint(x: 35, y: 50))
+    #expect(document.marks.last?.points == [NSPoint(x: 10, y: 10), NSPoint(x: 35, y: 50)])
+  }
+
+  @Test("Moving a mosaic re-pixelates the screenshot at its new position")
+  func moveMosaic() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    #expect(document.append(.init(tool: .mosaic, points: [NSPoint(x: 10, y: 10), NSPoint(x: 70, y: 70)], lineWidth: 10)))
+    let mark = try #require(document.marks.first)
+    #expect(document.replaceMark(at: 0, with: mark.moved(by: 100, 50, within: document.imageSize)))
+    let moved = try #require(document.marks.first)
+    #expect(moved.shapeBounds == NSRect(x: 110, y: 60, width: 60, height: 60) && moved.mosaic != nil)
+    #expect(moved.mosaic.map { $0.width } == 6)
+  }
+
+  @Test("Toolbar tools follow the saved order, append new tools and keep at least one visible")
+  func toolbarToolOrder() {
+    typealias Tool = ScreenshotAnnotationDocument.Tool
+    let tools = Tool.toolbarTools(order: [Tool.eraser.rawValue, Tool.arrow.rawValue, 99], disabled: [Tool.pen.rawValue])
+    #expect(Array(tools.prefix(3)) == [.eraser, .arrow, .rectangle])
+    #expect(!tools.contains(.pen) && tools.count == Tool.allCases.count - 1)
+    #expect(Tool.toolbarTools(order: [], disabled: Tool.allCases.map(\.rawValue)) == [.arrow])
+    #expect(Tool.toolbarTools(order: [], disabled: []) == Tool.allCases)
+  }
+
+  @Test("Annotation tool drops reorder rows and reject invalid payloads")
+  func reorderToolbarTools() throws {
+    typealias Tool = ScreenshotAnnotationDocument.Tool
+    let order = Tool.allCases.map(\.rawValue)
+    let payload = ["annotation-tool:\(Tool.magnifier.rawValue)"]
+    let moved = try #require(AnnotationToolSettings.reorderedTools(payload, before: .arrow, order: order))
+    #expect(moved.first == Tool.magnifier.rawValue && Set(moved) == Set(order))
+    let last = try #require(AnnotationToolSettings.reorderedTools(payload, before: nil, order: moved))
+    #expect(last.last == Tool.magnifier.rawValue && last.count == order.count)
+    #expect(AnnotationToolSettings.reorderedTools([], before: .arrow, order: order) == nil)
+    #expect(AnnotationToolSettings.reorderedTools(["annotation-tool:99"], before: .arrow, order: order) == nil)
+    #expect(AnnotationToolSettings.reorderedTools(["unrelated"], before: .arrow, order: order) == nil)
+    #expect(AnnotationToolSettings.reorderedTools(payload, before: .magnifier, order: order) == nil)
+  }
+
+  @Test("Annotation row gestures convert vertical travel into clamped insertion positions")
+  func gestureToolbarOrder() throws {
+    typealias Tool = ScreenshotAnnotationDocument.Tool
+    let order = Tool.allCases.map(\.rawValue)
+    let moved = try #require(AnnotationToolSettings.reorderedTools(.arrow, translation: 56, order: order))
+    #expect(Array(moved.prefix(3)) == [Tool.rectangle.rawValue, Tool.ellipse.rawValue, Tool.arrow.rawValue])
+    #expect(Set(moved) == Set(order) && moved.count == order.count)
+    let first = try #require(AnnotationToolSettings.reorderedTools(.magnifier, translation: -10000, order: moved))
+    #expect(first.first == Tool.magnifier.rawValue)
+    let last = try #require(AnnotationToolSettings.reorderedTools(.magnifier, translation: 10000, order: first))
+    #expect(last.last == Tool.magnifier.rawValue)
+    #expect(AnnotationToolSettings.reorderedTools(.arrow, translation: 0, order: order) == nil)
+    #expect(AnnotationToolSettings.reorderedTools(.arrow, translation: 10, order: order) == nil)
+    #expect(AnnotationToolSettings.reorderedTools(.arrow, translation: .nan, order: order) == nil)
+    #expect(AnnotationToolSettings.reorderedTools(.arrow, translation: .infinity, order: order) == nil)
+    let defaultOrder = try #require(AnnotationToolSettings.reorderedTools(.arrow, translation: 28, order: []))
+    #expect(Array(defaultOrder.prefix(2)) == [Tool.rectangle.rawValue, Tool.arrow.rawValue])
+  }
+
+  @Test("Programmatic tool selection falls back to the first enabled tool in saved order")
+  func enabledToolSelection() throws {
+    typealias Tool = ScreenshotAnnotationDocument.Tool
+    let originalOrder = Defaults[.annotationToolOrder]
+    let originalDisabled = Defaults[.disabledAnnotationTools]
+    defer {
+      Defaults[.annotationToolOrder] = originalOrder
+      Defaults[.disabledAnnotationTools] = originalDisabled
+    }
+    Defaults[.annotationToolOrder] = [Tool.magnifier.rawValue, Tool.number.rawValue]
+    Defaults[.disabledAnnotationTools] = [Tool.arrow.rawValue]
+    let window = try editor()
+    defer { window.close() }
+    window.chooseTool(.arrow)
+    #expect(window.selectedTool == .magnifier && window.canvas?.tool == .magnifier)
+    window.chooseTool(.number)
+    #expect(window.selectedTool == .number && window.canvas?.tool == .number)
+    Defaults[.disabledAnnotationTools] = Tool.allCases.map(\.rawValue)
+    window.chooseTool(.arrow)
+    #expect(window.selectedTool == .magnifier)
+    Defaults[.annotationToolOrder] = []
+    Defaults[.disabledAnnotationTools] = []
+    window.chooseTool(.arrow)
+    #expect(window.selectedTool == .arrow)
   }
 
   @Test("OCR results remain attached to the selection and are selectable without changing the image")
@@ -639,7 +830,7 @@ struct ScreenshotAnnotationTests {
       #expect(window.annotationToolbar.bounds.contains(window.annotationToolbar.convert(control.bounds, from: control)))
       #expect(control.frame.width > 20)
     }
-    let expectedHeight: CGFloat = displayWidth < 430 ? 132 : displayWidth < 528 ? 103 : 72
+    let expectedHeight: CGFloat = displayWidth < 440 ? 132 : displayWidth < 590 ? 103 : 72
     #expect(window.annotationToolbar.frame.height == expectedHeight)
   }
 

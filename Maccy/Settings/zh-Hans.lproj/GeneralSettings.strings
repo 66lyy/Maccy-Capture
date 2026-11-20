@@ -89,7 +89,7 @@
 "AnnotationApply" = "应用到当前贴图";
 "AnnotationOutputFailed" = "无法打开或导出图片。若编辑器已经打开，当前编辑仍会保留，请重试或另存为 PNG。";
 "AnnotationOutputFailedShort" = "导出失败，请重试";
-"AnnotationInlineHelp" = "直接在截图原位标注。使用文字工具可拖动已确认的文字。导出的图片不包含工具条。";
+"AnnotationInlineHelp" = "直接在截图原位标注。点按标注可选中，拖动可移动，拖动控制点可调整大小，按删除键可移除。导出的图片不包含工具条。";
 "AnnotationMoveToolbar" = "拖动工具条可移开遮挡";
 "ScreenshotTitle" = "截图";
 "ScreenshotSection" = "截图与贴图";
@@ -181,3 +181,8 @@
 "ShortcutGroupExpanded" = "已展开";
 "ShortcutGroupCollapsed" = "已折叠";
 "FormatJSON" = "格式化 JSON 预览";
+"AnnotationNumber" = "序号";
+"AnnotationMagnifier" = "放大镜";
+"AnnotationMagnification" = "倍数";
+"AnnotationToolsSection" = "标注工具";
+"AnnotationToolsHelp" = "拖动工具可调整标注工具条的顺序，关闭的工具不会显示在工具条中。";

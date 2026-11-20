@@ -2,13 +2,15 @@ import AppKit
 
 @MainActor
 final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
-  private struct TextDrag {
+  private struct MarkDrag {
     let index: Int
     let start: NSPoint
-    let origin: NSPoint
-    let size: NSSize
-    var position: NSPoint
+    let original: ScreenshotAnnotationDocument.Mark
+    let handle: Int?
+    var current: ScreenshotAnnotationDocument.Mark
   }
+
+  private static let handleSize: CGFloat = 8
 
   let document: ScreenshotAnnotationDocument
   var onChange: (() -> Void)?
@@ -19,15 +21,24 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   var lineWidth: CGFloat = 3
   var fontSize: CGFloat = 24
   var mosaicSize: CGFloat = 12
+  var magnifierZoom: CGFloat = 2
   var imageInset: CGFloat = 16
   var canvasBackgroundColor = NSColor.underPageBackgroundColor
   private(set) var textField: NSTextField?
   private var textOrigin: NSPoint?
   private var textScale: CGFloat = 1
   private var pendingMark: ScreenshotAnnotationDocument.Mark?
-  private var textDrag: TextDrag?
+  private var markDrag: MarkDrag?
   private var erasing: (last: NSPoint, indices: Set<Int>)?
-  var isMovingText: Bool { textDrag != nil }
+  private var selection: (index: Int, revision: Int)?
+  var isMovingMark: Bool { markDrag != nil }
+  var isMovingText: Bool { isMovingMark }
+  var selectedMarkIndex: Int? {
+    if let markDrag { return markDrag.index }
+    guard let selection, selection.revision == document.revision,
+          document.marks.indices.contains(selection.index) else { return nil }
+    return selection.index
+  }
 
   var imageRect: NSRect {
     Self.imageRect(imageSize: document.imageSize, bounds: bounds.insetBy(dx: imageInset, dy: imageInset))
@@ -56,10 +67,53 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     context.translateBy(x: imageRect.minX, y: imageRect.minY)
     context.scaleBy(x: imageScale, y: imageScale)
     document.draw(
-      in: context, preview: pendingMark, movingText: textDrag.map { ($0.index, $0.position) },
+      in: context, preview: pendingMark, replacing: markDrag.map { ($0.index, $0.current) },
       hiddenMarks: erasing?.indices ?? []
     )
     context.restoreGState()
+    drawSelection()
+  }
+
+  private func drawSelection() {
+    guard erasing == nil, let index = selectedMarkIndex else { return }
+    let mark = markDrag?.current ?? document.marks[index]
+    let origin = imageRect.origin, scale = imageScale
+    func view(_ point: NSPoint) -> NSPoint { NSPoint(x: origin.x + point.x * scale, y: origin.y + point.y * scale) }
+    let box = mark.bounds
+    let frame = NSRect(origin: view(box.origin), size: NSSize(width: box.width * scale, height: box.height * scale))
+      .insetBy(dx: -3, dy: -3)
+    let outline = NSBezierPath(rect: frame)
+    outline.lineWidth = 1
+    outline.setLineDash([4, 3], count: 2, phase: 0)
+    NSColor.controlAccentColor.setStroke()
+    outline.stroke()
+    for point in mark.handlePoints.map(view) {
+      let handle = NSBezierPath(rect: NSRect(
+        x: point.x - Self.handleSize / 2, y: point.y - Self.handleSize / 2, width: Self.handleSize, height: Self.handleSize
+      ))
+      NSColor.white.setFill()
+      handle.fill()
+      handle.lineWidth = 1
+      NSColor.controlAccentColor.setStroke()
+      handle.stroke()
+    }
+  }
+
+  override func keyDown(with event: NSEvent) {
+    if [51, 117].contains(event.keyCode), event.modifierFlags.isDisjoint(with: [.command, .control, .option]),
+       deleteSelectedMark() {
+      return
+    }
+    super.keyDown(with: event)
+  }
+
+  @discardableResult
+  func deleteSelectedMark() -> Bool {
+    guard markDrag == nil, let index = selectedMarkIndex else { return false }
+    selection = nil
+    guard document.removeMarks(at: [index]) else { return false }
+    changed()
+    return true
   }
 
   override func mouseDown(with event: NSEvent) {
@@ -70,13 +124,13 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
 
   override func mouseDragged(with event: NSEvent) {
     updateMark(to: convert(event.locationInWindow, from: nil))
-    if isMovingText { NSCursor.closedHand.set() }
+    if isMovingMark { NSCursor.closedHand.set() }
   }
 
   override func mouseUp(with event: NSEvent) {
-    let wasMovingText = isMovingText
+    let wasMoving = isMovingMark
     endMark(at: convert(event.locationInWindow, from: nil))
-    if wasMovingText { NSCursor.iBeam.set() }
+    if wasMoving { (tool == .text ? NSCursor.iBeam : NSCursor.crosshair).set() }
   }
 
   override func rightMouseDown(with event: NSEvent) {
@@ -84,16 +138,24 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   }
 
   func beginMark(at point: NSPoint) {
+    if tool != .pen, tool != .eraser, let handle = handleDrag(at: point) {
+      onBeginMark?()
+      markDrag = handle
+      needsDisplay = true
+      return
+    }
     guard let imagePoint = imagePoint(at: point) else { return }
     onBeginMark?()
+    if tool != .pen, tool != .eraser,
+       let index = document.markIndex(at: imagePoint, tolerance: (tool == .text ? 3 : 4) / imageScale) {
+      let mark = document.marks[index]
+      markDrag = MarkDrag(index: index, start: point, original: mark, handle: nil, current: mark)
+      needsDisplay = true
+      return
+    }
+    selection = nil
     if tool == .text {
-      if let index = document.textMarkIndex(at: imagePoint, padding: 3 / imageScale),
-         let origin = document.marks[index].points.first {
-        textDrag = TextDrag(index: index, start: point, origin: origin,
-                            size: document.marks[index].textSize, position: origin)
-      } else {
-        beginText(at: point)
-      }
+      beginText(at: point)
       return
     }
     if tool == .eraser {
@@ -103,21 +165,39 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     }
     pendingMark = ScreenshotAnnotationDocument.Mark(
       tool: tool, points: [imagePoint], color: color,
-      lineWidth: (tool == .mosaic ? mosaicSize : lineWidth) / imageScale,
-      fontSize: fontSize / imageScale
+      lineWidth: (tool == .mosaic ? mosaicSize : tool == .magnifier ? 3 : lineWidth) / imageScale,
+      text: tool == .number ? "\(document.nextNumber)" : "",
+      fontSize: fontSize / imageScale, zoom: magnifierZoom
     )
     needsDisplay = true
   }
 
+  private func handleDrag(at point: NSPoint) -> MarkDrag? {
+    guard let index = selectedMarkIndex, imageScale > 0 else { return nil }
+    let mark = document.marks[index]
+    let origin = imageRect.origin
+    let reach = Self.handleSize / 2 + 2
+    guard let handle = mark.handlePoints.firstIndex(where: {
+      hypot(origin.x + $0.x * imageScale - point.x, origin.y + $0.y * imageScale - point.y) <= reach
+    }) else { return nil }
+    return MarkDrag(index: index, start: point, original: mark, handle: handle, current: mark)
+  }
+
   func updateMark(to point: NSPoint) {
-    if let drag = textDrag {
+    if let drag = markDrag {
       guard point.x.isFinite, point.y.isFinite, imageScale > 0 else { return }
-      let maxX = max(0, document.imageSize.width - ceil(drag.size.width))
-      let maxY = max(0, document.imageSize.height - ceil(drag.size.height))
-      textDrag?.position = point == drag.start ? drag.origin : NSPoint(
-        x: max(0, min(maxX, drag.origin.x + (point.x - drag.start.x) / imageScale)),
-        y: max(0, min(maxY, drag.origin.y + (point.y - drag.start.y) / imageScale))
-      )
+      let dx = (point.x - drag.start.x) / imageScale, dy = (point.y - drag.start.y) / imageScale
+      if point == drag.start {
+        markDrag?.current = drag.original
+      } else if let handle = drag.handle {
+        let start = drag.original.handlePoints[handle]
+        let size = document.imageSize
+        markDrag?.current = drag.original.resized(handle: handle, to: NSPoint(
+          x: max(0, min(size.width, start.x + dx)), y: max(0, min(size.height, start.y + dy))
+        ))
+      } else {
+        markDrag?.current = drag.original.moved(by: dx, dy, within: document.imageSize)
+      }
       needsDisplay = true
       return
     }
@@ -129,6 +209,8 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     guard let tool = pendingMark?.tool, let imagePoint = imagePoint(at: point, clamped: true) else { return }
     if tool == .pen {
       if (pendingMark?.points.count ?? 0) < 50_000 { pendingMark?.points.append(imagePoint) }
+    } else if tool == .number {
+      pendingMark?.points = [imagePoint]
     } else {
       guard let first = pendingMark?.points.first else { return }
       pendingMark?.points = [first, imagePoint]
@@ -138,9 +220,10 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
 
   func endMark(at point: NSPoint) {
     updateMark(to: point)
-    if let drag = textDrag {
-      textDrag = nil
-      document.moveText(at: drag.index, to: drag.position)
+    if let drag = markDrag {
+      markDrag = nil
+      document.replaceMark(at: drag.index, with: drag.current)
+      select(drag.index)
       changed()
       return
     }
@@ -152,8 +235,12 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     }
     guard let mark = pendingMark else { return }
     pendingMark = nil
-    document.append(mark)
+    if document.append(mark), mark.tool != .pen { select(document.marks.count - 1) }
     changed()
+  }
+
+  private func select(_ index: Int) {
+    selection = (index, document.revision)
   }
 
   func commitText() {
@@ -162,10 +249,12 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     textOrigin = nil
     let value = field.currentEditor()?.string ?? field.stringValue
     field.removeFromSuperview()
-    document.append(.init(
+    if document.append(.init(
       tool: .text, points: [origin], color: field.textColor ?? color,
       text: value, fontSize: (field.font?.pointSize ?? fontSize) / textScale
-    ))
+    )) {
+      select(document.marks.count - 1)
+    }
     changed()
   }
 
@@ -180,8 +269,8 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   }
 
   func cancelTextDrag() {
-    guard isMovingText || erasing != nil else { return }
-    textDrag = nil
+    guard isMovingMark || erasing != nil else { return }
+    markDrag = nil
     erasing = nil
     needsDisplay = true
   }

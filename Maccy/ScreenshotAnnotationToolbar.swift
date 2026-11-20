@@ -1,4 +1,5 @@
 import AppKit
+import Defaults
 
 extension ScreenshotAnnotationWindow {
   static func toolbarFrame(beside imageFrame: NSRect, bounds: NSRect, size: NSSize) -> NSRect {
@@ -19,7 +20,10 @@ extension ScreenshotAnnotationWindow {
 
   func configureToolbar(originalWasCopied: Bool, compact: Bool, narrow: Bool) {
     annotationToolbar.setAccessibilityLabel(text("AnnotationTools"))
-    let tools = ScreenshotAnnotationDocument.Tool.allCases
+    let tools = ScreenshotAnnotationDocument.Tool.toolbarTools(
+      order: Defaults[.annotationToolOrder], disabled: Defaults[.disabledAnnotationTools]
+    )
+    if let selected = selectedTool, !tools.contains(selected) { selectedTool = tools.first }
     toolButtons = tools.map { tool in
       let control = button(tool.titleKey, symbol: Self.symbol(for: tool), action: #selector(selectTool(_:)))
       control.tag = tool.rawValue
@@ -92,7 +96,8 @@ extension ScreenshotAnnotationWindow {
     grip.contentTintColor = .secondaryLabelColor
     let colors = row(swatches.map { $0 as NSView } + [colorWell])
     let adjustment = row([styleLabel, styleSlider, styleValue])
-    var rows: [NSView] = compact ? [row([grip, toolRow]), outputRow] : [row([grip, toolRow, separator(), outputRow])]
+    var rows: [NSView] = narrow ? [row([grip, toolsRow]), row([historyRow, separator(), outputRow])]
+      : compact ? [row([grip, toolRow]), outputRow] : [row([grip, toolRow, separator(), outputRow])]
     if narrow {
       rows += [row([colors, info]), adjustment]
     } else {
@@ -120,13 +125,15 @@ extension ScreenshotAnnotationWindow {
     ])
   }
 
-  private static func symbol(for tool: ScreenshotAnnotationDocument.Tool) -> String {
+  static func symbol(for tool: ScreenshotAnnotationDocument.Tool) -> String {
     let candidates: [String] = switch tool {
     case .arrow: ["arrow.up.right"]
     case .rectangle: ["rectangle"]
     case .ellipse: ["oval"]
     case .pen: ["pencil.tip"]
     case .text: ["character.cursor.ibeam", "character"]
+    case .number: ["1.circle", "number.circle"]
+    case .magnifier: ["plus.magnifyingglass", "magnifyingglass"]
     case .redact: ["rectangle.fill"]
     case .mosaic: ["checkerboard.rectangle", "square.grid.3x3.fill"]
     case .eraser: ["eraser", "eraser.fill", "delete.left"]
@@ -188,7 +195,10 @@ extension ScreenshotAnnotationWindow {
   func chooseTool(_ tool: ScreenshotAnnotationDocument.Tool) {
     canvas?.cancelTextDrag()
     canvas?.commitText()
-    selectedTool = tool
+    let tools = ScreenshotAnnotationDocument.Tool.toolbarTools(
+      order: Defaults[.annotationToolOrder], disabled: Defaults[.disabledAnnotationTools]
+    )
+    selectedTool = tools.contains(tool) ? tool : tools.first
     updateTool()
     withCanvas { [weak self] canvas in self?.makeFirstResponder(canvas) }
   }
@@ -221,14 +231,21 @@ extension ScreenshotAnnotationWindow {
 
   private func refreshStyle() {
     let tool = selectedTool ?? .arrow
-    let label = text(tool == .text ? "AnnotationFontSize" : tool == .mosaic ? "AnnotationMosaicSize" : "AnnotationWidth")
+    let label = text(
+      tool == .text || tool == .number ? "AnnotationFontSize"
+        : tool == .mosaic ? "AnnotationMosaicSize" : tool == .magnifier ? "AnnotationMagnification" : "AnnotationWidth"
+    )
     styleLabel.stringValue = label
     styleSlider.setAccessibilityLabel(label)
     switch tool {
-    case .text:
+    case .text, .number:
       styleSlider.minValue = 10
       styleSlider.maxValue = 120
       styleSlider.doubleValue = fontSize
+    case .magnifier:
+      styleSlider.minValue = 2
+      styleSlider.maxValue = 6
+      styleSlider.doubleValue = magnifierZoom
     case .mosaic:
       styleSlider.minValue = 4
       styleSlider.maxValue = 40
@@ -240,15 +257,20 @@ extension ScreenshotAnnotationWindow {
     }
     let adjustable = tool != .redact && tool != .eraser
     styleSlider.isEnabled = adjustable
-    styleValue.stringValue = adjustable ? "\(styleSlider.integerValue)" : "—"
+    styleValue.stringValue = !adjustable ? "—" : tool == .magnifier ? "\(styleSlider.integerValue)×" : "\(styleSlider.integerValue)"
   }
 
   @objc private func changeSize() {
     let size = CGFloat(styleSlider.doubleValue.rounded())
     switch selectedTool {
-    case .text:
+    case .text, .number:
       fontSize = size
       canvas?.fontSize = size
+    case .magnifier:
+      magnifierZoom = size
+      canvas?.magnifierZoom = size
+      styleValue.stringValue = "\(Int(size))×"
+      return
     case .mosaic:
       mosaicSize = size
       canvas?.mosaicSize = size

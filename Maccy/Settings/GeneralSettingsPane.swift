@@ -72,6 +72,11 @@ struct GeneralSettingsPane: View {
         }
       }
 
+      PreferencesGroup(title: Text("AnnotationToolsSection", tableName: "GeneralSettings"), symbol: "pencil.tip.crop.circle") {
+        AnnotationToolSettings()
+          .padding(.vertical, 10)
+      }
+
       PreferencesGroup(title: Text("UpdateSection", tableName: "GeneralSettings"), symbol: "arrow.down.circle") {
         updateSettings
           .padding(.vertical, 10)
@@ -145,4 +150,109 @@ struct GeneralSettingsPane: View {
 #Preview {
   GeneralSettingsPane()
     .environment(\.locale, .init(identifier: "en"))
+}
+
+struct AnnotationToolSettings: View {
+  typealias Tool = ScreenshotAnnotationDocument.Tool
+
+  @Default(.annotationToolOrder) private var order
+  @Default(.disabledAnnotationTools) private var disabled
+  @GestureState private var draggedTool: Tool?
+  @GestureState private var dragOffset: CGFloat = 0
+
+  private static let rowHeight: CGFloat = 28
+
+  private var tools: [Tool] { Tool.toolbarTools(order: order, disabled: []) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      VStack(spacing: 0) {
+        ForEach(tools, id: \.self) { tool in
+          HStack(spacing: 8) {
+            HStack(spacing: 8) {
+              Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+              Image(systemName: ScreenshotAnnotationWindow.symbol(for: tool))
+                .frame(width: 20)
+              Text(LocalizedStringKey(tool.titleKey), tableName: "GeneralSettings")
+              Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+              DragGesture(minimumDistance: 4, coordinateSpace: .named("annotation-tools"))
+                .updating($draggedTool) { _, state, _ in state = tool }
+                .updating($dragOffset) { value, state, _ in state = value.translation.height }
+                .onEnded { value in
+                  if let reordered = Self.reorderedTools(tool, translation: value.translation.height, order: order) {
+                    order = reordered
+                  }
+                }
+            )
+            Toggle(isOn: binding(for: tool)) {
+              Text(LocalizedStringKey(tool.titleKey), tableName: "GeneralSettings")
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
+            .disabled(isLastEnabled(tool))
+          }
+          .padding(.horizontal, 8)
+          .frame(height: Self.rowHeight)
+          .background(draggedTool == tool ? Color.accentColor.opacity(0.15) : Color.clear)
+          .offset(y: draggedTool == tool ? dragOffset : 0)
+          .zIndex(draggedTool == tool ? 1 : 0)
+        }
+        Color.clear
+          .frame(height: 8)
+      }
+      .coordinateSpace(name: "annotation-tools")
+      .background(.background)
+      .overlay {
+        Rectangle().strokeBorder(.separator).allowsHitTesting(false)
+      }
+      Text("AnnotationToolsHelp", tableName: "GeneralSettings")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  static func reorderedTools(_ tool: Tool, translation: CGFloat, order: [Int]) -> [Int]? {
+    guard translation.isFinite else { return nil }
+    let tools = Tool.toolbarTools(order: order, disabled: [])
+    guard let source = tools.firstIndex(of: tool) else { return nil }
+    let destination = Int(min(max(CGFloat(source) + (translation / rowHeight).rounded(), 0), CGFloat(tools.count - 1)))
+    guard destination != source else { return nil }
+    let remaining = tools.filter { $0 != tool }
+    let target = remaining.indices.contains(destination) ? remaining[destination] : nil
+    return reorderedTools(["annotation-tool:\(tool.rawValue)"], before: target, order: order)
+  }
+
+  static func reorderedTools(_ items: [String], before target: Tool?, order: [Int]) -> [Int]? {
+    guard items.count == 1, let item = items.first,
+          item.hasPrefix("annotation-tool:"),
+          let rawValue = Int(item.dropFirst("annotation-tool:".count)),
+          let tool = Tool(rawValue: rawValue), tool != target else { return nil }
+    var reordered = Tool.toolbarTools(order: order, disabled: []).filter { $0 != tool }
+    if let target, let index = reordered.firstIndex(of: target) {
+      reordered.insert(tool, at: index)
+    } else {
+      reordered.append(tool)
+    }
+    return reordered.map(\.rawValue)
+  }
+
+  private func isLastEnabled(_ tool: Tool) -> Bool {
+    !disabled.contains(tool.rawValue) && tools.filter { !disabled.contains($0.rawValue) }.count == 1
+  }
+
+  private func binding(for tool: Tool) -> Binding<Bool> {
+    Binding(
+      get: { !disabled.contains(tool.rawValue) },
+      set: { enabled in
+        disabled.removeAll { $0 == tool.rawValue }
+        if !enabled { disabled.append(tool.rawValue) }
+      }
+    )
+  }
 }

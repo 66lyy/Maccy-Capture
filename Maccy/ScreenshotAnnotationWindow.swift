@@ -1,4 +1,5 @@
 import AppKit
+import Defaults
 import KeyboardShortcuts
 import UniformTypeIdentifiers
 
@@ -27,6 +28,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   var lineWidth: CGFloat = 3
   var fontSize: CGFloat = 24
   var mosaicSize: CGFloat = 12
+  var magnifierZoom: CGFloat = 2
   let styleLabel = NSTextField(labelWithString: "")
   let styleValue = NSTextField(labelWithString: "")
   let statusLabel = NSTextField(labelWithString: "")
@@ -71,8 +73,10 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     let rectangle = Self.imageFrame(imageSize: image.size, display: display, preferred: imageFrame)
       .offsetBy(dx: -display.minX, dy: -display.minY)
     overlay.imageFrame = rectangle
+    selectedTool = ScreenshotAnnotationDocument.Tool.toolbarTools(
+      order: Defaults[.annotationToolOrder], disabled: Defaults[.disabledAnnotationTools]
+    ).first
     showToolbar(beside: rectangle)
-    selectedTool = .arrow
     attachCanvas(document, frame: rectangle)
     let layout = displays()
     screenObserver = NotificationCenter.default.addObserver(
@@ -92,9 +96,9 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     self.editingPin = editingPin
     self.originalWasCopied = originalWasCopied
     toolbarBounds = visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY)
-    let compact = visibleFrame.width < 528
-    let narrow = visibleFrame.width < 430
-    toolbarSize = NSSize(width: 512, height: narrow ? 132 : compact ? 103 : 72)
+    let compact = visibleFrame.width < 590
+    let narrow = visibleFrame.width < 440
+    toolbarSize = NSSize(width: 574, height: narrow ? 132 : compact ? 103 : 72)
     super.init(
       contentRect: display, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
     )
@@ -171,6 +175,8 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     canvas.color = colorWell.color
     canvas.lineWidth = lineWidth
     canvas.fontSize = fontSize
+    canvas.mosaicSize = mosaicSize
+    canvas.magnifierZoom = magnifierZoom
     contentView?.addSubview(canvas, positioned: .below, relativeTo: annotationToolbar)
     canvas.onChange = { [weak self] in self?.refreshHistoryButtons() }
     canvas.onCancel = { [weak self] in self?.cancelOperation(nil) }
