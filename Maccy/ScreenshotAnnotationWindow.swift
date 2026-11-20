@@ -37,6 +37,9 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   private(set) var isFinished = false
   private var imageTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
+  var displays: @MainActor () -> [ScreenshotSelectionController.Display] = {
+    ScreenshotSelectionController.Display.current()
+  }
   private var savePanel: NSSavePanel?
   var recognitionTask: Task<Void, Never>?
   var recognitionOperation: TextRecognition.Operation = { image, cancellation in
@@ -69,10 +72,14 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     showToolbar(beside: rectangle)
     selectedTool = .arrow
     attachCanvas(document, frame: rectangle)
+    let layout = displays()
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.close() }
+      MainActor.assumeIsolated {
+        guard let self, !ScreenshotSelectionController.Display.sameLayout(layout, self.displays()) else { return }
+        self.close()
+      }
     }
   }
 

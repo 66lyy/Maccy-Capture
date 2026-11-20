@@ -103,9 +103,9 @@ struct ScreenshotSelectionTests {
   func keyboardWindow(pointerOnSecondaryDisplay: Bool) async throws {
     var presentation: [(window: ScreenshotSelectionWindow, wantsKeyboard: Bool)] = []
     let pointer = pointerOnSecondaryDisplay ? NSPoint(x: -100, y: 100) : NSPoint(x: 800, y: 600)
-    let controller = controller(pointer: pointer) { window, wantsKeyboard in
+    let controller = controller(pointer: pointer, presentWindow: { window, wantsKeyboard in
       presentation.append((window, wantsKeyboard))
-    }
+    })
     defer { controller.cancel() }
     let task = Task { try await controller.select(pinImmediately: false) }
     try await waitForSelection(controller)
@@ -395,35 +395,45 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
-  @Test("Display and Space changes cancel selection without capturing", arguments: [false, true])
-  func displayOrSpaceChange(switchSpace: Bool) async throws {
-    let controller = controller()
+  @Test("Dock, menu bar and Space changes keep selecting; a real display change cancels without capturing")
+  func displayOrSpaceChange() async throws {
+    var displays = Self.displays
+    let controller = controller(displays: { displays })
     let task = Task { try await controller.select(pinImmediately: false) }
     try await waitForSelection(controller)
-    if switchSpace {
-      NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
-    } else {
-      NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
-    }
+    displays[0].visibleFrame = NSRect(x: 0, y: 70, width: 800, height: 505)
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+    #expect(controller.isSelecting)
+    #expect(controller.windows.count == 2)
+    displays[1] = .init(
+      frame: NSRect(x: -800, y: 0, width: 800, height: 600),
+      captureFrame: NSRect(x: -800, y: 0, width: 800, height: 600), scale: 2
+    )
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
     #expect(try await task.value == nil)
     #expect(controller.windows.isEmpty)
   }
 
+  private static let displays: [ScreenshotSelectionController.Display] = [
+    .init(
+      frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+      captureFrame: NSRect(x: 0, y: 0, width: 800, height: 600), scale: 2
+    ),
+    .init(
+      frame: NSRect(x: -800, y: 0, width: 800, height: 600),
+      captureFrame: NSRect(x: -800, y: 0, width: 800, height: 600), scale: 1
+    )
+  ]
+
   private func controller(
-    pointer: NSPoint = .zero, presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { _, _ in }
+    pointer: NSPoint = .zero,
+    displays: @escaping @MainActor () -> [ScreenshotSelectionController.Display] = { Self.displays },
+    presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { _, _ in }
   ) -> ScreenshotSelectionController {
-    ScreenshotSelectionController(displays: {
-      [
-        .init(
-          frame: NSRect(x: 0, y: 0, width: 800, height: 600),
-          captureFrame: NSRect(x: 0, y: 0, width: 800, height: 600), scale: 2
-        ),
-        .init(
-          frame: NSRect(x: -800, y: 0, width: 800, height: 600),
-          captureFrame: NSRect(x: -800, y: 0, width: 800, height: 600), scale: 1
-        )
-      ]
-    }, pointerLocation: { pointer }, presentWindow: presentWindow, captureRegion: { display, rectangle, _ in
+    ScreenshotSelectionController(
+      displays: displays, pointerLocation: { pointer }, presentWindow: presentWindow
+    ) { display, rectangle, _ in
       #expect(display.frame.size == NSSize(width: 800, height: 600))
       return NSImage(size: rectangle.size, flipped: false) { bounds in
         NSColor.white.setFill()
@@ -433,7 +443,7 @@ struct ScreenshotSelectionTests {
         ])
         return true
       }
-    })
+    }
   }
 
   private func waitForSelection(_ controller: ScreenshotSelectionController) async throws {

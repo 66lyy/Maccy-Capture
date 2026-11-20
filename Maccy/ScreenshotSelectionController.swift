@@ -9,6 +9,27 @@ final class ScreenshotSelectionController {
     let scale: CGFloat
     var displayID: CGDirectDisplayID = 0
     var visibleFrame: NSRect?
+
+    func hasSameLayout(as other: Display) -> Bool {
+      displayID == other.displayID && frame == other.frame && captureFrame == other.captureFrame
+        && scale == other.scale
+    }
+
+    static func sameLayout(_ lhs: [Display], _ rhs: [Display]) -> Bool {
+      lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0.hasSameLayout(as: $1) }
+    }
+
+    static func current() -> [Display] {
+      NSScreen.screens.compactMap { screen in
+        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+          return nil
+        }
+        return Display(
+          frame: screen.frame, captureFrame: CGDisplayBounds(number.uint32Value), scale: screen.backingScaleFactor,
+          displayID: number.uint32Value, visibleFrame: screen.visibleFrame
+        )
+      }
+    }
   }
 
   struct Selection: Equatable {
@@ -35,20 +56,9 @@ final class ScreenshotSelectionController {
   private var continuation: CheckedContinuation<Selection?, any Error>?
   private var timeoutTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
-  private var spaceObserver: NSObjectProtocol?
 
   init(
-    displays: @escaping @MainActor () -> [Display] = {
-      NSScreen.screens.compactMap { screen in
-        guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
-          return nil
-        }
-        return Display(
-          frame: screen.frame, captureFrame: CGDisplayBounds(number.uint32Value), scale: screen.backingScaleFactor,
-          displayID: number.uint32Value, visibleFrame: screen.visibleFrame
-        )
-      }
-    },
+    displays: @escaping @MainActor () -> [Display] = { Display.current() },
     pointerLocation: @escaping @MainActor () -> NSPoint = { NSEvent.mouseLocation },
     presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { window, wantsKeyboard in
       window.orderFrontRegardless()
@@ -79,12 +89,10 @@ final class ScreenshotSelectionController {
         screenObserver = NotificationCenter.default.addObserver(
           forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
-          MainActor.assumeIsolated { self?.cancel() }
-        }
-        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-          forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-          MainActor.assumeIsolated { self?.cancel() }
+          MainActor.assumeIsolated {
+            guard let self, !Display.sameLayout(availableDisplays, self.displays()) else { return }
+            self.cancel()
+          }
         }
         timeoutTask = Task { [weak self] in
           do {
@@ -196,10 +204,6 @@ final class ScreenshotSelectionController {
     if let screenObserver {
       NotificationCenter.default.removeObserver(screenObserver)
       self.screenObserver = nil
-    }
-    if let spaceObserver {
-      NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver)
-      self.spaceObserver = nil
     }
     for window in windows {
       window.onCancel = nil

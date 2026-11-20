@@ -83,7 +83,8 @@ Only the temporary selection windows use the Core Graphics overlay level to appe
 other floating panels without activating the app. They can participate in other apps' full-screen Spaces
 and Stage Manager sets. Keyboard focus goes to the display under the pointer, falling back to the first display.
 The windows draw only a 12% shadow outside the selection and use neither the screen-saver level nor an opaque background.
-All selection windows close on completion, cancellation, timeout, display changes, Space changes, or app exit.
+All selection windows close on completion, cancellation, timeout, a change in the displays' arrangement, size or scale, or app exit;
+Dock, menu bar and Space changes (for example another app launching or activating) keep the selection open.
 
 Captures are temporarily stored locally in a directory with `0700` permissions.
 Temporary files are cleaned up on completion, cancellation, and failure.

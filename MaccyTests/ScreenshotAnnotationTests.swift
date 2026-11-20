@@ -710,13 +710,16 @@ struct ScreenshotAnnotationTests {
     #expect(toolbar.frame == lastFrame)
   }
 
-  @Test("Screen changes cancel inline editing and discard it without invoking output")
+  @Test("Display changes cancel inline editing and discard it without invoking output; other screen notices keep it")
   func inlineScreenChange() throws {
     let window = try editor()
     var closes = 0
     var outputs = 0
     window.onClose = { closes += 1 }
     window.onOutput = { _, _, _ in outputs += 1 }
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    #expect(closes == 0 && !window.isFinished)
+    window.displays = { [] }
     NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
     window.complete(.copy)
     #expect(closes == 1 && outputs == 0)
