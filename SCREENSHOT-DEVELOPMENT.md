@@ -20,7 +20,10 @@ Click anywhere on an in-window group header to expand it and change keys for sel
 and pinned images. When recording a shortcut or restoring its default, only that combination is
 checked against assignments in overlapping contexts, app menu shortcuts, and known macOS shortcuts.
 This does not detect every third-party shortcut.
-Pinning a clipboard image has no shortcut by default; assign one if needed.
+Region capture defaults to F1 and capture-and-pin to F3, both without modifiers.
+Main-display capture and pinning a clipboard image have no default shortcut; assign one if needed.
+Existing saved shortcuts are preserved. Depending on macOS keyboard settings, hold Fn to send
+F1 or F3 instead of triggering a system action.
 Quit the original Maccy before running this version to avoid competing shortcuts.
 At startup, this version checks whether another copy is running and exits with a message
 if it detects one, without clearing history.

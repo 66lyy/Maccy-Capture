@@ -7,6 +7,14 @@ import Testing
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Global capture defaults use bare function keys and leave optional actions unassigned")
+  func globalCaptureShortcutDefaults() {
+    #expect(KeyboardShortcuts.Name.screenshot.initialShortcut == nil)
+    #expect(KeyboardShortcuts.Name.screenshotSelection.initialShortcut == KeyboardShortcuts.Shortcut(.f1))
+    #expect(KeyboardShortcuts.Name.pinScreenshot.initialShortcut == KeyboardShortcuts.Shortcut(.f3))
+    #expect(KeyboardShortcuts.Name.pinClipboardImage.initialShortcut == nil)
+  }
+
   @Test("Pin estimates reject oversized, empty and overflowing pixel dimensions")
   func pinPixelLimits() {
     #expect(PinnedImageBudget.estimatedBytes(pixelWidth: 10_000, pixelHeight: 10_000) == 400_000_000)

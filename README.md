@@ -10,6 +10,11 @@ Screenshots, annotations, and OCR are processed locally, without cloud recogniti
 Move or resize a selected region, or hold Option to detect the window or accessible UI element under the pointer.
 Choose **Annotate** to open the attached drawing, OCR, Copy, Pin, and Save toolbar—no separate annotation editor opens.
 
+Default global capture shortcuts are **F1** for region capture and **F3** for capture-and-pin,
+both without modifiers. Main-display capture and pinning a clipboard image have no default shortcut.
+Customize them in **Settings → Shortcuts**; existing saved shortcuts are preserved.
+Depending on macOS keyboard settings, you may need to hold Fn to send F1 or F3 instead of a system action.
+
 ## Download and Build
 
 Pushing to `master` / `main` runs synthetic-image regression tests in GitHub Actions
