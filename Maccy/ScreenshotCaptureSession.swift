@@ -112,23 +112,60 @@ final class ScreenshotCaptureSession {
   }
 
   static func captureDisplays(_ displays: [ScreenshotSelectionController.Display]) async -> [CGImage?] {
-    guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-    else { return displays.map { _ in nil } }
-    var images: [CGImage?] = []
-    for display in displays {
-      guard !Task.isCancelled, let screen = content.displays.first(where: { $0.displayID == display.displayID }) else {
-        images.append(nil)
-        continue
+    await captureDisplays(displays, capture: { await captureDisplay($0) })
+  }
+
+  static func captureDisplays(
+    _ displays: [ScreenshotSelectionController.Display],
+    capture: @escaping @MainActor @Sendable (ScreenshotSelectionController.Display) async -> CGImage?
+  ) async -> [CGImage?] {
+    await withTaskGroup(of: (Int, CGImage?).self) { group in
+      for (index, display) in displays.enumerated() {
+        group.addTask { [capture, display] in
+          guard !Task.isCancelled else { return (index, nil) }
+          return (index, await capture(display))
+        }
+      }
+      var images = [CGImage?](repeating: nil, count: displays.count)
+      for await (index, image) in group { images[index] = image }
+      return images
+    }
+  }
+
+  private static func captureDisplay(_ display: ScreenshotSelectionController.Display) async -> CGImage? {
+    await captureDisplayImage(rectangleCapture: {
+      if #available(macOS 15.2, *) {
+        let image = try await SCScreenshotManager.captureImage(in: display.captureFrame)
+        return hasSufficientResolution(image, for: display) ? image : nil
+      }
+      return nil
+    }, filteredCapture: {
+      let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+      guard let screen = content.displays.first(where: { $0.displayID == display.displayID }) else {
+        throw Failure.captureFailed
       }
       let configuration = SCStreamConfiguration()
       configuration.width = Int((display.captureFrame.width * display.scale).rounded())
       configuration.height = Int((display.captureFrame.height * display.scale).rounded())
       configuration.showsCursor = false
-      images.append(try? await SCScreenshotManager.captureImage(
+      return try await SCScreenshotManager.captureImage(
         contentFilter: SCContentFilter(display: screen, excludingWindows: []), configuration: configuration
-      ))
-    }
-    return images
+      )
+    })
+  }
+
+  static func captureDisplayImage(
+    rectangleCapture: () async throws -> CGImage?, filteredCapture: () async throws -> CGImage
+  ) async -> CGImage? {
+    if let image = try? await rectangleCapture() { return image }
+    guard !Task.isCancelled else { return nil }
+    return try? await filteredCapture()
+  }
+
+  static func hasSufficientResolution(_ image: CGImage, for display: ScreenshotSelectionController.Display) -> Bool {
+    let width = Int((display.captureFrame.width * display.scale).rounded())
+    let height = Int((display.captureFrame.height * display.scale).rounded())
+    return image.width >= width - 1 && image.height >= height - 1
   }
 
   func capture(mode: Mode, timeout: Duration = .seconds(120)) async throws -> ValidatedImage {

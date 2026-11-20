@@ -39,7 +39,7 @@ extension ScreenshotAnnotationWindow {
   func clearRecognition() {
     recognitionTask?.cancel()
     recognitionTask = nil
-    recognitionButton.isEnabled = true
+    recognitionButton?.isEnabled = true
     dismissRecognition()
   }
 

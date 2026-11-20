@@ -124,6 +124,7 @@ final class ScreenshotCapture {
       return
     }
 
+    if case .selection = mode { previewWindow?.animationBehavior = .none }
     dismissPreview()
     captureTask = Task { [weak self] in
       guard let self else { return }
@@ -132,7 +133,9 @@ final class ScreenshotCapture {
         AppState.shared.appDelegate?.panel.restoreFocusAfterScreenshot()
       }
       do {
-        try await Task.sleep(for: .milliseconds(180))
+        if case .mainDisplay = mode {
+          try await Task.sleep(for: .milliseconds(180))
+        }
         let result: ScreenshotCaptureSession.ValidatedImage
         var shouldPin = pinToScreen
         let shouldAnnotate: Bool

@@ -33,6 +33,8 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   let editingPin: Bool
   let toolbarBounds: NSRect
   private let toolbarSize: NSSize
+  private let originalWasCopied: Bool
+  private(set) var isToolbarPrepared = false
   private static let statusRowHeight: CGFloat = 17
   private(set) var isFinished = false
   private var imageTask: Task<Void, Never>?
@@ -83,8 +85,12 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     }
   }
 
-  init(display: NSRect, visibleFrame: NSRect, editingPin: Bool = false, originalWasCopied: Bool = false) {
+  init(
+    display: NSRect, visibleFrame: NSRect, editingPin: Bool = false, originalWasCopied: Bool = false,
+    deferToolbar: Bool = false
+  ) {
     self.editingPin = editingPin
+    self.originalWasCopied = originalWasCopied
     toolbarBounds = visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY)
     let compact = visibleFrame.width < 528
     let narrow = visibleFrame.width < 430
@@ -103,18 +109,30 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     acceptsMouseMovedEvents = true
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     title = text("AnnotationTitle")
-    configureToolbar(originalWasCopied: originalWasCopied, compact: compact, narrow: narrow)
+    annotationToolbar.isHidden = true
+    if !deferToolbar { prepareToolbar() }
+  }
+
+  private func prepareToolbar() {
+    guard !isToolbarPrepared else { return }
+    isToolbarPrepared = true
+    configureToolbar(
+      originalWasCopied: originalWasCopied, compact: toolbarBounds.width < 528, narrow: toolbarBounds.width < 430
+    )
     annotationToolbar.movementBounds = toolbarBounds
     annotationToolbar.onMove = { [weak self] in self?.positionRecognitionResults() }
-    annotationToolbar.isHidden = true
     refreshHistoryButtons()
   }
 
   var isPreparingImage: Bool { imageTask != nil }
 
   func showToolbar(beside rectangle: NSRect?) {
-    annotationToolbar.isHidden = rectangle == nil
-    guard let rectangle, let contentView else { return }
+    guard let rectangle, let contentView else {
+      annotationToolbar.isHidden = true
+      return
+    }
+    prepareToolbar()
+    annotationToolbar.isHidden = false
     if annotationToolbar.superview == nil { contentView.addSubview(annotationToolbar) }
     var frame = Self.toolbarFrame(beside: rectangle, bounds: toolbarBounds, size: currentToolbarSize)
     frame.origin = annotationToolbar.alignedOrigin(frame.origin)

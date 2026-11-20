@@ -5,6 +5,26 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("Selection constructs toolbar controls only for a valid selection and can close without them")
+  func deferredSelectionToolbar() {
+    let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
+    let window = ScreenshotSelectionWindow(frame: frame, visibleFrame: frame, scale: 1, pinImmediately: false)
+    #expect(!window.isToolbarPrepared)
+    #expect(window.toolButtons.isEmpty)
+    window.showToolbar(beside: nil)
+    #expect(!window.isToolbarPrepared)
+    window.showToolbar(beside: NSRect(x: 20, y: 30, width: 200, height: 150))
+    #expect(window.isToolbarPrepared)
+    #expect(!window.toolButtons.isEmpty)
+    let buttons = window.toolButtons
+    window.showToolbar(beside: NSRect(x: 30, y: 40, width: 210, height: 160))
+    #expect(window.toolButtons == buttons)
+    window.close()
+    let cancelled = ScreenshotSelectionWindow(frame: frame, visibleFrame: frame, scale: 1, pinImmediately: false)
+    cancelled.close()
+    #expect(!cancelled.isToolbarPrepared)
+  }
+
   @Test("The glass selection hint does not intercept selection gestures")
   func selectionGlassHitTesting() throws {
     let view = ScreenshotSelectionView(

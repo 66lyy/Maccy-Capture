@@ -82,7 +82,7 @@ Quitting terminates the task.
 Only the temporary selection windows use the Core Graphics overlay level to appear above system search and
 other floating panels without activating the app. They can participate in other apps' full-screen Spaces
 and Stage Manager sets. Keyboard focus goes to the display under the pointer, falling back to the first display.
-When the shortcut fires, every display is captured once and the windows show that frozen picture under a 12% shadow outside the selection;
+When the shortcut fires, every display is captured once (in parallel, by screen rectangle on macOS 15.2+ so window shadows match the live screen) and the windows show that frozen picture under a 12% shadow outside the selection;
 copying, pinning and editing cut the selection from it, so content that disappears while selecting is still captured;
 hover detection uses the window list taken at the same moment.
 If the frozen capture fails, the windows stay transparent and the selection is captured live. They do not use the screen-saver level.

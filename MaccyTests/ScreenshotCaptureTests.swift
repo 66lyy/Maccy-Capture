@@ -170,6 +170,91 @@ struct ScreenshotCaptureTests {
     ])
   }
 
+  @Test("Display freezing prefers the rectangle screenshot over the filtered rendering")
+  func rectangleDisplayCapture() async throws {
+    let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let result = await ScreenshotCaptureSession.captureDisplayImage(rectangleCapture: {
+      image
+    }, filteredCapture: {
+      Issue.record("Filtered rendering was used after a successful rectangle screenshot")
+      return image
+    })
+    #expect(result === image)
+  }
+
+  @Test("Display captures require native pixel resolution with one-pixel rounding tolerance")
+  func displayCaptureResolution() throws {
+    let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    func accepts(width: CGFloat, height: CGFloat, scale: CGFloat) -> Bool {
+      let frame = NSRect(x: 0, y: 0, width: width, height: height)
+      let display = ScreenshotSelectionController.Display(frame: frame, captureFrame: frame, scale: scale)
+      return ScreenshotCaptureSession.hasSufficientResolution(image, for: display)
+    }
+    #expect(accepts(width: 8, height: 8, scale: 1))
+    #expect(accepts(width: 7, height: 7, scale: 1))
+    #expect(accepts(width: 9, height: 9, scale: 1))
+    #expect(!accepts(width: 10, height: 8, scale: 1))
+    #expect(!accepts(width: 8, height: 10, scale: 1))
+    #expect(accepts(width: 4, height: 4, scale: 2))
+    #expect(!accepts(width: 8, height: 8, scale: 2))
+    #expect(accepts(width: 4.7, height: 4.7, scale: 2))
+    #expect(!accepts(width: 4.8, height: 4.8, scale: 2))
+  }
+
+  @Test("Display freezing falls back when rectangle capture is unavailable or fails", arguments: [false, true])
+  func filteredDisplayCapture(throwsError: Bool) async throws {
+    let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    var fallbackCalls = 0
+    let result = await ScreenshotCaptureSession.captureDisplayImage(rectangleCapture: {
+      if throwsError { throw ScreenshotCaptureSession.Failure.captureFailed }
+      return nil
+    }, filteredCapture: {
+      fallbackCalls += 1
+      return image
+    })
+    #expect(result === image)
+    #expect(fallbackCalls == 1)
+  }
+
+  @Test("Display freezing returns no frozen image when both capture methods fail")
+  func failedDisplayCapture() async {
+    let result = await ScreenshotCaptureSession.captureDisplayImage(rectangleCapture: {
+      throw ScreenshotCaptureSession.Failure.captureFailed
+    }, filteredCapture: {
+      throw ScreenshotCaptureSession.Failure.captureFailed
+    })
+    #expect(result == nil)
+  }
+
+  @Test("Display freezing with no displays returns no images")
+  func emptyDisplayCapture() async {
+    let images = await ScreenshotCaptureSession.captureDisplays([])
+    #expect(images.isEmpty)
+  }
+
+  @Test("Display freezes overlap and keep display order even when a capture fails")
+  func concurrentDisplayCapture() async throws {
+    let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let displays = (1...3).map { id in
+      ScreenshotSelectionController.Display(
+        frame: NSRect(x: 0, y: 0, width: 800, height: 600),
+        captureFrame: NSRect(x: 0, y: 0, width: 800, height: 600), scale: 1,
+        displayID: CGDirectDisplayID(id), visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600)
+      )
+    }
+    var completed: [CGDirectDisplayID] = []
+    let images = await ScreenshotCaptureSession.captureDisplays(displays, capture: { display in
+      try? await Task.sleep(for: .milliseconds(display.displayID == 1 ? 50 : 1))
+      completed.append(display.displayID)
+      return display.displayID == 2 ? nil : image
+    })
+    #expect(completed.last == 1)
+    #expect(images.count == 3)
+    #expect(images[0] === image)
+    #expect(images[1] == nil)
+    #expect(images[2] === image)
+  }
+
   @Test("Missing region output is an error and temporary files are removed before retry",
         arguments: ["/usr/bin/true", "/usr/bin/false"])
   func missingRegionResult(executable: String) async throws {
