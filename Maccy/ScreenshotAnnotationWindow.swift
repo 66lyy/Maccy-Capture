@@ -26,12 +26,14 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   var selectedTool: ScreenshotAnnotationDocument.Tool?
   var lineWidth: CGFloat = 3
   var fontSize: CGFloat = 24
+  var mosaicSize: CGFloat = 12
   let styleLabel = NSTextField(labelWithString: "")
   let styleValue = NSTextField(labelWithString: "")
   let statusLabel = NSTextField(labelWithString: "")
   let editingPin: Bool
   let toolbarBounds: NSRect
   private let toolbarSize: NSSize
+  private static let statusRowHeight: CGFloat = 17
   private(set) var isFinished = false
   private var imageTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
@@ -77,9 +79,9 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   init(display: NSRect, visibleFrame: NSRect, editingPin: Bool = false, originalWasCopied: Bool = false) {
     self.editingPin = editingPin
     toolbarBounds = visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY)
-    let compact = visibleFrame.width < 476
+    let compact = visibleFrame.width < 528
     let narrow = visibleFrame.width < 430
-    toolbarSize = NSSize(width: 460, height: narrow ? 149 : compact ? 120 : 88)
+    toolbarSize = NSSize(width: 512, height: narrow ? 132 : compact ? 103 : 72)
     super.init(
       contentRect: display, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
     )
@@ -107,7 +109,31 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     annotationToolbar.isHidden = rectangle == nil
     guard let rectangle, let contentView else { return }
     if annotationToolbar.superview == nil { contentView.addSubview(annotationToolbar) }
-    annotationToolbar.frame = Self.toolbarFrame(beside: rectangle, bounds: toolbarBounds, size: toolbarSize)
+    var frame = Self.toolbarFrame(beside: rectangle, bounds: toolbarBounds, size: currentToolbarSize)
+    frame.origin = annotationToolbar.alignedOrigin(frame.origin)
+    annotationToolbar.frame = frame
+  }
+
+  private var currentToolbarSize: NSSize {
+    NSSize(width: toolbarSize.width, height: toolbarSize.height + (statusLabel.isHidden ? 0 : Self.statusRowHeight))
+  }
+
+  func setStatus(_ message: String?, detail: String? = nil) {
+    statusLabel.stringValue = message ?? ""
+    statusLabel.toolTip = detail
+    statusLabel.setAccessibilityLabel(detail ?? message)
+    guard statusLabel.isHidden != (message == nil) else { return }
+    statusLabel.isHidden = message == nil
+    guard annotationToolbar.superview != nil else { return }
+    let old = annotationToolbar.frame
+    let bounds = toolbarBounds.insetBy(dx: 8, dy: 8)
+    let height = min(currentToolbarSize.height, toolbarBounds.height)
+    let y = max(bounds.minY, min(old.maxY - height, bounds.maxY - height))
+    annotationToolbar.frame = NSRect(
+      origin: annotationToolbar.alignedOrigin(NSPoint(x: old.minX, y: y)),
+      size: NSSize(width: old.width, height: height)
+    )
+    positionRecognitionResults()
   }
 
   private func attachCanvas(_ document: ScreenshotAnnotationDocument, frame: NSRect) {
@@ -135,7 +161,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       return
     }
     guard imageTask == nil, let loadSelectionImage else { return }
-    statusLabel.stringValue = text("AnnotationPreparingSelection")
+    setStatus(text("AnnotationPreparingSelection"))
     imageTask = Task { [weak self] in
       do {
         let (image, rectangle) = try await loadSelectionImage()
@@ -146,14 +172,14 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
           showOutputError()
           return
         }
-        statusLabel.stringValue = shortcutSummary
+        setStatus(nil)
         attachCanvas(document, frame: rectangle)
         onCanvasReady?()
         if let canvas { action(canvas) }
       } catch {
         guard let self, !isFinished, !Task.isCancelled else { return }
         imageTask = nil
-        statusLabel.stringValue = text("ScreenshotCaptureFailed")
+        setStatus(text("ScreenshotCaptureFailed"))
       }
     }
   }
@@ -223,17 +249,6 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       }
     }
     return true
-  }
-
-  var shortcutSummary: String {
-    let copy = [ScopedShortcut.copyCapture, .copyCaptureWithCommand]
-      .compactMap { $0.current?.description }
-      .joined(separator: " / ")
-    return String(
-      localized: "AnnotationShortcutSummary",
-      defaultValue: "\(copy.isEmpty ? "—" : copy) Copy · \(ScopedShortcut.pinCapture.current?.description ?? "—") Pin / Apply · \(ScopedShortcut.saveCapture.current?.description ?? "—") Save · Esc Close",
-      table: "GeneralSettings"
-    )
   }
 
   func windowWillClose(_ notification: Notification) {
@@ -321,9 +336,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   }
 
   private func showOutputError() {
-    statusLabel.stringValue = text("AnnotationOutputFailedShort")
-    statusLabel.toolTip = text("AnnotationOutputFailed")
-    statusLabel.setAccessibilityLabel(text("AnnotationOutputFailed"))
+    setStatus(text("AnnotationOutputFailedShort"), detail: text("AnnotationOutputFailed"))
   }
 
   @objc func saveImage() {

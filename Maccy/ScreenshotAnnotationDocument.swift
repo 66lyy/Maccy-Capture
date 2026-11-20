@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class ScreenshotAnnotationDocument {
   nonisolated enum Tool: Int, CaseIterable, Sendable {
-    case arrow, rectangle, ellipse, pen, text, redact
+    case arrow, rectangle, ellipse, pen, text, redact, mosaic, eraser
 
     var titleKey: String {
       switch self {
@@ -15,8 +15,12 @@ final class ScreenshotAnnotationDocument {
       case .pen: "AnnotationPen"
       case .text: "AnnotationText"
       case .redact: "AnnotationRedact"
+      case .mosaic: "AnnotationMosaic"
+      case .eraser: "AnnotationEraser"
       }
     }
+
+    var drawsMark: Bool { self != .eraser }
   }
 
   struct Mark {
@@ -26,6 +30,7 @@ final class ScreenshotAnnotationDocument {
     var lineWidth: CGFloat = 4
     var text = ""
     var fontSize: CGFloat = 24
+    var mosaic: CGImage?
 
     var textFont: NSFont { .systemFont(ofSize: fontSize, weight: .semibold) }
     var textSize: NSSize { (text as NSString).size(withAttributes: [.font: textFont]) }
@@ -42,6 +47,7 @@ final class ScreenshotAnnotationDocument {
   private enum Edit {
     case append(Mark)
     case moveText(index: Int, from: NSPoint, to: NSPoint)
+    case remove([(index: Int, mark: Mark)])
   }
 
   let sourceImage: CGImage
@@ -61,7 +67,8 @@ final class ScreenshotAnnotationDocument {
 
   @discardableResult
   func append(_ mark: Mark) -> Bool {
-    guard !mark.points.isEmpty,
+    var mark = mark
+    guard mark.tool.drawsMark, !mark.points.isEmpty,
           mark.points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }),
           mark.lineWidth.isFinite, mark.lineWidth > 0,
           mark.fontSize.isFinite, mark.fontSize > 0 else { return false }
@@ -78,8 +85,77 @@ final class ScreenshotAnnotationDocument {
         guard abs(last.x - first.x) >= 1, abs(last.y - first.y) >= 1 else { return false }
       }
     }
+    if mark.tool == .mosaic {
+      mark.mosaic = Self.pixelated(sourceImage, in: mark.shapeBounds, blockSize: mark.lineWidth)
+    }
     record(.append(mark))
     return true
+  }
+
+  @discardableResult
+  func removeMarks(at indices: Set<Int>) -> Bool {
+    let removed = indices.filter { marks.indices.contains($0) }.sorted().map { (index: $0, mark: marks[$0]) }
+    guard !removed.isEmpty else { return false }
+    record(.remove(removed))
+    return true
+  }
+
+  func markIndex(at point: NSPoint, tolerance: CGFloat, excluding excluded: Set<Int> = []) -> Int? {
+    marks.indices.reversed().first { !excluded.contains($0) && Self.mark(marks[$0], contains: point, tolerance: tolerance) }
+  }
+
+  private static func mark(_ mark: Mark, contains point: NSPoint, tolerance: CGFloat) -> Bool {
+    guard let first = mark.points.first else { return false }
+    let last = mark.points.last ?? first
+    let reach = tolerance + mark.lineWidth / 2
+    switch mark.tool {
+    case .text:
+      return NSRect(origin: first, size: mark.textSize).insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    case .redact, .mosaic:
+      return mark.shapeBounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+    case .arrow:
+      return distance(from: point, toSegment: first, last) <= reach
+    case .pen:
+      if mark.points.count == 1 { return hypot(point.x - first.x, point.y - first.y) <= reach }
+      return zip(mark.points, mark.points.dropFirst()).contains { distance(from: point, toSegment: $0, $1) <= reach }
+    case .rectangle:
+      let bounds = mark.shapeBounds
+      let outer = bounds.insetBy(dx: -reach, dy: -reach)
+      let inner = bounds.insetBy(dx: reach, dy: reach)
+      return outer.contains(point) && (inner.isEmpty || !inner.contains(point))
+    case .ellipse:
+      let bounds = mark.shapeBounds
+      let radiusX = max(bounds.width / 2, 0.5), radiusY = max(bounds.height / 2, 0.5)
+      let normalized = hypot((point.x - bounds.midX) / radiusX, (point.y - bounds.midY) / radiusY)
+      return abs(normalized - 1) * min(radiusX, radiusY) <= reach
+    case .eraser:
+      return false
+    }
+  }
+
+  private static func distance(from point: NSPoint, toSegment start: NSPoint, _ end: NSPoint) -> CGFloat {
+    let dx = end.x - start.x, dy = end.y - start.y
+    let lengthSquared = dx * dx + dy * dy
+    guard lengthSquared > 0 else { return hypot(point.x - start.x, point.y - start.y) }
+    let t = max(0, min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared))
+    return hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy))
+  }
+
+  nonisolated static func pixelated(_ source: CGImage, in bounds: NSRect, blockSize: CGFloat) -> CGImage? {
+    let rect = bounds.integral.intersection(CGRect(x: 0, y: 0, width: source.width, height: source.height))
+    guard !rect.isEmpty, blockSize.isFinite else { return nil }
+    let block = max(2, blockSize.rounded())
+    let flipped = CGRect(x: rect.minX, y: CGFloat(source.height) - rect.maxY, width: rect.width, height: rect.height)
+    guard let region = source.cropping(to: flipped),
+          let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+            data: nil, width: max(1, Int((rect.width / block).rounded(.up))),
+            height: max(1, Int((rect.height / block).rounded(.up))), bitsPerComponent: 8, bytesPerRow: 0,
+            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          ) else { return nil }
+    context.interpolationQuality = .high
+    context.draw(region, in: CGRect(x: 0, y: 0, width: context.width, height: context.height))
+    return context.makeImage()
   }
 
   func textMarkIndex(at point: NSPoint, padding: CGFloat) -> Int? {
@@ -87,6 +163,8 @@ final class ScreenshotAnnotationDocument {
     return marks.indices.reversed().first { index in
       let mark = marks[index]
       guard mark.tool == .text, let origin = mark.points.first else { return false }
+      let covered = marks[(index + 1)...].contains { $0.tool == .mosaic && $0.shapeBounds.integral.contains(point) }
+      guard !covered else { return false }
       return NSRect(origin: origin, size: mark.textSize).insetBy(dx: -padding, dy: -padding).contains(point)
     }
   }
@@ -105,6 +183,8 @@ final class ScreenshotAnnotationDocument {
     switch edit {
     case .append: marks.removeLast()
     case .moveText(let index, let origin, _): marks[index].points[0] = origin
+    case .remove(let removed):
+      for entry in removed { marks.insert(entry.mark, at: entry.index) }
     }
     redoEdits.append(edit)
   }
@@ -125,6 +205,8 @@ final class ScreenshotAnnotationDocument {
     switch edit {
     case .append(let mark): marks.append(mark)
     case .moveText(let index, _, let position): marks[index].points[0] = position
+    case .remove(let removed):
+      for entry in removed.reversed() { marks.remove(at: entry.index) }
     }
   }
 
@@ -150,6 +232,7 @@ final class ScreenshotAnnotationDocument {
     let fontName: String
     let fontSize: CGFloat
     let shapeBounds: CGRect
+    let mosaic: CGImage?
 
     @MainActor init(_ mark: Mark) {
       tool = mark.tool
@@ -160,6 +243,7 @@ final class ScreenshotAnnotationDocument {
       fontName = mark.textFont.fontName
       fontSize = mark.fontSize
       shapeBounds = mark.shapeBounds
+      mosaic = mark.mosaic
     }
   }
 
@@ -191,7 +275,10 @@ final class ScreenshotAnnotationDocument {
     }
   }
 
-  func draw(in context: CGContext, preview: Mark? = nil, movingText: (index: Int, position: NSPoint)? = nil) {
+  func draw(
+    in context: CGContext, preview: Mark? = nil, movingText: (index: Int, position: NSPoint)? = nil,
+    hiddenMarks: Set<Int> = []
+  ) {
     context.saveGState()
     defer { context.restoreGState() }
     context.clip(to: NSRect(origin: .zero, size: imageSize))
@@ -205,7 +292,15 @@ final class ScreenshotAnnotationDocument {
        visibleMarks[movingText.index].tool == .text {
       visibleMarks[movingText.index].points[0] = movingText.position
     }
-    if let preview { visibleMarks.append(preview) }
+    if !hiddenMarks.isEmpty {
+      visibleMarks = visibleMarks.enumerated().filter { !hiddenMarks.contains($0.offset) }.map(\.element)
+    }
+    if var preview, preview.tool.drawsMark {
+      if preview.tool == .mosaic {
+        preview.mosaic = Self.pixelated(sourceImage, in: preview.shapeBounds, blockSize: preview.lineWidth)
+      }
+      visibleMarks.append(preview)
+    }
     for mark in visibleMarks where mark.tool != .redact {
       draw(mark, in: context)
     }
@@ -261,6 +356,12 @@ final class ScreenshotAnnotationDocument {
       context.setBlendMode(.copy)
       context.setFillColor(color)
       context.fill(mark.shapeBounds.integral)
+    case .mosaic:
+      guard let mosaic = mark.mosaic else { return }
+      context.interpolationQuality = .none
+      context.draw(mosaic, in: mark.shapeBounds.integral)
+    case .eraser:
+      break
     }
   }
 }

@@ -38,6 +38,9 @@
 "AnnotationPen" = "畫筆";
 "AnnotationText" = "文字";
 "AnnotationRedact" = "實心遮蓋";
+"AnnotationMosaic" = "馬賽克";
+"AnnotationEraser" = "橡皮擦";
+"AnnotationMosaicSize" = "顆粒";
 "AnnotationTools" = "標註工具";
 "AnnotationColor" = "顏色";
 "AnnotationWidth" = "線寬";

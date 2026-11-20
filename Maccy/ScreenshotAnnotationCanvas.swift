@@ -18,6 +18,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   var color = NSColor.red
   var lineWidth: CGFloat = 3
   var fontSize: CGFloat = 24
+  var mosaicSize: CGFloat = 12
   var imageInset: CGFloat = 16
   var canvasBackgroundColor = NSColor.underPageBackgroundColor
   private(set) var textField: NSTextField?
@@ -25,6 +26,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   private var textScale: CGFloat = 1
   private var pendingMark: ScreenshotAnnotationDocument.Mark?
   private var textDrag: TextDrag?
+  private var erasing: (last: NSPoint, indices: Set<Int>)?
   var isMovingText: Bool { textDrag != nil }
 
   var imageRect: NSRect {
@@ -53,7 +55,10 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     context.saveGState()
     context.translateBy(x: imageRect.minX, y: imageRect.minY)
     context.scaleBy(x: imageScale, y: imageScale)
-    document.draw(in: context, preview: pendingMark, movingText: textDrag.map { ($0.index, $0.position) })
+    document.draw(
+      in: context, preview: pendingMark, movingText: textDrag.map { ($0.index, $0.position) },
+      hiddenMarks: erasing?.indices ?? []
+    )
     context.restoreGState()
   }
 
@@ -91,8 +96,14 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
       }
       return
     }
+    if tool == .eraser {
+      erasing = (imagePoint, [])
+      erase(along: imagePoint, to: imagePoint)
+      return
+    }
     pendingMark = ScreenshotAnnotationDocument.Mark(
-      tool: tool, points: [imagePoint], color: color, lineWidth: lineWidth / imageScale,
+      tool: tool, points: [imagePoint], color: color,
+      lineWidth: (tool == .mosaic ? mosaicSize : lineWidth) / imageScale,
       fontSize: fontSize / imageScale
     )
     needsDisplay = true
@@ -110,6 +121,11 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
       needsDisplay = true
       return
     }
+    if let last = erasing?.last {
+      guard let imagePoint = imagePoint(at: point, clamped: true) else { return }
+      erase(along: last, to: imagePoint)
+      return
+    }
     guard let tool = pendingMark?.tool, let imagePoint = imagePoint(at: point, clamped: true) else { return }
     if tool == .pen {
       if (pendingMark?.points.count ?? 0) < 50_000 { pendingMark?.points.append(imagePoint) }
@@ -125,6 +141,12 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     if let drag = textDrag {
       textDrag = nil
       document.moveText(at: drag.index, to: drag.position)
+      changed()
+      return
+    }
+    if let erased = erasing?.indices {
+      erasing = nil
+      document.removeMarks(at: erased)
       changed()
       return
     }
@@ -158,8 +180,25 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   }
 
   func cancelTextDrag() {
-    guard isMovingText else { return }
+    guard isMovingText || erasing != nil else { return }
     textDrag = nil
+    erasing = nil
+    needsDisplay = true
+  }
+
+  private func erase(along start: NSPoint, to end: NSPoint) {
+    guard imageScale > 0 else { return }
+    let tolerance = 5 / imageScale
+    let steps = max(1, Int((hypot(end.x - start.x, end.y - start.y) / tolerance).rounded(.up)))
+    var indices = erasing?.indices ?? []
+    for step in 0...steps {
+      let fraction = CGFloat(step) / CGFloat(steps)
+      let point = NSPoint(x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction)
+      if let index = document.markIndex(at: point, tolerance: tolerance, excluding: indices) {
+        indices.insert(index)
+      }
+    }
+    erasing = (end, indices)
     needsDisplay = true
   }
 

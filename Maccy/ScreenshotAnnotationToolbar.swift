@@ -20,9 +20,8 @@ extension ScreenshotAnnotationWindow {
   func configureToolbar(originalWasCopied: Bool, compact: Bool, narrow: Bool) {
     annotationToolbar.setAccessibilityLabel(text("AnnotationTools"))
     let tools = ScreenshotAnnotationDocument.Tool.allCases
-    let symbols = ["arrow.up.right", "rectangle", "oval", "pencil.tip", "textformat", "rectangle.fill"]
-    toolButtons = zip(tools, symbols).map { tool, symbol in
-      let control = button(tool.titleKey, symbol: symbol, action: #selector(selectTool(_:)))
+    toolButtons = tools.map { tool in
+      let control = button(tool.titleKey, symbol: Self.symbol(for: tool), action: #selector(selectTool(_:)))
       control.tag = tool.rawValue
       control.isChosen = tool == selectedTool
       return control
@@ -30,14 +29,18 @@ extension ScreenshotAnnotationWindow {
     undoButton = button("AnnotationUndo", symbol: "arrow.uturn.backward", action: #selector(undoMark))
     redoButton = button("AnnotationRedo", symbol: "arrow.uturn.forward", action: #selector(redoMark))
     copyButton = button("AnnotationCopy", symbol: "doc.on.doc", action: #selector(copyImage))
+    addShortcutHint(to: copyButton, [ScopedShortcut.copyCapture, .copyCaptureWithCommand])
     pinButton = button(
       editingPin ? "AnnotationApply" : "ScreenshotPinImage",
       symbol: editingPin ? "checkmark" : "pin.fill",
       action: editingPin ? #selector(applyImage) : #selector(pinImage)
     )
+    addShortcutHint(to: pinButton, [ScopedShortcut.pinCapture])
     recognitionButton = button("AnnotationRecognizeText", symbol: "text.viewfinder", action: #selector(recognizeText))
+    let saveButton = button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage))
+    addShortcutHint(to: saveButton, [ScopedShortcut.saveCapture])
     let outputRow = row([
-      recognitionButton, pinButton, button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage)),
+      recognitionButton, pinButton, saveButton,
       copyButton, button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor))
     ])
     let toolsRow = row(toolButtons)
@@ -81,6 +84,7 @@ extension ScreenshotAnnotationWindow {
     info.contentTintColor = .secondaryLabelColor
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.textColor = .secondaryLabelColor
+    statusLabel.isHidden = true
     let grip = ScreenshotToolbarGrip(image: NSImage(
       systemSymbolName: "line.3.horizontal", accessibilityDescription: text("AnnotationMoveToolbar")
     ) ?? NSImage())
@@ -95,7 +99,6 @@ extension ScreenshotAnnotationWindow {
       rows.append(row([colors, separator(), adjustment, info]))
     }
     rows.append(statusLabel)
-    statusLabel.stringValue = shortcutSummary
     let stack = NSStackView(views: rows)
     stack.orientation = .vertical
     stack.alignment = .leading
@@ -115,6 +118,26 @@ extension ScreenshotAnnotationWindow {
       stack.trailingAnchor.constraint(lessThanOrEqualTo: controls.trailingAnchor, constant: -10),
       stack.centerYAnchor.constraint(equalTo: controls.centerYAnchor)
     ])
+  }
+
+  private static func symbol(for tool: ScreenshotAnnotationDocument.Tool) -> String {
+    let candidates: [String] = switch tool {
+    case .arrow: ["arrow.up.right"]
+    case .rectangle: ["rectangle"]
+    case .ellipse: ["oval"]
+    case .pen: ["pencil.tip"]
+    case .text: ["character.cursor.ibeam", "character"]
+    case .redact: ["rectangle.fill"]
+    case .mosaic: ["checkerboard.rectangle", "square.grid.3x3.fill"]
+    case .eraser: ["eraser", "eraser.fill", "delete.left"]
+    }
+    return candidates.first { NSImage(systemSymbolName: $0, accessibilityDescription: nil) != nil } ?? candidates[0]
+  }
+
+  private func addShortcutHint(to button: NSButton, _ shortcuts: [ScopedShortcut]) {
+    let keys = shortcuts.compactMap { $0.current?.description }.joined(separator: " / ")
+    guard !keys.isEmpty, let title = button.toolTip else { return }
+    button.toolTip = "\(title)  \(keys)"
   }
 
   private func row(_ views: [NSView]) -> NSStackView {
@@ -197,23 +220,41 @@ extension ScreenshotAnnotationWindow {
   }
 
   private func refreshStyle() {
-    let isText = selectedTool == .text
-    let label = text(isText ? "AnnotationFontSize" : "AnnotationWidth")
+    let tool = selectedTool ?? .arrow
+    let label = text(tool == .text ? "AnnotationFontSize" : tool == .mosaic ? "AnnotationMosaicSize" : "AnnotationWidth")
     styleLabel.stringValue = label
     styleSlider.setAccessibilityLabel(label)
-    styleSlider.minValue = isText ? 10 : 1
-    styleSlider.maxValue = isText ? 120 : 40
-    styleSlider.doubleValue = isText ? fontSize : lineWidth
-    styleSlider.isEnabled = selectedTool != .redact
-    styleValue.stringValue = selectedTool == .redact ? "—" : "\(styleSlider.integerValue)"
+    switch tool {
+    case .text:
+      styleSlider.minValue = 10
+      styleSlider.maxValue = 120
+      styleSlider.doubleValue = fontSize
+    case .mosaic:
+      styleSlider.minValue = 4
+      styleSlider.maxValue = 40
+      styleSlider.doubleValue = mosaicSize
+    default:
+      styleSlider.minValue = 1
+      styleSlider.maxValue = 40
+      styleSlider.doubleValue = lineWidth
+    }
+    let adjustable = tool != .redact && tool != .eraser
+    styleSlider.isEnabled = adjustable
+    styleValue.stringValue = adjustable ? "\(styleSlider.integerValue)" : "—"
   }
 
   @objc private func changeSize() {
     let size = CGFloat(styleSlider.doubleValue.rounded())
-    if selectedTool == .text {
+    switch selectedTool {
+    case .text:
       fontSize = size
       canvas?.fontSize = size
-    } else if selectedTool != .redact {
+    case .mosaic:
+      mosaicSize = size
+      canvas?.mosaicSize = size
+    case .redact, .eraser:
+      return
+    default:
       lineWidth = size
       canvas?.lineWidth = size
     }
@@ -326,10 +367,17 @@ final class ScreenshotAnnotationToolbar: GlassSurfaceView {
   func move(to point: NSPoint) {
     guard let dragOrigin, point.x.isFinite, point.y.isFinite else { return }
     let bounds = movementBounds.insetBy(dx: 8, dy: 8)
-    setFrameOrigin(NSPoint(
+    setFrameOrigin(alignedOrigin(NSPoint(
       x: max(bounds.minX, min(originalFrame.minX + point.x - dragOrigin.x, bounds.maxX - frame.width)),
       y: max(bounds.minY, min(originalFrame.minY + point.y - dragOrigin.y, bounds.maxY - frame.height))
-    ))
+    )))
     onMove?()
+  }
+
+  // Keeps the glass and its symbols on whole backing pixels so icons render crisply.
+  func alignedOrigin(_ origin: NSPoint) -> NSPoint {
+    guard let superview else { return NSPoint(x: origin.x.rounded(), y: origin.y.rounded()) }
+    let rect = NSRect(origin: origin, size: frame.size)
+    return superview.backingAlignedRect(rect, options: .alignAllEdgesNearest).origin
   }
 }

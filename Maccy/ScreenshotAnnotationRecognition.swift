@@ -11,7 +11,7 @@ extension ScreenshotAnnotationWindow {
     canvas.commitText()
     let snapshot = canvas.document.renderSnapshot()
     recognitionButton.isEnabled = false
-    statusLabel.stringValue = text("AnnotationRecognizingText")
+    setStatus(text("AnnotationRecognizingText"))
     let operation = recognitionOperation
     recognitionTask = Task { [weak self] in
       let result: Result<String, Error>
@@ -53,7 +53,7 @@ extension ScreenshotAnnotationWindow {
     recognitionResults = nil
     recognizedText = ""
     if hadFocus, !isFinished { makeFirstResponder((canvas as NSView?) ?? contentView) }
-    if !isFinished { statusLabel.stringValue = shortcutSummary }
+    if !isFinished { setStatus(nil) }
   }
 
   func showRecognizedText(_ value: String, message: String?) {

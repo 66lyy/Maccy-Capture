@@ -40,7 +40,6 @@
 "sc_annotateSelection" = "Annotate selection";
 "sc_selectParent" = "Select parent element";
 "sc_selectChild" = "Select child element";
-"AnnotationShortcutSummary" = "%1$@ Copy · %2$@ Pin / Apply · %3$@ Save · Esc Close";
 "ScreenshotElementActions" = "Click to select · %1$@ parent · %2$@ child";
 "UpdateSection" = "Software Updates";
 "UpdateChannel" = "Update channel:";
@@ -77,6 +76,9 @@
 "AnnotationPen" = "Pen";
 "AnnotationText" = "Text";
 "AnnotationRedact" = "Solid cover";
+"AnnotationMosaic" = "Mosaic";
+"AnnotationEraser" = "Eraser";
+"AnnotationMosaicSize" = "Block size";
 "AnnotationTools" = "Annotation tools";
 "AnnotationColor" = "Color";
 "AnnotationWidth" = "Stroke";

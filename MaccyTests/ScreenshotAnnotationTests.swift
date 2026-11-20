@@ -106,7 +106,7 @@ struct ScreenshotAnnotationTests {
     #expect(image.size == NSSize(width: 120, height: 80))
   }
 
-  @Test("Every annotation tool is rasterized into PNG", arguments: ScreenshotAnnotationDocument.Tool.allCases)
+  @Test("Every annotation tool is rasterized into PNG", arguments: ScreenshotAnnotationDocument.Tool.allCases.filter(\.drawsMark))
   func renderTools(tool: ScreenshotAnnotationDocument.Tool) throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
     let original = try #require(document.pngData())
@@ -372,7 +372,7 @@ struct ScreenshotAnnotationTests {
     let content = try #require(window.contentView)
     content.layoutSubtreeIfNeeded()
     #expect(window.canvas.frame.width > 500 && window.canvas.frame.height > 200)
-    #expect(window.toolButtons.count == 6)
+    #expect(window.toolButtons.count == 8)
     for button in window.toolButtons {
       #expect(abs(button.frame.width - window.copyButton.frame.width) <= 1)
       #expect(abs(button.frame.height - window.copyButton.frame.height) <= 1)
@@ -639,7 +639,7 @@ struct ScreenshotAnnotationTests {
       #expect(window.annotationToolbar.bounds.contains(window.annotationToolbar.convert(control.bounds, from: control)))
       #expect(control.frame.width > 20)
     }
-    let expectedHeight: CGFloat = displayWidth < 430 ? 149 : displayWidth < 476 ? 120 : 88
+    let expectedHeight: CGFloat = displayWidth < 430 ? 132 : displayWidth < 528 ? 103 : 72
     #expect(window.annotationToolbar.frame.height == expectedHeight)
   }
 
@@ -771,6 +771,76 @@ struct ScreenshotAnnotationTests {
     let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
     #expect(controls.controlsView.subviews.compactMap { $0 as? NSButton }.count == 1)
     #expect(window.contentView?.subviews.contains { $0 is NSButton } == false)
+  }
+
+  @Test("Mosaic pixelates the covered region and keeps text under it from being dragged out")
+  func mosaicPixelates() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    document.append(.init(tool: .text, points: [NSPoint(x: 30, y: 5)], color: .black, text: "Value", fontSize: 20))
+    #expect(document.textMarkIndex(at: NSPoint(x: 35, y: 10), padding: 0) == 0)
+    #expect(document.append(.init(
+      tool: .mosaic, points: [NSPoint(x: 0, y: 0), NSPoint(x: 120, y: 40)], lineWidth: 16
+    )))
+    #expect(document.marks.last?.mosaic != nil)
+    #expect(document.textMarkIndex(at: NSPoint(x: 35, y: 10), padding: 0) == nil)
+    let bitmap = try bitmap(document)
+    // Blocks are 16 px: every pixel in one block has the same color, and the blue/white edge at y = 20 is blended.
+    let block = try color(bitmap, x: 34, y: 159 - 18)
+    #expect(try color(bitmap, x: 33, y: 159 - 29) == block)
+    #expect(block.blueComponent > 0.9 && block.redComponent > 0.05 && block.redComponent < 0.95)
+    #expect(try color(bitmap, x: 200, y: 159 - 10).redComponent < 0.1)
+    document.undo()
+    #expect(document.marks.count == 1)
+  }
+
+  @Test("Eraser drag removes the marks it crosses in one undoable step")
+  func eraserRemovesMarks() throws {
+    let window = try editor()
+    defer { window.close() }
+    let canvas = try #require(window.canvas)
+    let document = canvas.document
+    document.append(.init(tool: .rectangle, points: [NSPoint(x: 20, y: 20), NSPoint(x: 100, y: 80)], lineWidth: 2))
+    document.append(.init(tool: .arrow, points: [NSPoint(x: 150, y: 20), NSPoint(x: 220, y: 140)], lineWidth: 2))
+    document.append(.init(tool: .text, points: [NSPoint(x: 120, y: 120)], text: "Keep", fontSize: 12))
+    #expect(document.markIndex(at: NSPoint(x: 60, y: 50), tolerance: 1) == nil)
+    #expect(document.markIndex(at: NSPoint(x: 60, y: 20.5), tolerance: 1) == 0)
+    window.chooseTool(.eraser)
+    #expect(canvas.tool == .eraser)
+    #expect(!window.styleSlider.isEnabled)
+    let scale = canvas.imageRect.width / document.imageSize.width
+    func viewPoint(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+      NSPoint(x: canvas.imageRect.minX + x * scale, y: canvas.imageRect.minY + y * scale)
+    }
+    canvas.beginMark(at: viewPoint(60, 21))
+    canvas.updateMark(to: viewPoint(60, 60))
+    canvas.updateMark(to: viewPoint(230, 60))
+    #expect(document.marks.count == 3)
+    canvas.endMark(at: viewPoint(230, 60))
+    #expect(document.marks.map(\.tool) == [.text])
+    document.undo()
+    #expect(document.marks.map(\.tool) == [.rectangle, .arrow, .text])
+    document.redo()
+    #expect(document.marks.map(\.text) == ["Keep"])
+    canvas.beginMark(at: viewPoint(5, 150))
+    canvas.endMark(at: viewPoint(5, 150))
+    #expect(document.marks.count == 1)
+    #expect(!document.append(.init(tool: .eraser, points: [.zero, NSPoint(x: 10, y: 10)])))
+  }
+
+  @Test("The toolbar shows no shortcut hint row and only grows while a status message is shown")
+  func statusRow() throws {
+    let window = try editor()
+    defer { window.close() }
+    window.contentView?.layoutSubtreeIfNeeded()
+    let original = window.annotationToolbar.frame
+    #expect(window.statusLabel.isHidden)
+    window.setStatus("Export failed")
+    #expect(!window.statusLabel.isHidden)
+    #expect(window.annotationToolbar.frame.height == original.height + 17)
+    #expect(window.annotationToolbar.frame.maxY == original.maxY)
+    window.setStatus(nil)
+    #expect(window.statusLabel.isHidden)
+    #expect(window.annotationToolbar.frame == original)
   }
 
   private func editor() throws -> ScreenshotAnnotationWindow {

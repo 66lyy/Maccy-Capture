@@ -40,7 +40,6 @@
 "sc_annotateSelection" = "标注选区";
 "sc_selectParent" = "选择父元素";
 "sc_selectChild" = "选择子元素";
-"AnnotationShortcutSummary" = "%1$@ 复制 · %2$@ 贴屏／应用 · %3$@ 保存 · Esc 关闭";
 "ScreenshotElementActions" = "点击选中 · %1$@ 父元素 · %2$@ 子元素";
 "UpdateSection" = "软件更新";
 "UpdateChannel" = "更新渠道：";
@@ -72,6 +71,9 @@
 "AnnotationPen" = "画笔";
 "AnnotationText" = "文字";
 "AnnotationRedact" = "实心遮盖";
+"AnnotationMosaic" = "马赛克";
+"AnnotationEraser" = "橡皮擦";
+"AnnotationMosaicSize" = "颗粒";
 "AnnotationTools" = "标注工具";
 "AnnotationColor" = "颜色";
 "AnnotationWidth" = "线宽";
