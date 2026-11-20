@@ -82,7 +82,7 @@ final class ScreenshotPreviewWindow: NSPanel, NSWindowDelegate {
       height: min(maxHeight, max(64, imageSize.height * scale))
     )
     return NSRect(
-      x: visibleFrame.maxX - inset - size.width,
+      x: visibleFrame.minX + inset,
       y: visibleFrame.minY + inset,
       width: size.width,
       height: size.height

@@ -46,7 +46,7 @@ instead of opening a separate titled editor. Nothing is copied or added to histo
 Copy or Pin. Cancel discards the new capture.
 
 After confirming Copy, a compact preview of the
-actual image appears in the lower-right corner of the target display, up to 220 × 150 points.
+actual image appears in the lower-left corner of the target display, up to 220 × 150 points.
 It includes small close, annotation, and pin buttons instead of a large text notification.
 The preview does not take keyboard focus and disappears after 2 seconds, even while hovered.
 Click its pin button to keep the image on screen.

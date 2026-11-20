@@ -690,7 +690,7 @@ struct ScreenshotCaptureTests {
     }
   }
 
-  @Test("Screenshot previews remain inside the target display",
+  @Test("Screenshot previews stay in the bottom-left corner of the target display",
         arguments: [
           NSRect(x: -1920, y: -1080, width: 1920, height: 1040),
           NSRect(x: 0, y: 0, width: 200, height: 160)
@@ -702,7 +702,8 @@ struct ScreenshotCaptureTests {
     #expect(visibleFrame.contains(frame))
     #expect(frame.width <= 220)
     #expect(frame.height <= 150)
-    #expect(frame.minX >= visibleFrame.midX || frame.width > visibleFrame.width / 2)
+    #expect(frame.minX == visibleFrame.minX + 16)
+    #expect(frame.minY == visibleFrame.minY + 16)
   }
 
   @Test("Screenshot previews never take keyboard focus and clean up once on timeout")
