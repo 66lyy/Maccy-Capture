@@ -148,7 +148,9 @@ class UpdateFeedTests(unittest.TestCase):
             "with open(os.environ['COMMAND_LOG'], 'a') as log:\n"
             "    log.write(json.dumps(arguments) + '\\n')\n"
             "if arguments[:2] == ['api', 'repos/fixture/capture/releases?per_page=30']:\n"
-            "    print(json.dumps([{'tag_name': 'maccy-capture-v2.7.0', 'draft': False}]))\n"
+            "    print(json.dumps([\n"
+            "        {'tag_name': 'maccy-capture-v2.7.0', 'draft': False, 'published_at': '2026-11-20T07:26:36Z'},\n"
+            "        {'tag_name': 'maccy-capture-v2.8.0-build1041.1', 'draft': False, 'published_at': '2026-11-20T07:36:57Z'}]))\n"
             "elif arguments[0] == 'api' and '/compare/' in arguments[1]:\n"
             "    print(json.dumps({'commits': [\n"
             "        {'sha': 'b'*40, 'parents': [{}], 'commit': {'message': 'First change\\nbody'}},\n"
@@ -218,6 +220,10 @@ class UpdateFeedTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
         commands = [json.loads(line) for line in command_log.read_text().splitlines()]
+        compares = [c for c in commands if c[0] == 'api' and '/compare/' in c[1]]
+        self.assertEqual(compares, [
+            ['api', f'repos/fixture/capture/compare/maccy-capture-v2.8.0-build1041.1...{self.revision}']
+        ] * 2)
         tag = "maccy-capture-v2.8.0-build1042.1"
         creates = [c for c in commands if c[:2] == ["release", "create"]]
         self.assertEqual(len(creates), 1)

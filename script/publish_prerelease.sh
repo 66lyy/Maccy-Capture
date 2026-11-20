@@ -180,7 +180,7 @@ fi
 RELEASE_TAG="maccy-capture-v$SHORT_VERSION-build$BUILD_VERSION"
 TITLE="Maccy Capture $SHORT_VERSION test build $BUILD_VERSION"
 PREVIOUS_TAG="$(gh api "repos/$GH_REPO/releases?per_page=30" | jq -r --arg tag "$RELEASE_TAG" \
-  '[.[] | select(.draft == false and (.tag_name | startswith("maccy-capture-v")) and .tag_name != $tag)][0].tag_name // empty')"
+  '[.[] | select(.draft == false and (.tag_name | startswith("maccy-capture-v")) and .tag_name != $tag)] | max_by(.published_at) | .tag_name // empty')"
 printf '\n## Changes / 更新内容\n\n' >> "$NOTES_FILE"
 COMPARE=''
 if [[ -n "$PREVIOUS_TAG" ]]; then
