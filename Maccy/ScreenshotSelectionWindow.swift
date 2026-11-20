@@ -6,10 +6,11 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
   var onCancel: (() -> Void)?
   let selectionView: ScreenshotSelectionView
 
-  init(frame: NSRect, visibleFrame: NSRect, scale: CGFloat, pinImmediately: Bool) {
+  init(frame: NSRect, visibleFrame: NSRect, scale: CGFloat, pinImmediately: Bool, frozen: CGImage? = nil) {
     selectionView = ScreenshotSelectionView(
       frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately
     )
+    selectionView.frozen = frozen.map { NSImage(cgImage: $0, size: frame.size) }
     super.init(display: frame, visibleFrame: visibleFrame)
     level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
     collectionBehavior.insert(.canJoinAllApplications)

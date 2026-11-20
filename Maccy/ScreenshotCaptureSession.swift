@@ -111,6 +111,26 @@ final class ScreenshotCaptureSession {
     return NSImage(cgImage: image, size: source.size)
   }
 
+  static func captureDisplays(_ displays: [ScreenshotSelectionController.Display]) async -> [CGImage?] {
+    guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    else { return displays.map { _ in nil } }
+    var images: [CGImage?] = []
+    for display in displays {
+      guard !Task.isCancelled, let screen = content.displays.first(where: { $0.displayID == display.displayID }) else {
+        images.append(nil)
+        continue
+      }
+      let configuration = SCStreamConfiguration()
+      configuration.width = Int((display.captureFrame.width * display.scale).rounded())
+      configuration.height = Int((display.captureFrame.height * display.scale).rounded())
+      configuration.showsCursor = false
+      images.append(try? await SCScreenshotManager.captureImage(
+        contentFilter: SCContentFilter(display: screen, excludingWindows: []), configuration: configuration
+      ))
+    }
+    return images
+  }
+
   func capture(mode: Mode, timeout: Duration = .seconds(120)) async throws -> ValidatedImage {
     guard !isCapturing else { throw Failure.alreadyCapturing }
     try Task.checkCancellation()

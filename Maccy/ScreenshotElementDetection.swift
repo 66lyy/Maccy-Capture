@@ -2,16 +2,29 @@ import ApplicationServices
 import Foundation
 
 enum ScreenshotElementDetection {
-  nonisolated static func rectangles(at point: NSPoint) -> [NSRect] {
+  struct Window: Sendable, Equatable {
+    let pid: pid_t
+    let frame: NSRect
+  }
+
+  nonisolated static func windows() -> [Window] {
     guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                    kCGNullWindowID) as? [[String: Any]] else { return [] }
     let ownPID = ProcessInfo.processInfo.processIdentifier
-    for window in windows {
+    return windows.compactMap { window in
       guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
             window[kCGWindowLayer as String] as? Int == 0,
             let bounds = window[kCGWindowBounds as String] as? [String: Any],
             let rectangle = CGRect(dictionaryRepresentation: bounds as CFDictionary)
-      else { continue }
+      else { return nil }
+      return Window(pid: pid, frame: rectangle)
+    }
+  }
+
+  nonisolated static func rectangles(at point: NSPoint, in windows: [Window]? = nil) -> [NSRect] {
+    for window in windows ?? self.windows() {
+      let pid = window.pid
+      let rectangle = window.frame
       guard rectangle.contains(point) else { continue }
       guard AXIsProcessTrusted() else { return [rectangle] }
       let application = AXUIElementCreateApplication(pid)

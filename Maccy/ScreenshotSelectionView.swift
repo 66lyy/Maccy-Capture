@@ -12,6 +12,9 @@ final class ScreenshotSelectionView: NSView {
   var movePointer: ((NSPoint) -> Void)?
   var findElements: (@Sendable (NSPoint) -> [NSRect])?
   private(set) var selectedRect: NSRect?
+  var frozen: NSImage? {
+    didSet { needsDisplay = true }
+  }
 
   private enum Drag {
     case new(NSPoint)
@@ -415,6 +418,7 @@ final class ScreenshotSelectionView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     NSColor.clear.setFill()
     bounds.fill(using: .copy)
+    frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
     let shade = NSBezierPath(rect: bounds)
     let activeRect = self.activeRect
     if let activeRect {

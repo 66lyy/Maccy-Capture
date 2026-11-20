@@ -82,7 +82,10 @@ Quitting terminates the task.
 Only the temporary selection windows use the Core Graphics overlay level to appear above system search and
 other floating panels without activating the app. They can participate in other apps' full-screen Spaces
 and Stage Manager sets. Keyboard focus goes to the display under the pointer, falling back to the first display.
-The windows draw only a 12% shadow outside the selection and use neither the screen-saver level nor an opaque background.
+When the shortcut fires, every display is captured once and the windows show that frozen picture under a 12% shadow outside the selection;
+copying, pinning and editing cut the selection from it, so content that disappears while selecting is still captured;
+hover detection uses the window list taken at the same moment.
+If the frozen capture fails, the windows stay transparent and the selection is captured live. They do not use the screen-saver level.
 All selection windows close on completion, cancellation, timeout, a change in the displays' arrangement, size or scale, or app exit;
 Dock, menu bar and Space changes (for example another app launching or activating) keep the selection open.
 

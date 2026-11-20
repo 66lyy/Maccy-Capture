@@ -151,6 +151,13 @@ final class ScreenshotCapture {
             result = try await Task.detached(priority: .userInitiated) {
               try ScreenshotCaptureSession.ValidatedImage.validate(rendered)
             }.value
+          } else if let frozen = selection.image {
+            result = try await Task.detached(priority: .userInitiated) {
+              guard let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(frozen) else {
+                throw ScreenshotCaptureSession.Failure.captureFailed
+              }
+              return try ScreenshotCaptureSession.ValidatedImage.validate(data)
+            }.value
           } else {
             try await Task.sleep(for: .milliseconds(120))
             result = try await session.capture(mode: .region(selection.captureRect))

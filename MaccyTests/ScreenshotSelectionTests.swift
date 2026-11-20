@@ -484,6 +484,51 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
+  @Test("Element detection over a frozen screen uses the windows listed when it was frozen")
+  func frozenWindowList() {
+    let frame = NSRect(x: 100, y: 100, width: 300, height: 200)
+    let windows = [ScreenshotElementDetection.Window(pid: -1, frame: frame)]
+    #expect(ScreenshotElementDetection.rectangles(at: NSPoint(x: 150, y: 150), in: windows) == [frame])
+    #expect(ScreenshotElementDetection.rectangles(at: NSPoint(x: 50, y: 50), in: windows).isEmpty)
+    #expect(ScreenshotElementDetection.rectangles(at: NSPoint(x: 150, y: 150), in: []).isEmpty)
+  }
+
+  @Test("The screen is frozen when selection starts: the overlay shows it and copy and edit cut from it")
+  func frozenScreen() async throws {
+    let context = try #require(CGContext(
+      data: nil, width: 1600, height: 1200, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    context.setFillColor(NSColor.blue.cgColor)
+    context.fill(CGRect(x: 0, y: 0, width: 1600, height: 1200))
+    let frozen = try #require(context.makeImage())
+    for edit in [false, true] {
+      let controller = controller(frozen: [frozen, nil])
+      defer { controller.cancel() }
+      let task = Task { try await controller.select(pinImmediately: false) }
+      try await waitForSelection(controller)
+      let window = try #require(controller.windows.first)
+      #expect(window.selectionView.frozen?.size == NSSize(width: 800, height: 600))
+      #expect(controller.windows.last?.selectionView.frozen == nil)
+      let view = window.selectionView
+      view.beginSelection(at: NSPoint(x: 10, y: 20))
+      view.endSelection(at: NSPoint(x: 110, y: 80))
+      if edit {
+        let (image, frame) = try #require(try await window.loadSelectionImage?())
+        #expect(frame == NSRect(x: 10, y: 20, width: 100, height: 60))
+        let cgImage = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        #expect(cgImage.width == 200 && cgImage.height == 120)
+        controller.cancel()
+        #expect(try await task.value == nil)
+      } else {
+        view.captureSelection(pinToScreen: false)
+        let result = try #require(try await task.value)
+        #expect(result.renderedData == nil)
+        #expect(result.image?.width == 200 && result.image?.height == 120)
+      }
+    }
+  }
+
   @Test("Dock, menu bar and Space changes keep selecting; a real display change cancels without capturing")
   func displayOrSpaceChange() async throws {
     var displays = Self.displays
@@ -518,11 +563,12 @@ struct ScreenshotSelectionTests {
   private func controller(
     pointer: NSPoint = .zero,
     displays: @escaping @MainActor () -> [ScreenshotSelectionController.Display] = { Self.displays },
+    frozen: [CGImage?] = [],
     presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { _, _ in }
   ) -> ScreenshotSelectionController {
     ScreenshotSelectionController(
-      displays: displays, pointerLocation: { pointer }, presentWindow: presentWindow
-    ) { display, rectangle, _ in
+      displays: displays, pointerLocation: { pointer }, presentWindow: presentWindow,
+      captureRegion: { display, rectangle, _ in
       #expect(display.frame.size == NSSize(width: 800, height: 600))
       return NSImage(size: rectangle.size, flipped: false) { bounds in
         NSColor.white.setFill()
@@ -532,7 +578,7 @@ struct ScreenshotSelectionTests {
         ])
         return true
       }
-    }
+    }, freezeDisplays: { _ in frozen })
   }
 
   private func waitForSelection(_ controller: ScreenshotSelectionController) async throws {
