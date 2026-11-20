@@ -15,6 +15,13 @@ final class ScreenshotSelectionView: NSView {
   var frozen: NSImage? {
     didSet { needsDisplay = true }
   }
+  var isScrolling = false {
+    didSet {
+      selectionHint.isHidden = isScrolling
+      elementHint.isHidden = isScrolling
+      needsDisplay = true
+    }
+  }
 
   private enum Drag {
     case new(NSPoint)
@@ -396,6 +403,11 @@ final class ScreenshotSelectionView: NSView {
 
   override func layout() {
     super.layout()
+    if isScrolling {
+      selectionHint.isHidden = true
+      elementHint.isHidden = true
+      return
+    }
     if let activeRect {
       var dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
       if drag != nil, let pointer {
@@ -418,7 +430,7 @@ final class ScreenshotSelectionView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     NSColor.clear.setFill()
     bounds.fill(using: .copy)
-    frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1)
+    if !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
     let shade = NSBezierPath(rect: bounds)
     let activeRect = self.activeRect
     if let activeRect {
@@ -429,13 +441,15 @@ final class ScreenshotSelectionView: NSView {
     shade.fill()
     if let activeRect {
       // A fully transparent hole would let clicks fall through to the window below.
-      NSColor.black.withAlphaComponent(0.001).setFill()
-      activeRect.fill(using: .sourceOver)
+      if !isScrolling {
+        NSColor.black.withAlphaComponent(0.001).setFill()
+        activeRect.fill(using: .sourceOver)
+      }
       NSColor.systemRed.setStroke()
       let border = NSBezierPath(rect: activeRect.insetBy(dx: 1, dy: 1))
       border.lineWidth = 2
       border.stroke()
-      if selectedRect != nil, drag == nil {
+      if selectedRect != nil, drag == nil, !isScrolling {
         for corner in Self.corners(of: activeRect) {
           NSColor.white.setFill()
           let handle = NSBezierPath(ovalIn: NSRect(x: corner.x - 3, y: corner.y - 3, width: 6, height: 6))

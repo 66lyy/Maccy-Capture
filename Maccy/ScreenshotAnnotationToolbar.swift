@@ -43,10 +43,20 @@ extension ScreenshotAnnotationWindow {
     recognitionButton = button("AnnotationRecognizeText", symbol: "text.viewfinder", action: #selector(recognizeText))
     let saveButton = button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage))
     addShortcutHint(to: saveButton, [ScopedShortcut.saveCapture])
-    let outputRow = row([
+    var outputControls: [NSView] = [
       recognitionButton, pinButton, saveButton,
       copyButton, button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor))
-    ])
+    ]
+    if let selection = self as? ScreenshotSelectionWindow, selection.allowsLongScreenshot {
+      let symbol = NSImage(systemSymbolName: "arrow.up.and.down.text.horizontal", accessibilityDescription: nil) != nil
+        ? "arrow.up.and.down.text.horizontal" : "arrow.up.arrow.down"
+      let control = button(
+        "ScreenshotLong", symbol: symbol, action: #selector(ScreenshotSelectionWindow.beginLongScreenshot)
+      )
+      selection.longScreenshotButton = control
+      outputControls.insert(control, at: 0)
+    }
+    let outputRow = row(outputControls)
     let toolsRow = row(toolButtons)
     let historyRow = row([undoButton, redoButton])
     let toolRow = row([toolsRow, separator(), historyRow])

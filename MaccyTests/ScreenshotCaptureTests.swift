@@ -7,6 +7,146 @@ import Testing
 
 @MainActor
 struct ScreenshotCaptureTests {
+  private func scrollingFrame(_ start: Int, header: Int = 0, footer: Int = 0) -> [UInt8] {
+    (0..<24).flatMap { y -> [UInt8] in
+      let value = y < header ? 240 + y : y >= 24 - footer ? 250 + y - 24 : start + y - header
+      return (0..<8).flatMap { x in
+        [UInt8((value * 37 + x * 19) % 239), UInt8((value * 71 + x * 13) % 239), UInt8(value % 239), 255]
+      }
+    }
+  }
+
+  @Test("Downward scrolling appends only new rows, including repeated captures")
+  func scrollingDown() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
+    #expect(stitcher.append(rgba: scrollingFrame(0)))
+    #expect(stitcher.append(rgba: scrollingFrame(6)))
+    #expect(stitcher.height == 30)
+    #expect(stitcher.append(rgba: scrollingFrame(12)))
+    #expect(stitcher.height == 36)
+    #expect(stitcher.pixels == scrollingFrame(0) + Array(scrollingFrame(6).suffix(6 * 32))
+      + Array(scrollingFrame(12).suffix(6 * 32)))
+  }
+
+  @Test("Sticky header and footer are retained exactly once")
+  func scrollingStickyEdges() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    let first = scrollingFrame(0, header: 3, footer: 2)
+    let next = scrollingFrame(6, header: 3, footer: 2)
+    #expect(stitcher.append(rgba: first))
+    #expect(stitcher.append(rgba: next))
+    #expect(stitcher.height == 30)
+    #expect(stitcher.pixels == Array(first.prefix(22 * 32)) + Array(next.suffix(8 * 32)))
+  }
+
+  @Test("Unchanged, upward, jumped, blank and malformed frames do not extend a capture")
+  func scrollingIgnoredFrames() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(stitcher.append(rgba: scrollingFrame(12)))
+    let original = stitcher.pixels
+    #expect(!stitcher.append(rgba: scrollingFrame(12)))
+    #expect(!stitcher.append(rgba: scrollingFrame(6)))
+    #expect(!stitcher.append(rgba: scrollingFrame(100)))
+    #expect(!stitcher.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4)))
+    #expect(!stitcher.append(rgba: []))
+    #expect(stitcher.pixels == original)
+    var blank = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(blank.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4)))
+    #expect(!blank.append(rgba: [UInt8](repeating: 254, count: 8 * 24 * 4)))
+    #expect(blank.height == 24)
+  }
+
+  @Test("Height cap truncates new body rows and retains the latest footer")
+  func scrollingHeightCap() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 27)
+    #expect(stitcher.append(rgba: scrollingFrame(0, header: 3, footer: 2)))
+    let next = scrollingFrame(6, header: 3, footer: 2)
+    #expect(stitcher.append(rgba: next))
+    #expect(stitcher.capReached)
+    #expect(stitcher.height == 27)
+    #expect(Array(stitcher.pixels.suffix(2 * 32)) == Array(next.suffix(2 * 32)))
+    #expect(!stitcher.append(rgba: scrollingFrame(12, header: 3, footer: 2)))
+  }
+
+  @Test("Bitmap adapter preserves image orientation")
+  func scrollingBitmapRoundTrip() throws {
+    let bytes = scrollingFrame(0)
+    var source = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(source.append(rgba: bytes))
+    let image = try #require(source.image)
+    var destination = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(destination.append(image))
+    #expect(destination.pixels == source.pixels)
+  }
+
+  @Test("Tiny RGB noise does not prevent overlap matching")
+  func scrollingPixelNoise() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(stitcher.append(rgba: scrollingFrame(0)))
+    let noisy = scrollingFrame(6).enumerated().map { index, value in index % 4 == 3 ? value : value + 1 }
+    #expect(stitcher.append(rgba: noisy))
+    #expect(stitcher.height == 30)
+  }
+
+  @Test("Text-like glyph rows stitch exactly after uneven scrolls under a sticky header")
+  func scrollingTextStrip() {
+    let width = 1031
+    let headerHeight = 13
+    let bodyHeight = 180
+    let stride = width * 4
+    let offsets = [0, 37, 90]
+    let sourceHeight = bodyHeight + (offsets.last ?? 0)
+    var strip = [UInt8](repeating: 255, count: width * sourceHeight * 4)
+    for y in 0..<sourceHeight where y % 19 < 12 {
+      let line = y / 19
+      var x = 11 + (line * 17) % 31
+      var glyph = 0
+      let lineEnd = width - 40 - (line * 73) % 420
+      while x < lineEnd {
+        let dashWidth = 2 + (line * 7 + glyph * 11 + y % 19 * 3) % 13
+        for column in x..<min(x + dashWidth, lineEnd) {
+          let index = y * stride + column * 4
+          strip[index] = 0
+          strip[index + 1] = 0
+          strip[index + 2] = 0
+        }
+        x += dashWidth + 3 + (glyph * 5 + line) % 9
+        glyph += 1
+      }
+    }
+    let header = [UInt8](repeating: 192, count: headerHeight * stride)
+      .enumerated().map { $0.offset % 4 == 3 ? UInt8(255) : $0.element }
+    var stitcher = ScrollingScreenshotStitcher(
+      width: width, height: headerHeight + bodyHeight, maximumPixels: width * 1000
+    )
+    for offset in offsets {
+      let frame = header + Array(strip[(offset * stride)..<((offset + bodyHeight) * stride)])
+      #expect(stitcher.append(rgba: frame))
+      #expect(stitcher.pixels == header + Array(strip.prefix((bodyHeight + offset) * stride)))
+    }
+  }
+
+  @Test("Repeated list rows with indistinguishable overlaps are not guessed")
+  func scrollingPeriodicRows() {
+    let first = (0..<6).flatMap { _ in Array(scrollingFrame(0).prefix(4 * 32)) }
+    let shifted = Array(first.dropFirst(32)) + Array(first.prefix(32))
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(stitcher.append(rgba: first))
+    #expect(!stitcher.append(rgba: shifted))
+    #expect(stitcher.pixels == first)
+  }
+
+  @Test("Tall capture pins are reduced to fit the target display")
+  func scrollingPinFitsScreen() {
+    let visible = NSRect(x: -1000, y: 0, width: 1000, height: 800)
+    let capture = NSRect(x: -800, y: -4400, width: 400, height: 5000)
+    let frame = PinnedScreenshotWindow.initialFrame(
+      imageSize: capture.size, visibleFrame: visible, anchor: NSPoint(x: -600, y: 599), captureFrame: capture
+    )
+    #expect(visible.contains(frame))
+    #expect(abs(frame.width / frame.height - capture.width / capture.height) < 0.001)
+  }
+
   @Test("Global capture defaults use bare function keys and leave optional actions unassigned")
   func globalCaptureShortcutDefaults() {
     #expect(KeyboardShortcuts.Name.screenshot.initialShortcut == nil)

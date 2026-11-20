@@ -21,3 +21,13 @@
 "Mixed" = "مختلط";
 "NotificationsAndSounds" = "الإشعارات والأصوات 􀱁";
 "FormatJSON" = "Format JSON previews";
+
+"ScreenshotLong" = "Long Screenshot";
+"ScreenshotLongHint" = "Scroll the content to extend the screenshot";
+"ScreenshotLongLimit" = "Screenshot size limit reached";
+
+"AnnotationNumber" = "Number";
+"AnnotationMagnifier" = "Magnifier";
+"AnnotationMagnification" = "Zoom";
+"AnnotationToolsSection" = "Annotation Tools";
+"AnnotationToolsHelp" = "Drag tools to reorder the annotation toolbar. Tools that are switched off are hidden from it.";

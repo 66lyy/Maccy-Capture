@@ -7,6 +7,10 @@
 "PinTooltip" = "Tecla de atalho para fixar elemento do histórico.\nPadrão: ⌥P.";
 "Delete" = "Apagar:";
 "Behavior" = "Comportamento:";
+
+"ScreenshotLong" = "Long Screenshot";
+"ScreenshotLongHint" = "Scroll the content to extend the screenshot";
+"ScreenshotLongLimit" = "Screenshot size limit reached";
 "FormatJSON" = "Format JSON previews";
 "PasteAutomatically" = "Colar automaticamente";
 "PasteWithoutFormatting" = "Colar sem formatação";
@@ -21,4 +25,9 @@
 "DeleteTooltip" = "Atalho para apagar o elemento do histórico.\nPadrão: ⌥⌫.";
 "ShowPreview" = "Pré-visualizar:";
 "ShowPreviewTooltip" = "Mostrar pré-visualização com informação adicional.\nPadrão: ⌃Space.";
-"Behavior" = "Comportamento:";
+
+"AnnotationNumber" = "Number";
+"AnnotationMagnifier" = "Magnifier";
+"AnnotationMagnification" = "Zoom";
+"AnnotationToolsSection" = "Annotation Tools";
+"AnnotationToolsHelp" = "Drag tools to reorder the annotation toolbar. Tools that are switched off are hidden from it.";

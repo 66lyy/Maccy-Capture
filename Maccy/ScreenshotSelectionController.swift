@@ -38,6 +38,7 @@ final class ScreenshotSelectionController {
     let pinToScreen: Bool
     var renderedData: Data?
     var image: CGImage?
+    var renderedScale: CGFloat?
 
     var screenRect: NSRect {
       NSRect(
@@ -59,6 +60,7 @@ final class ScreenshotSelectionController {
   private var continuation: CheckedContinuation<Selection?, any Error>?
   private var timeoutTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
+  private var scrollingTask: Task<Void, Never>?
 
   init(
     displays: @escaping @MainActor () -> [Display] = { Display.current() },
@@ -188,7 +190,7 @@ final class ScreenshotSelectionController {
       }
     }
     window.selectionView.canAdjustSelection = { [weak self] in
-      self?.windows.allSatisfy { $0.canvas == nil && !$0.isPreparingImage } ?? false
+      self?.windows.allSatisfy { $0.canvas == nil && !$0.isPreparingImage && !$0.selectionView.isScrolling } ?? false
     }
     func selection(_ rectangle: NSRect, pinToScreen: Bool, data: Data? = nil) -> Selection {
       let captureRect = Self.captureRectangle(rectangle, display: display)
@@ -202,6 +204,74 @@ final class ScreenshotSelectionController {
     }
     window.selectionView.onCapture = { [weak self] rectangle, pinToScreen in
       self?.finish(selection(rectangle, pinToScreen: pinToScreen))
+    }
+    window.onLongScreenshot = { [weak self, weak window] in
+      guard let self, let window, let rectangle = window.selectionView.selectedRect,
+            scrollingTask == nil else { return }
+      timeoutTask?.cancel()
+      timeoutTask = nil
+      for overlay in windows {
+        overlay.ignoresMouseEvents = true
+        overlay.selectionView.frozen = nil
+        overlay.selectionView.isScrolling = true
+        overlay.annotationToolbar.isHidden = true
+      }
+      let screenRect = rectangle.offsetBy(dx: display.frame.minX, dy: display.frame.minY)
+      let panel = ScrollingScreenshotPanel(
+        beside: screenRect, bounds: display.visibleFrame ?? display.frame, level: window.level.rawValue + 1
+      )
+      window.scrollingPanel = panel
+      panel.onCancel = { [weak self] in self?.cancel() }
+      panel.onFinish = { [weak self, weak panel] pin in
+        guard let self, let image = panel?.stitcher?.image,
+              let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return }
+        var result = selection(rectangle, pinToScreen: pin, data: data)
+        result.renderedScale = display.scale
+        finish(result)
+      }
+      panel.orderFrontRegardless()
+      panel.makeKey()
+      let captureRect = Self.captureRectangle(rectangle, display: display)
+      scrollingTask = Task { [weak self, weak panel] in
+        var lastThumbnailUpdate: ContinuousClock.Instant?
+        var thumbnailNeedsUpdate = false
+        while !Task.isCancelled {
+          guard let self, let panel, isSelecting else { return }
+          let ids = Set((windows.map(\.windowNumber) + [panel.windowNumber]).compactMap { CGWindowID(exactly: $0) })
+          do {
+            let frame = try await captureRegion(display, captureRect, ids)
+            guard !Task.isCancelled, isSelecting else { return }
+            guard let cgImage = frame.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+              throw ScreenshotCaptureSession.Failure.captureFailed
+            }
+            if panel.stitcher == nil {
+              guard cgImage.width > 0, cgImage.height > 0,
+                    cgImage.width <= ScreenshotImageLimits.maximumPixels / cgImage.height else {
+                throw ScreenshotCaptureSession.Failure.captureFailed
+              }
+              panel.stitcher = ScrollingScreenshotStitcher(
+                width: cgImage.width, height: cgImage.height, maximumPixels: ScreenshotImageLimits.maximumPixels
+              )
+            }
+            let changed = panel.stitcher?.append(cgImage) == true
+            thumbnailNeedsUpdate = thumbnailNeedsUpdate || changed
+            let capped = panel.stitcher?.capReached == true
+            let now = ContinuousClock.now
+            let refreshDue = lastThumbnailUpdate.map { $0.duration(to: now) >= .milliseconds(500) } ?? true
+            if thumbnailNeedsUpdate, capped || refreshDue,
+               let image = panel.stitcher?.image {
+              panel.update(image, capped: capped)
+              lastThumbnailUpdate = now
+              thumbnailNeedsUpdate = false
+            }
+            if capped { return }
+            try await Task.sleep(for: .milliseconds(150))
+          } catch {
+            if !Task.isCancelled { cancel() }
+            return
+          }
+        }
+      }
     }
     window.loadSelectionImage = { [weak self, weak window] in
       guard let self, let window, let rectangle = window.selectionView.selectedRect else { throw CancellationError() }
@@ -224,6 +294,7 @@ final class ScreenshotSelectionController {
       guard let self, let window else { return }
       timeoutTask?.cancel()
       timeoutTask = nil
+      window.longScreenshotButton?.isHidden = true
       for other in windows where other !== window { other.orderOut(nil) }
       window.invalidateCursorRects(for: window.selectionView)
     }
@@ -237,6 +308,8 @@ final class ScreenshotSelectionController {
   private func finish(_ selection: Selection?, closingWindow: ScreenshotSelectionWindow? = nil) {
     guard let continuation else { return }
     self.continuation = nil
+    scrollingTask?.cancel()
+    scrollingTask = nil
     timeoutTask?.cancel()
     timeoutTask = nil
     if let screenObserver {
@@ -244,6 +317,12 @@ final class ScreenshotSelectionController {
       self.screenObserver = nil
     }
     for window in windows {
+      window.scrollingPanel?.onFinish = nil
+      window.scrollingPanel?.onCancel = nil
+      window.scrollingPanel?.orderOut(nil)
+      window.scrollingPanel?.close()
+      window.scrollingPanel = nil
+      window.onLongScreenshot = nil
       window.onCancel = nil
       window.selectionView.finishInteraction()
       if window !== closingWindow {

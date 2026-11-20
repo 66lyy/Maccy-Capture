@@ -185,3 +185,7 @@
 "AnnotationMagnification" = "Zoom";
 "AnnotationToolsSection" = "Annotation Tools";
 "AnnotationToolsHelp" = "Drag tools to reorder the annotation toolbar. Tools that are switched off are hidden from it.";
+
+"ScreenshotLong" = "Long Screenshot";
+"ScreenshotLongHint" = "Scroll the content to extend the screenshot";
+"ScreenshotLongLimit" = "Screenshot size limit reached";

@@ -25,6 +25,47 @@ struct ScreenshotSelectionTests {
     #expect(!cancelled.isToolbarPrepared)
   }
 
+  @Test("Long capture makes overlays live and click-through and cancel cleans up the panel")
+  func scrollingSelectionLifecycle() async throws {
+    let controller = controller()
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 30))
+    window.selectionView.endSelection(at: NSPoint(x: 220, y: 180))
+    window.beginLongScreenshot()
+    let panel = try #require(window.scrollingPanel)
+    #expect(controller.windows.allSatisfy { $0.ignoresMouseEvents && $0.selectionView.isScrolling })
+    #expect(controller.windows.allSatisfy { $0.selectionView.frozen == nil && $0.annotationToolbar.isHidden })
+    #expect(panel.level.rawValue > window.level.rawValue)
+    #expect(!panel.ignoresMouseEvents)
+    controller.cancel()
+    #expect(try await task.value == nil)
+    #expect(window.scrollingPanel == nil)
+    #expect(!panel.isVisible)
+    #expect(controller.windows.isEmpty)
+  }
+
+  @Test("Long capture errors cancel every capture window")
+  func scrollingCaptureFailure() async throws {
+    let controller = ScreenshotSelectionController(
+      displays: { Self.displays }, presentWindow: { _, _ in },
+      captureRegion: { _, _, _ in throw ScreenshotCaptureSession.Failure.captureFailed },
+      freezeDisplays: { _ in [] }
+    )
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 30))
+    window.selectionView.endSelection(at: NSPoint(x: 220, y: 180))
+    window.beginLongScreenshot()
+    #expect(try await task.value == nil)
+    #expect(window.scrollingPanel == nil)
+    #expect(controller.windows.isEmpty)
+  }
+
   @Test("The glass selection hint does not intercept selection gestures")
   func selectionGlassHitTesting() throws {
     let view = ScreenshotSelectionView(

@@ -96,9 +96,9 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     self.editingPin = editingPin
     self.originalWasCopied = originalWasCopied
     toolbarBounds = visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY)
-    let compact = visibleFrame.width < 590
+    let compact = visibleFrame.width < 626
     let narrow = visibleFrame.width < 440
-    toolbarSize = NSSize(width: 574, height: narrow ? 132 : compact ? 103 : 72)
+    toolbarSize = NSSize(width: 610, height: narrow ? 132 : compact ? 103 : 72)
     super.init(
       contentRect: display, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
     )
@@ -121,7 +121,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     guard !isToolbarPrepared else { return }
     isToolbarPrepared = true
     configureToolbar(
-      originalWasCopied: originalWasCopied, compact: toolbarBounds.width < 528, narrow: toolbarBounds.width < 430
+      originalWasCopied: originalWasCopied, compact: toolbarBounds.width < 626, narrow: toolbarBounds.width < 440
     )
     annotationToolbar.movementBounds = toolbarBounds
     annotationToolbar.onMove = { [weak self] in self?.positionRecognitionResults() }

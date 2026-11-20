@@ -165,6 +165,11 @@ final class ScreenshotCapture {
             try await Task.sleep(for: .milliseconds(120))
             result = try await session.capture(mode: .region(selection.captureRect))
           }
+          if let scale = selection.renderedScale, scale > 0 {
+            let size = NSSize(width: CGFloat(result.image.width) / scale, height: CGFloat(result.image.height) / scale)
+            imageFrame = NSRect(x: selection.screenRect.minX, y: selection.screenRect.maxY - size.height,
+                                width: size.width, height: size.height)
+          }
         }
         try Task.checkCancellation()
         let data = result.data
@@ -232,7 +237,7 @@ final class ScreenshotCapture {
       showError("PinnedImageMemoryLimit")
       return
     }
-    let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.maxY - min(1, $0.height / 2)) } ?? NSEvent.mouseLocation
     guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else {
       return
     }
@@ -265,7 +270,7 @@ final class ScreenshotCapture {
   }
 
   private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil) {
-    let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.maxY - min(1, $0.height / 2)) } ?? NSEvent.mouseLocation
     let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     guard let screen else { return }
     let window = ScreenshotPreviewWindow(

@@ -83,6 +83,7 @@
 		AC1811180000000000000003 /* ScreenshotPreviewWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */; };
 		AC1811180000000000000005 /* ScreenshotSelectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000006 /* ScreenshotSelectionController.swift */; };
 		C0FFEE120000000000000007 /* ScreenshotSelectionWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE120000000000000008 /* ScreenshotSelectionWindow.swift */; };
+		C0FFEE130000000000000001 /* ScrollingScreenshotStitcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE130000000000000002 /* ScrollingScreenshotStitcher.swift */; };
 		C0FFEE120000000000000009 /* ScreenshotSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE12000000000000000A /* ScreenshotSelectionView.swift */; };
 		C0FFEE12000000000000000B /* ScreenshotElementDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0FFEE12000000000000000C /* ScreenshotElementDetection.swift */; };
 		AC1811180000000000000007 /* ScreenshotSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC1811180000000000000008 /* ScreenshotSelectionTests.swift */; };
@@ -347,6 +348,7 @@
 		AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotPreviewWindow.swift; sourceTree = "<group>"; };
 		AC1811180000000000000006 /* ScreenshotSelectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionController.swift; sourceTree = "<group>"; };
 		C0FFEE120000000000000008 /* ScreenshotSelectionWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionWindow.swift; sourceTree = "<group>"; };
+		C0FFEE130000000000000002 /* ScrollingScreenshotStitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollingScreenshotStitcher.swift; sourceTree = "<group>"; };
 		C0FFEE12000000000000000A /* ScreenshotSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionView.swift; sourceTree = "<group>"; };
 		C0FFEE12000000000000000C /* ScreenshotElementDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotElementDetection.swift; sourceTree = "<group>"; };
 		AC1811180000000000000008 /* ScreenshotSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotSelectionTests.swift; sourceTree = "<group>"; };
@@ -975,6 +977,7 @@
 				AC1811180000000000000004 /* ScreenshotPreviewWindow.swift */,
 				AC1811180000000000000006 /* ScreenshotSelectionController.swift */,
 				C0FFEE120000000000000008 /* ScreenshotSelectionWindow.swift */,
+				C0FFEE130000000000000002 /* ScrollingScreenshotStitcher.swift */,
 				C0FFEE12000000000000000A /* ScreenshotSelectionView.swift */,
 				C0FFEE12000000000000000C /* ScreenshotElementDetection.swift */,
 			2F5C8A04001A0F9D00BEEF00 /* PinnedScreenshotWindow.swift */,
@@ -1315,6 +1318,7 @@
 				AC1811180000000000000003 /* ScreenshotPreviewWindow.swift in Sources */,
 				AC1811180000000000000005 /* ScreenshotSelectionController.swift in Sources */,
 				C0FFEE120000000000000007 /* ScreenshotSelectionWindow.swift in Sources */,
+				C0FFEE130000000000000001 /* ScrollingScreenshotStitcher.swift in Sources */,
 				C0FFEE120000000000000009 /* ScreenshotSelectionView.swift in Sources */,
 				C0FFEE12000000000000000B /* ScreenshotElementDetection.swift in Sources */,
 				A601FB1F645F0D91D796D9CE /* PinnedScreenshotWindow.swift in Sources */,

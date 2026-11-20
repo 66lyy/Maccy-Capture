@@ -159,7 +159,9 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   nonisolated static func initialFrame(
     imageSize: NSSize, visibleFrame: NSRect, anchor: NSPoint, captureFrame: NSRect? = nil
   ) -> NSRect {
-    if let captureFrame { return captureFrame }
+    if let captureFrame, captureFrame.width <= visibleFrame.width, captureFrame.height <= visibleFrame.height {
+      return captureFrame
+    }
     guard imageSize.width.isFinite, imageSize.height.isFinite,
           imageSize.width > 0, imageSize.height > 0,
           visibleFrame.width > 0, visibleFrame.height > 0 else { return .zero }

@@ -64,6 +64,15 @@ Click the highlighted element to select it, or drag to select a free-form region
 Releasing the selection shows drawing, undo/redo, OCR, Cancel, Copy, Pin, and Save PNG on one toolbar.
 Click a drawing tool to start in the same selection, or press E to select the arrow.
 Move or resize the selection before choosing a tool.
+
+Before drawing, choose **Long Screenshot** to capture scrolling content in a region (not available in capture-and-pin).
+The selection becomes a live, click-through hole: scroll the underlying app with the wheel or trackpad.
+A separate glass panel shows the stitched thumbnail and pixel size. Enter / ⌘C copies, P pins,
+and Esc / ⌘W cancels. Captures run about every 150 ms, excluding all capture controls;
+unchanged, upward, blank, or unmatched frames do not extend the image. Sticky headers and footers
+are kept once. The normal selection timeout stops, but display-layout changes still cancel;
+capture pauses at the 100-million-pixel limit so you can copy or pin the result.
+
 Press Enter or ⌘C to copy, P to pin, or ⌘S to save; press Esc or ⌘W to cancel.
 Right-click cancels; while entering text, Esc first discards that text.
 The toolbar is placed below the image when space allows, above it near the screen edge,

@@ -186,3 +186,7 @@
 "AnnotationMagnification" = "倍数";
 "AnnotationToolsSection" = "标注工具";
 "AnnotationToolsHelp" = "拖动工具可调整标注工具条的顺序，关闭的工具不会显示在工具条中。";
+
+"ScreenshotLong" = "长截图";
+"ScreenshotLongHint" = "滚动内容以延长截图";
+"ScreenshotLongLimit" = "已达到截图尺寸上限";

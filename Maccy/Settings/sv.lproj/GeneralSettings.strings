@@ -17,8 +17,17 @@
 "NotificationsAndSounds" = "Notiser och ljud 􀱁";
 "PasteAutomatically" = "Klistra in automatiskt";
 "Pin" = "Fästa:";
-"Behavior" = "Beteende:";
 "PinTooltip" = "Kortkommando för att fästa historikpost .\nFörval: ⌥P.";
 "Modifiers" = "Anpassa beteendet vid val av post:\n• Välj med %@ nedtryckt för att kopiera posten.\n• Välj med %@ nedtryckt för att kopiera och klistra in posten.\n• Välj med %@ nedtryckt för att kopiera, rensa formatering och klistra in posten.";
 "Regex" = "Reguljära uttryck";
 "FormatJSON" = "Format JSON previews";
+
+"ScreenshotLong" = "Long Screenshot";
+"ScreenshotLongHint" = "Scroll the content to extend the screenshot";
+"ScreenshotLongLimit" = "Screenshot size limit reached";
+
+"AnnotationNumber" = "Number";
+"AnnotationMagnifier" = "Magnifier";
+"AnnotationMagnification" = "Zoom";
+"AnnotationToolsSection" = "Annotation Tools";
+"AnnotationToolsHelp" = "Drag tools to reorder the annotation toolbar. Tools that are switched off are hidden from it.";
