@@ -147,7 +147,7 @@ GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度
 `bash script/setup_release_signing.sh OWNER/REPO`，配置仓库 Actions Secret
 `MACCY_RELEASE_SIGNING_IDENTITY`。脚本提示的备份文件含有发布私钥，请离线妥善保管，不要分享。
 预览版和稳定版应共用该签名身份；更换证书会改变 macOS 识别到的身份。
-Secret 缺失时 CI 会发出警告并使用 ad-hoc 签名继续发布；已配置但无效时构建会失败。此 Secret 仅用于发布打包，
+Secret 缺失或无法使用时，CI 会发出警告并使用 ad-hoc 签名继续发布。此 Secret 仅用于发布打包，
 不传给 PR、Xcode 构建、测试或产物。
 
 `SPARKLE_PRIVATE_KEY` 独立配置，仅在打包完成后用于更新归档签名。正式对外分发需另行配置自己的

@@ -220,8 +220,8 @@ and run `bash script/setup_release_signing.sh OWNER/REPO`. It configures the
 `MACCY_RELEASE_SIGNING_IDENTITY` repository Actions Secret without using the local development certificate.
 Keep the backup file printed by the script offline and private: it contains the release signing key.
 Reuse this identity for both preview and stable packages; replacing it changes the identity
-that macOS uses to recognize the app. A missing secret warns in CI and publishes an ad-hoc build;
-an invalid configured secret fails the build. Only release packaging gets this secret; it is not passed to Xcode,
+that macOS uses to recognize the app. If the secret is missing or unusable, CI warns and publishes an ad-hoc build.
+Only release packaging gets this secret; it is not passed to Xcode,
 tests, pull requests, or package artifacts.
 
 `SPARKLE_PRIVATE_KEY` is separate and used only to authenticate update archives after packaging.

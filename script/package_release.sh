@@ -14,9 +14,6 @@ case "${1:-}" in
     release_signing_identity="${MACCY_RELEASE_SIGNING_IDENTITY:-}"
     if [[ -z "$release_signing_identity" ]]; then
       echo "::warning::MACCY_RELEASE_SIGNING_IDENTITY is missing; this release will use ad-hoc signing."
-    elif [[ "$release_signing_identity" != ?*:?* ]]; then
-      echo "MACCY_RELEASE_SIGNING_IDENTITY is malformed." >&2
-      exit 2
     fi
     ;;
   *) echo "Usage: $0 [--ci-sign]" >&2; exit 2 ;;
@@ -25,7 +22,47 @@ unset MACCY_RELEASE_SIGNING_IDENTITY
 
 sign_published_app() (
   umask 077
-  keychain_list="$(/usr/bin/security list-keychains -d user)"
+  fail_signing() {
+    printf 'Release signing failed: %s\n' "$1" >&2
+    exit 1
+  }
+
+  [[ "$release_signing_identity" == ?*:?* ]] || fail_signing "expected a password and a Base64 PKCS#12 payload."
+  p12_password="${release_signing_identity%%:*}"
+  encoded_identity="$(printf '%s' "${release_signing_identity#*:}" | LC_ALL=C tr -d '[:space:]')" ||
+    fail_signing "could not normalize the Base64 payload."
+  [[ "$encoded_identity" =~ ^[A-Za-z0-9+/]+={0,2}$ && $(("${#encoded_identity}" % 4)) -eq 0 ]] ||
+    fail_signing "the payload is not valid Base64."
+
+  signing_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/MaccyCaptureSigning.XXXXXX")" ||
+    fail_signing "could not create a private temporary directory."
+  signing_keychain="$signing_dir/signing.keychain-db"
+  identity_file="$signing_dir/identity.p12"
+  certificate_file="$signing_dir/certificate.pem"
+  restore_keychains=0
+  cleanup_signing() {
+    if [[ "$restore_keychains" -eq 1 ]]; then
+      /usr/bin/security list-keychains -d user -s "$@" ||
+        echo "::warning::Could not restore the original user keychain search list." >&2
+    fi
+    if [[ -f "$signing_keychain" ]]; then
+      /usr/bin/security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$signing_dir"
+  }
+  trap 'cleanup_signing "$@"' EXIT
+
+  printf '%s\n' "$encoded_identity" | fold -w 64 | /usr/bin/openssl base64 -d > "$identity_file" ||
+    fail_signing "could not decode the Base64 payload."
+  P12_PASSWORD="$p12_password" /usr/bin/openssl pkcs12 -in "$identity_file" -clcerts -nokeys \
+    -passin env:P12_PASSWORD -out "$certificate_file" 2>/dev/null ||
+    fail_signing "the decoded PKCS#12 identity or its password is invalid."
+  fingerprint="$(/usr/bin/openssl x509 -in "$certificate_file" -outform DER 2>/dev/null |
+    /usr/bin/shasum -a 1 | awk '{print toupper($1)}')" ||
+    fail_signing "could not read the signing certificate."
+
+  keychain_list="$(/usr/bin/security list-keychains -d user)" ||
+    fail_signing "could not read the user keychain search list."
   while IFS= read -r entry; do
     if [[ "$entry" == *\"*\" ]]; then
       entry="${entry#*\"}"
@@ -33,41 +70,30 @@ sign_published_app() (
     fi
   done <<< "$keychain_list"
 
-  signing_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/MaccyCaptureSigning.XXXXXX")"
-  signing_keychain="$signing_dir/signing.keychain-db"
-  identity_file="$signing_dir/identity.p12"
-  certificate_file="$signing_dir/certificate.pem"
-  cleanup_signing() {
-    local status=0
-    /usr/bin/security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
-    /usr/bin/security list-keychains -d user -s "$@" || status=$?
-    rm -rf "$signing_dir"
-    return "$status"
-  }
-  trap 'cleanup_signing "$@"' EXIT
-
-  p12_password="${release_signing_identity%%:*}"
-  printf '%s' "${release_signing_identity#*:}" | /usr/bin/base64 -D > "$identity_file"
-  P12_PASSWORD="$p12_password" /usr/bin/openssl pkcs12 -in "$identity_file" -clcerts -nokeys \
-    -passin env:P12_PASSWORD -out "$certificate_file"
-  fingerprint="$(/usr/bin/openssl x509 -in "$certificate_file" -outform DER |
-    /usr/bin/shasum -a 1 | awk '{print toupper($1)}')"
-
-  keychain_password="$(/usr/bin/openssl rand -base64 32)"
-  /usr/bin/security create-keychain -p "$keychain_password" "$signing_keychain"
-  /usr/bin/security unlock-keychain -p "$keychain_password" "$signing_keychain"
+  keychain_password="$(/usr/bin/openssl rand -base64 32)" ||
+    fail_signing "could not generate a temporary keychain password."
+  /usr/bin/security create-keychain -p "$keychain_password" "$signing_keychain" ||
+    fail_signing "could not create the temporary keychain."
+  /usr/bin/security unlock-keychain -p "$keychain_password" "$signing_keychain" ||
+    fail_signing "could not unlock the temporary keychain."
   /usr/bin/security import "$identity_file" -k "$signing_keychain" -t cert -f pkcs12 \
-    -P "$p12_password" -T /usr/bin/codesign
+    -P "$p12_password" -T /usr/bin/codesign ||
+    fail_signing "could not import the PKCS#12 identity."
   /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" \
-    "$signing_keychain" >/dev/null
+    "$signing_keychain" >/dev/null ||
+    fail_signing "could not grant codesign access to the temporary keychain."
 
   # codesign also needs the temporary keychain in the user search list.
-  /usr/bin/security list-keychains -d user -s "$signing_keychain" "$@"
+  restore_keychains=1
+  /usr/bin/security list-keychains -d user -s "$signing_keychain" "$@" ||
+    fail_signing "could not add the temporary keychain to the search list."
 
   requirement="identifier \"$BUNDLE_ID\" and certificate leaf = H\"$fingerprint\""
   codesign --force --sign "$fingerprint" --keychain "$signing_keychain" --timestamp=none \
-    --preserve-metadata=entitlements --requirements "=designated => $requirement" "$PACKAGED_APP"
-  codesign --verify --strict --all-architectures --test-requirement "=$requirement" "$PACKAGED_APP"
+    --preserve-metadata=entitlements --requirements "=designated => $requirement" "$PACKAGED_APP" ||
+    fail_signing "codesign could not use the configured certificate."
+  codesign --verify --deep --strict --all-architectures --test-requirement "=$requirement" "$PACKAGED_APP" ||
+    fail_signing "the resulting signature does not satisfy the certificate requirement."
 )
 
 mkdir -p "$DERIVED_DATA" "$DIST_DIR"
@@ -175,16 +201,18 @@ ditto "$WORKSPACE/LICENSE" "$APP_RESOURCES/LICENSE"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.md"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.zh-CN.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.zh-CN.md"
 ditto "$WORKSPACE/ThirdPartyLicenses" "$APP_RESOURCES/ThirdPartyLicenses"
-if [[ -n "$release_signing_identity" ]]; then
-  sign_published_app
-  unset release_signing_identity
+if [[ -n "$release_signing_identity" ]] && sign_published_app; then
   SIGNING_DESCRIPTION="fixed self-signed certificate; not Developer ID signed or notarized"
   SIGNING_NOTICE="The first update from an older signing identity may require granting screen recording permission again."
 else
+  if [[ -n "$release_signing_identity" ]]; then
+    echo "::warning::MACCY_RELEASE_SIGNING_IDENTITY is unusable; this release will use ad-hoc signing."
+  fi
   codesign --force --sign - --timestamp=none --preserve-metadata=entitlements,flags "$PACKAGED_APP"
   SIGNING_DESCRIPTION="ad-hoc; not Developer ID signed or notarized"
   SIGNING_NOTICE="Updates from ad-hoc builds may require granting screen recording permission again."
 fi
+unset release_signing_identity
 codesign --verify --deep --strict "$PACKAGED_APP"
 printf 'Release app signing: %s\n' "$SIGNING_DESCRIPTION"
 ditto -c -k --sequesterRsrc \
