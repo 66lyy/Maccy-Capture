@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ 푸터가 숨겨져 있을 때 설정을 열려면 ⌘, (command+comma)를 누르세요.";
 "ShowHexColorSwatch" = "16진수 색상 견본 표시";
 "ShowHexColorSwatchTooltip" = "16진수 색상 코드 옆에 색상 견본을 표시합니다.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

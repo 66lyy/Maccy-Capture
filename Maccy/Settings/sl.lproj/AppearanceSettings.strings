@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Pritisnite ⌘, (command+comma) da odprete nastavitve, ko je noga skrita.";
 "ShowHexColorSwatch" = "Prikaži vzorec hex barve";
 "ShowHexColorSwatchTooltip" = "Prikaži barvni vzorec ob hex barvnih kodah.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

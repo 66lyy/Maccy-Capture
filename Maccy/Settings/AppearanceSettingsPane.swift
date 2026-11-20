@@ -16,6 +16,8 @@ struct AppearanceSettingsPane: View {
   @Default(.searchVisibility) private var searchVisibility
   @Default(.showFooter) private var showFooter
   @Default(.windowPosition) private var windowPosition
+  @Default(.glassTransparency) private var glassTransparency
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   @State private var screens = NSScreen.screens
 
@@ -38,6 +40,9 @@ struct AppearanceSettingsPane: View {
       placement
       previews
       interface
+      if #available(macOS 26.0, *) {
+        glass
+      }
     }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
       screens = NSScreen.screens
@@ -194,6 +199,30 @@ struct AppearanceSettingsPane: View {
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
           .padding(.bottom, 10)
+      }
+    }
+  }
+
+  private var glass: some View {
+    PreferencesGroup(title: label("GlassSection"), symbol: "drop") {
+      PreferencesRow(title: label("GlassTransparency")) {
+        HStack(spacing: 12) {
+          Slider(value: $glassTransparency, in: LiquidGlass.transparencyRange, step: 0.1)
+            .frame(width: 150)
+            .accessibilityLabel(label("GlassTransparency"))
+          Text(glassTransparency, format: .percent.precision(.fractionLength(0)))
+            .monospacedDigit()
+            .frame(width: 40, alignment: .trailing)
+          Button {
+            glassTransparency = LiquidGlass.defaultTransparency
+          } label: {
+            label("GlassTransparencyReset")
+          }
+          .fixedSize()
+          .disabled(glassTransparency == LiquidGlass.defaultTransparency)
+        }
+        .disabled(reduceTransparency)
+        .help(label(reduceTransparency ? "GlassTransparencyReduceTransparency" : "GlassTransparencyTooltip"))
       }
     }
   }

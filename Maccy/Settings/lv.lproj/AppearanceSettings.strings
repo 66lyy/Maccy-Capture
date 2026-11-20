@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Nospiediet taustiņu ⌘, (command+comma) lai atvērtu preferences, ja kājene ir paslēpta.";
 "ShowHexColorSwatch" = "Rādīt heksadecimālās krāsas paraugu";
 "ShowHexColorSwatchTooltip" = "Rādīt krāsas paraugu blakus heksadecimālajiem krāsu kodiem.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

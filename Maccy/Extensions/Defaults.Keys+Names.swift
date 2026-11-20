@@ -79,4 +79,5 @@ nonisolated extension Defaults.Keys {
   static let showApplicationIcons = Key<Bool>("showApplicationIcons", default: false, suite: preferencesSuite)
   static let showHexColorSwatch = Key<Bool>("showHexColorSwatch", default: true, suite: preferencesSuite)
   static let previewWidth = Key<CGFloat>("previewWidth", default: 400, suite: preferencesSuite)
+  static let glassTransparency = Key<Double>("glassTransparency", default: 0.5, suite: preferencesSuite)
 }

@@ -41,3 +41,8 @@
 "OpenPreferencesWarning" = "⚠️ 隐藏底部菜单时仍可按 ⌘, (command+comma) 打开偏好设置。";
 "ShowHexColorSwatch" = "显示十六进制颜色色块";
 "ShowHexColorSwatchTooltip" = "在十六进制颜色代码旁边显示颜色色块。";
+"GlassSection" = "液态玻璃";
+"GlassTransparency" = "玻璃透明度：";
+"GlassTransparencyReset" = "重置";
+"GlassTransparencyTooltip" = "数值越高越透明，越低玻璃越暗。\n默认：50%。";
+"GlassTransparencyReduceTransparency" = "辅助功能中开启“降低透明度”时不可用。";

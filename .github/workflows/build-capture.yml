@@ -75,6 +75,7 @@ jobs:
             -skipMacroValidation \
             -only-testing:MaccyTests/AppIdentityTests \
             -only-testing:MaccyTests/JSONFormatterTests \
+            -only-testing:MaccyTests/LiquidGlassTests \
             -only-testing:MaccyTests/SoftwareUpdaterTests \
             -only-testing:MaccyTests/AppLanguageTests \
             -only-testing:MaccyTests/ScreenshotCaptureTests \

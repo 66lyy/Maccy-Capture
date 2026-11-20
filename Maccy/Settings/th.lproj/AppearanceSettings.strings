@@ -36,3 +36,8 @@
 "ShowApplicationIcons" = "แสดงไอคอนแอปพลิเคชั่น";
 "ShowHexColorSwatch" = "แสดงตัวอย่างสีเลขฐานสิบหก";
 "ShowHexColorSwatchTooltip" = "แสดงตัวอย่างสีถัดจากรหัสสีเลขฐานสิบหก";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

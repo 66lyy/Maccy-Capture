@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "";
 "ShowHexColorSwatch" = "Mostra la mostra de color hexadecimal";
 "ShowHexColorSwatchTooltip" = "Mostra la mostra de color al costat dels codis de color hexadecimals.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

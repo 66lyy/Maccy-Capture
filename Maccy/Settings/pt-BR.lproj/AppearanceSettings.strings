@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Pressione ⌘, (command+comma) para abrir as preferências quando o rodapé estiver oculto.";
 "ShowHexColorSwatch" = "Mostrar amostra de cor hexadecimal";
 "ShowHexColorSwatchTooltip" = "Mostrar amostra de cor ao lado dos códigos de cor hexadecimais.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

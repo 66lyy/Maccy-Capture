@@ -36,3 +36,8 @@
 "OpenPreviewAutomatically" = "បើកការមើលមុនដោយស្វ័យប្រវត្តិ";
 "ShowHexColorSwatch" = "បង្ហាញគំរូពណ៌ Hex";
 "ShowHexColorSwatchTooltip" = "បង្ហាញគំរូពណ៌នៅក្បែរកូដពណ៌ Hex។";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

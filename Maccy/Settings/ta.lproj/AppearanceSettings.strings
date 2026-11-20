@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "";
 "ShowHexColorSwatch" = "ஹெக்ஸ் நிற மாதிரி காட்டு";
 "ShowHexColorSwatchTooltip" = "ஹெக்ஸ் நிறக் குறியீடுகளுக்கு அருகில் நிற மாதிரியைக் காட்டு.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

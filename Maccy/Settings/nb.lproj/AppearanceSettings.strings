@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Trykk ⌘, (command+comma) for å åpne valg når bunntekst er skjult.";
 "ShowHexColorSwatch" = "Vis heksadesimal fargeprøve";
 "ShowHexColorSwatchTooltip" = "Vis fargeprøve ved siden av heksadesimale fargekoder.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

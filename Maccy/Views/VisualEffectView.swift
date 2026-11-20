@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 enum LiquidGlass {
@@ -13,11 +14,47 @@ enum LiquidGlass {
       : NSColor.white.withAlphaComponent(0.6)
   }
 
+  // `glassTransparency` setting: 0 is the most dimmed, 1 removes the dimming, the default keeps the standard look.
+  static let defaultTransparency = 0.5
+  static let transparencyRange: ClosedRange<Double> = 0...1
+
+  static func dimmingAlpha(transparency: Double, dark: Bool) -> CGFloat {
+    let standard: CGFloat = dark ? 0.22 : 0.18
+    let strongest: CGFloat = 0.6
+    let value = CGFloat(min(max(transparency, transparencyRange.lowerBound), transparencyRange.upperBound))
+    let middle = CGFloat(defaultTransparency)
+    if value >= middle {
+      return standard * (1 - value) / (1 - middle)
+    }
+    return standard + (strongest - standard) * (middle - value) / middle
+  }
+
   // Light dimming laid over clear glass so text stays readable on busy backgrounds.
-  static let clearDimming = NSColor(name: nil) { appearance in
-    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-      ? NSColor.black.withAlphaComponent(0.22)
-      : NSColor.white.withAlphaComponent(0.18)
+  static func clearDimming(transparency: Double) -> NSColor {
+    NSColor(name: nil) { appearance in
+      let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      return (dark ? NSColor.black : NSColor.white)
+        .withAlphaComponent(dimmingAlpha(transparency: transparency, dark: dark))
+    }
+  }
+
+  static var clearDimming: NSColor {
+    clearDimming(transparency: Defaults[.glassTransparency])
+  }
+}
+
+extension LiquidGlass {
+  // Keeps a clear glass view's dimming in sync with the setting for as long as `owner` lives.
+  @available(macOS 26.0, *)
+  @MainActor
+  static func followDimming(of glass: NSGlassEffectView, owner: AnyObject) {
+    Defaults.observe(.glassTransparency, options: []) { [weak glass] change in
+      let transparency = change.newValue
+      Task { @MainActor in
+        glass?.tintColor = clearDimming(transparency: transparency)
+      }
+    }
+    .tieToLifetime(of: owner)
   }
 }
 
@@ -34,6 +71,7 @@ struct GlassEffectView: NSViewRepresentable {
 @MainActor
 class GlassSurfaceView: NSView {
   let controlsView: NSView
+  private var followsDimming = false
 
   convenience override init(frame: NSRect) {
     self.init(frame: frame, cornerRadius: 14)
@@ -58,6 +96,7 @@ class GlassSurfaceView: NSView {
       glass.contentView = controls
       controlsView = controls
       effectView = glass
+      followsDimming = tintColor == nil && !reduceTransparency
     } else {
       let blur = NSVisualEffectView(frame: surfaceBounds)
       blur.material = .popover
@@ -75,6 +114,9 @@ class GlassSurfaceView: NSView {
     super.init(frame: frame)
     effectView.autoresizingMask = [.width, .height]
     addSubview(effectView)
+    if followsDimming, #available(macOS 26.0, *), let glass = effectView as? NSGlassEffectView {
+      LiquidGlass.followDimming(of: glass, owner: self)
+    }
   }
 
   required init?(coder: NSCoder) { nil }

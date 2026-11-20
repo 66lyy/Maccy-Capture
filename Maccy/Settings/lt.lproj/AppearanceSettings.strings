@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Paspauskite ⌘, (command+comma) norėdami atidaryti nustatymus, kai paraštė yra paslėpta.";
 "ShowHexColorSwatch" = "Rodyti šešioliktainės spalvos pavyzdį";
 "ShowHexColorSwatchTooltip" = "Rodyti spalvos pavyzdį šalia šešioliktainių spalvų kodų.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

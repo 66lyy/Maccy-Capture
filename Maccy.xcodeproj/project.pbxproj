@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		F1404A720000000000000001 /* JSONFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1404A720000000000000002 /* JSONFormatter.swift */; };
 		F1404A720000000000000003 /* JSONFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1404A720000000000000004 /* JSONFormatterTests.swift */; };
+		F1404A720000000000000005 /* LiquidGlassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1404A720000000000000006 /* LiquidGlassTests.swift */; };
 		B9ACD419E2F67A01C5D86001 /* RepositoryUpdateFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */; };
 		B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */; };
 		B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */; };
@@ -226,6 +227,7 @@
 /* Begin PBXFileReference section */
 		F1404A720000000000000002 /* JSONFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFormatter.swift; sourceTree = "<group>"; };
 		F1404A720000000000000004 /* JSONFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONFormatterTests.swift; sourceTree = "<group>"; };
+		F1404A720000000000000006 /* LiquidGlassTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlassTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D86002 /* RepositoryUpdateFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryUpdateFeed.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftwareUpdaterTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAnnotationDocument.swift; sourceTree = "<group>"; };
@@ -846,6 +848,7 @@
 				AC1811180000000000000008 /* ScreenshotSelectionTests.swift */,
 				B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */,
 				F1404A720000000000000004 /* JSONFormatterTests.swift */,
+				F1404A720000000000000006 /* LiquidGlassTests.swift */,
 				B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */,
 				B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */,
 				B9ACD419E2F67A01C5D85008 /* ScreenshotAnnotationTests.swift */,
@@ -1219,6 +1222,7 @@
 				4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */,
 				B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */,
 				F1404A720000000000000003 /* JSONFormatterTests.swift in Sources */,
+				F1404A720000000000000005 /* LiquidGlassTests.swift in Sources */,
 				B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */,
 				B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */,
 				B9ACD419E2F67A01C5D85007 /* ScreenshotAnnotationTests.swift in Sources */,

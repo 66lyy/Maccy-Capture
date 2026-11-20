@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Presionar ⌘, (command+comma) para abrir las preferencias cuando el footer esté oculto.";
 "ShowHexColorSwatch" = "Mostrar muestra de color hexadecimal";
 "ShowHexColorSwatchTooltip" = "Mostrar muestra de color junto a los códigos de color hexadecimales.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

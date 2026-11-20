@@ -41,3 +41,8 @@
 "ShowHexColorSwatchTooltip" = "Show color swatch next to hex color codes.";
 "ShowFooter" = "Show footer";
 "OpenPreferencesWarning" = "⚠️ Press ⌘, (command+comma) to open preferences when footer is hidden.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

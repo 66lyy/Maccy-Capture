@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "";
 "ShowHexColorSwatch" = "হেক্স রঙের নমুনা দেখান";
 "ShowHexColorSwatchTooltip" = "হেক্স রঙ কোডের পাশে রঙের নমুনা দেখান।";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

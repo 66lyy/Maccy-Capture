@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ フッターが隠されている時に設定を開くには⌘, (command+comma)を押してください。";
 "ShowHexColorSwatch" = "16進カラースウォッチを表示";
 "ShowHexColorSwatchTooltip" = "16進カラーコードの横にカラースウォッチを表示します。";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";

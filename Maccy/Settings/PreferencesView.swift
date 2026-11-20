@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 @MainActor
@@ -22,6 +23,7 @@ final class PreferencesWindowController: NSWindowController {
       let glass = NSGlassEffectView(frame: contentRect)
       glass.style = .clear
       glass.tintColor = LiquidGlass.clearDimming
+      LiquidGlass.followDimming(of: glass, owner: window)
       let content = NSView(frame: contentRect)
       content.autoresizingMask = [.width, .height]
       glass.contentView = content
@@ -240,6 +242,7 @@ extension View {
 
 private struct PreferencesGlassSurface: ViewModifier {
   let radius: CGFloat
+  @Default(.glassTransparency) private var glassTransparency
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorScheme) private var colorScheme
 
@@ -249,7 +252,7 @@ private struct PreferencesGlassSurface: ViewModifier {
       if reduceTransparency {
         content.background(Color(nsColor: .controlBackgroundColor), in: shape)
       } else if #available(macOS 26.0, *) {
-        content.glassEffect(.clear.tint(Color(nsColor: LiquidGlass.clearDimming)), in: shape)
+        content.glassEffect(.clear.tint(Color(nsColor: LiquidGlass.clearDimming(transparency: glassTransparency))), in: shape)
       } else {
         content.background(.regularMaterial, in: shape)
       }

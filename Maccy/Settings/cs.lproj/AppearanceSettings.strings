@@ -36,3 +36,8 @@
 "OpenPreferencesWarning" = "⚠️ Stiskni ⌘, (command+comma) pro otevření předvoleb, když je skrytá patička.";
 "ShowHexColorSwatch" = "Zobrazit vzorek hex barvy";
 "ShowHexColorSwatchTooltip" = "Zobrazit barevný vzorek vedle hex kódů barev.";
+"GlassSection" = "Liquid Glass";
+"GlassTransparency" = "Glass transparency:";
+"GlassTransparencyReset" = "Reset";
+"GlassTransparencyTooltip" = "Higher is more see-through, lower dims the glass more.\nDefault: 50%.";
+"GlassTransparencyReduceTransparency" = "Unavailable while Reduce Transparency is on in Accessibility settings.";
