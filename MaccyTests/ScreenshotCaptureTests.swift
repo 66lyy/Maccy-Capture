@@ -304,8 +304,53 @@ struct ScreenshotCaptureTests {
       anchor: NSPoint(x: -1, y: -1)
     )
     #expect(screen.contains(frame))
-    #expect(frame.width <= screen.width * 0.7)
+    #expect(frame.width <= screen.width)
     #expect(abs(frame.width / frame.height - 2) < 0.001)
+  }
+
+  @Test("Capture pins preserve their screen rectangle regardless of pixel density", arguments: [CGFloat(1), CGFloat(2)])
+  func capturePinPointSize(scale: CGFloat) {
+    let capture = NSRect(x: -1800, y: -900, width: 1500, height: 900)
+    let frame = PinnedScreenshotWindow.initialFrame(
+      imageSize: NSSize(width: capture.width * scale, height: capture.height * scale),
+      visibleFrame: NSRect(x: -1920, y: -1080, width: 1920, height: 1040),
+      anchor: NSPoint(x: capture.midX, y: capture.midY), captureFrame: capture
+    )
+    #expect(frame == capture)
+  }
+
+  @Test("Clipboard pins use representation point size rather than bitmap pixels")
+  func clipboardPinPointSize() throws {
+    let bitmap = try #require(NSBitmapImageRep(data: generatedPNG()))
+    bitmap.size = NSSize(width: 4, height: 4)
+    let image = NSImage(size: .zero)
+    image.addRepresentation(bitmap)
+    let frame = PinnedScreenshotWindow.initialFrame(
+      imageSize: image.size, visibleFrame: NSRect(x: 0, y: 0, width: 100, height: 100),
+      anchor: NSPoint(x: 99, y: 99)
+    )
+    #expect(frame == NSRect(x: 96, y: 96, width: 4, height: 4))
+  }
+
+  @Test("Clipboard pins only shrink when their point size exceeds the visible screen")
+  func clipboardPinFitsScreen() {
+    let screen = NSRect(x: -100, y: 0, width: 100, height: 100)
+    for width: CGFloat in [80, 200] {
+      let frame = PinnedScreenshotWindow.initialFrame(
+        imageSize: NSSize(width: width, height: width / 2), visibleFrame: screen, anchor: .zero
+      )
+      #expect(frame.size == NSSize(width: min(width, 100), height: min(width, 100) / 2))
+      #expect(screen.contains(frame))
+    }
+  }
+
+  @Test("Invalid clipboard image sizes produce no frame", arguments: [
+    NSSize.zero, NSSize(width: -1, height: 100), NSSize(width: CGFloat.infinity, height: 100)
+  ])
+  func invalidPinPointSize(size: NSSize) {
+    #expect(PinnedScreenshotWindow.initialFrame(
+      imageSize: size, visibleFrame: NSRect(x: 0, y: 0, width: 100, height: 100), anchor: .zero
+    ) == .zero)
   }
 
   @Test("A pinned image has an exit path and close cleanup runs only once")

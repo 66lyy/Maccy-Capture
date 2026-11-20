@@ -12,8 +12,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   private var imageScale: CGFloat
   private var isApplyingZoom = false
 
-  init(image: NSImage, visibleFrame: NSRect, anchor: NSPoint) {
-    let initialFrame = Self.initialFrame(imageSize: image.size, visibleFrame: visibleFrame, anchor: anchor)
+  init(image: NSImage, visibleFrame: NSRect, anchor: NSPoint, captureFrame: NSRect? = nil) {
+    let initialFrame = Self.initialFrame(
+      imageSize: image.size, visibleFrame: visibleFrame, anchor: anchor, captureFrame: captureFrame
+    )
     self.image = image
     initialVisibleFrame = visibleFrame
     imageScale = min(initialFrame.width / image.size.width, initialFrame.height / image.size.height)
@@ -154,10 +156,14 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
   }
 
-  static func initialFrame(imageSize: NSSize, visibleFrame: NSRect, anchor: NSPoint) -> NSRect {
-    guard imageSize.width > 0, imageSize.height > 0,
+  nonisolated static func initialFrame(
+    imageSize: NSSize, visibleFrame: NSRect, anchor: NSPoint, captureFrame: NSRect? = nil
+  ) -> NSRect {
+    if let captureFrame { return captureFrame }
+    guard imageSize.width.isFinite, imageSize.height.isFinite,
+          imageSize.width > 0, imageSize.height > 0,
           visibleFrame.width > 0, visibleFrame.height > 0 else { return .zero }
-    let scale = min(1, visibleFrame.width * 0.7 / imageSize.width, visibleFrame.height * 0.7 / imageSize.height)
+    let scale = min(1, visibleFrame.width / imageSize.width, visibleFrame.height / imageSize.height)
     let size = NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
     return NSRect(
       x: max(visibleFrame.minX, min(anchor.x - size.width / 2, visibleFrame.maxX - size.width)),

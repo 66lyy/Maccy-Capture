@@ -135,7 +135,6 @@ final class ScreenshotCapture {
         try await Task.sleep(for: .milliseconds(180))
         let result: ScreenshotCaptureSession.ValidatedImage
         var shouldPin = pinToScreen
-        var pinAnchor: NSPoint?
         let shouldAnnotate: Bool
         var imageFrame: NSRect?
         switch mode {
@@ -147,7 +146,6 @@ final class ScreenshotCapture {
           guard let selection = try await selectionController.select(pinImmediately: pinToScreen) else { return }
           shouldPin = selection.pinToScreen
           shouldAnnotate = false
-          pinAnchor = selection.anchor
           imageFrame = selection.screenRect
           if let rendered = selection.renderedData {
             result = try await Task.detached(priority: .userInitiated) {
@@ -160,13 +158,13 @@ final class ScreenshotCapture {
         }
         try Task.checkCancellation()
         let data = result.data
-        let image = NSImage(cgImage: result.image, size: .zero)
+        let image = NSImage(cgImage: result.image, size: imageFrame?.size ?? .zero)
         if shouldAnnotate {
           annotateImage(image, imageFrame: imageFrame, originalWasCopied: false)
         } else {
           try deliverScreenshot(data) {
             if shouldPin {
-              pinImage(image, anchor: pinAnchor)
+              pinImage(image, imageFrame: imageFrame)
             } else {
               showPreview(image, imageFrame: imageFrame)
             }
@@ -215,7 +213,7 @@ final class ScreenshotCapture {
     try History.shared.insertIntoStorage(item)
   }
 
-  private func pinImage(_ image: NSImage, anchor: NSPoint? = nil) {
+  private func pinImage(_ image: NSImage, imageFrame: NSRect? = nil) {
     guard let bytes = PinnedImageBudget.estimatedBytes(for: image) else {
       showError("PinnedImageTooLarge")
       return
@@ -224,13 +222,15 @@ final class ScreenshotCapture {
       showError("PinnedImageMemoryLimit")
       return
     }
-    let pointer = anchor ?? NSEvent.mouseLocation
+    let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
     guard let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main else {
       return
     }
     let identifier = UUID()
     guard pinnedImageBudget.add(identifier, bytes: bytes) else { return }
-    let window = PinnedScreenshotWindow(image: image, visibleFrame: screen.visibleFrame, anchor: pointer)
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: screen.visibleFrame, anchor: pointer, captureFrame: imageFrame
+    )
     let sourceID = ObjectIdentifier(window)
     window.onAnnotate = { [weak self, weak window] image in
       guard let window else { return }
@@ -262,7 +262,7 @@ final class ScreenshotCapture {
       image: image, visibleFrame: screen.visibleFrame,
       onAnnotate: { [weak self] in self?.annotateImage(image, imageFrame: imageFrame) }
     ) {
-      [weak self] in self?.pinImage(image, anchor: pointer)
+      [weak self] in self?.pinImage(image, imageFrame: imageFrame)
     }
     window.onClose = { [weak self] in
       self?.previewWindow = nil
@@ -311,7 +311,7 @@ final class ScreenshotCapture {
       case .pin:
         guard let data else { throw CancellationError() }
         try deliverScreenshot(data) {
-          pinImage(rendered, anchor: anchor)
+          pinImage(rendered, imageFrame: targetFrame)
         }
       case .apply:
         source?.replaceImage(rendered)
