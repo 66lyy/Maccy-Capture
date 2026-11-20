@@ -298,8 +298,8 @@ Do not rotate it casually: already-installed clients trust the original public k
 The existing `Maccy Capture Local Signing` certificate and private key stay on the local Mac.
 Update authentication is separate from application code signing and notarization.
 
-CI assigns `CFBundleVersion` as `1000 + GITHUB_RUN_NUMBER`, followed by the run attempt.
-For example `1042.1` and `1042.2` are different upgradable builds even when the marketing version remains `2.8.0`.
+CI assigns `CFBundleVersion` as `1100 + GITHUB_RUN_NUMBER`, followed by the run attempt (the offset is 1100 so builds of the re-created repository stay above earlier builds, up to 1058).
+For example `1142.1` and `1142.2` are different upgradable builds even when the marketing version remains `2.8.0`.
 Local developer builds default to build `1000`; `MACCY_BUILD_VERSION` can override packaged build numbers.
 Keep the workflow's build counter monotonic; do not reset it or reuse the same version for different archives.
 The unsigned legacy upstream `appcast.xml` is not used by this modified app.

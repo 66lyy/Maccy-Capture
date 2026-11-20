@@ -209,7 +209,7 @@ Info.plist 固定 `SUPublicEDKey` 并启用 `SUVerifyUpdateBeforeExtraction`，
 不要随意轮换：已安装的客户端信任旧公钥。原有 `Maccy Capture Local Signing` 证书及私钥只留本机。
 更新包验签不等于 Developer ID 签名或公证，代码签名变化仍可能触发录屏重新授权。
 
-CI 构建号使用 `1000 + GITHUB_RUN_NUMBER`，再加运行尝试次数，如 `1042.1`、`1042.2`。
+CI 构建号使用 `1100 + GITHUB_RUN_NUMBER`，再加运行尝试次数，如 `1142.1`、`1142.2`（仓库重建后计数归零，偏移改为 1100，以高于此前最高的 1058）。
 即使展示版本同为 `2.8.0`，也能检测后续构建。请保持该工作流计数递增，不重置计数或复用构建号。
 本地开发默认构建号为 `1000`，打包时可用 `MACCY_BUILD_VERSION` 覆盖。
 保留的上游 `appcast.xml` 不作为修改版更新源；不带本更新器的旧客户端需先手动安装一次。

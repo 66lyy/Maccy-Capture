@@ -51,7 +51,7 @@ jobs:
         run: |
           echo "MACCY_DERIVED_DATA=$RUNNER_TEMP/MaccyCaptureDerivedData" >> "$GITHUB_ENV"
           echo "MACCY_DIST_DIR=$RUNNER_TEMP/MaccyCapture-dist" >> "$GITHUB_ENV"
-          echo "MACCY_BUILD_VERSION=$((1000 + GITHUB_RUN_NUMBER)).$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          echo "MACCY_BUILD_VERSION=$((1100 + GITHUB_RUN_NUMBER)).$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
 
       - name: Validate update scripts and synthetic feed generation
         run: |
