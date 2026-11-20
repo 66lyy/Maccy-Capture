@@ -441,7 +441,7 @@ private final class GlassSelectionLabel: GlassSurfaceView {
 
   init() {
     super.init(frame: .zero, cornerRadius: 12)
-    label.font = .systemFont(ofSize: 13, weight: .medium)
+    label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
     label.lineBreakMode = .byTruncatingTail
     controlsView.addSubview(label)
   }
@@ -451,13 +451,14 @@ private final class GlassSelectionLabel: GlassSurfaceView {
 
   func update(_ text: String, near point: NSPoint, in bounds: NSRect) {
     if label.stringValue != text { label.stringValue = text }
-    let size = NSSize(width: min(label.intrinsicContentSize.width + 20, max(0, bounds.width - 16)),
-                      height: label.intrinsicContentSize.height + 10)
+    let textSize = label.cell?.cellSize ?? label.intrinsicContentSize
+    let size = NSSize(width: min(ceil(textSize.width) + 24, max(0, bounds.width - 16)),
+                      height: ceil(textSize.height) + 10)
     frame = NSRect(
       x: max(bounds.minX + 8, min(point.x, bounds.maxX - size.width - 8)),
       y: max(bounds.minY + 8, min(point.y, bounds.maxY - size.height - 8)),
       width: size.width, height: size.height
     )
-    label.frame = NSRect(origin: .zero, size: size).insetBy(dx: 10, dy: 5)
+    label.frame = NSRect(origin: .zero, size: size).insetBy(dx: 10, dy: 5).integral
   }
 }
