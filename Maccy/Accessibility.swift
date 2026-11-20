@@ -7,5 +7,11 @@ struct Accessibility {
     guard !allowed else {
       return
     }
+
+    // Show the system prompt async to allow the popup to close first.
+    DispatchQueue.main.async {
+      let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+      _ = AXIsProcessTrustedWithOptions(options)
+    }
   }
 }
