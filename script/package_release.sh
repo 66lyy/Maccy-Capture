@@ -27,12 +27,28 @@ sign_published_app() (
     exit 1
   }
 
+  # Describes why the payload was rejected without printing any of its characters.
+  describe_payload() {
+    local value="$1" payload="$2" stripped
+    printf 'Signing identity value: %d characters, %d colon(s); payload after the first colon: %d characters without whitespace (length %% 4 = %d).\n' \
+      "${#value}" "$(printf '%s' "$value" | LC_ALL=C tr -cd ':' | wc -c)" "${#payload}" "$(( ${#payload} % 4 ))"
+    stripped="${payload%%=}"; stripped="${stripped%%=}"
+    printf 'Characters outside A-Z a-z 0-9 + /: %d; of these, URL-safe "-" or "_": %d, quotes: %d, "=" before the end: %d, ":": %d.\n' \
+      "$(printf '%s' "$stripped" | LC_ALL=C tr -d 'A-Za-z0-9+/' | wc -c)" \
+      "$(printf '%s' "$stripped" | LC_ALL=C tr -cd '_-' | wc -c)" \
+      "$(printf '%s' "$stripped" | LC_ALL=C tr -cd "\"'" | wc -c)" \
+      "$(printf '%s' "$stripped" | LC_ALL=C tr -cd '=' | wc -c)" \
+      "$(printf '%s' "$stripped" | LC_ALL=C tr -cd ':' | wc -c)"
+  }
+
   [[ "$release_signing_identity" == ?*:?* ]] || fail_signing "expected a password and a Base64 PKCS#12 payload."
   p12_password="${release_signing_identity%%:*}"
   encoded_identity="$(printf '%s' "${release_signing_identity#*:}" | LC_ALL=C tr -d '[:space:]')" ||
     fail_signing "could not normalize the Base64 payload."
-  [[ "$encoded_identity" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] && (( ${#encoded_identity} % 4 == 0 )) ||
+  if [[ ! "$encoded_identity" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || (( ${#encoded_identity} % 4 != 0 )); then
+    describe_payload "$release_signing_identity" "$encoded_identity" >&2
     fail_signing "the payload is not valid Base64."
+  fi
 
   signing_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/MaccyCaptureSigning.XXXXXX")" ||
     fail_signing "could not create a private temporary directory."

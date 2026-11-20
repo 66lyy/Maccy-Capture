@@ -13,17 +13,32 @@ if [[ "${#PACKAGES[@]}" -ne 1 ]]; then
   echo "Expected exactly one update archive for the built revision." >&2
   exit 2
 fi
+PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print SUPublicEDKey' "$APP/Contents/Info.plist")"
 if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
-  SIGNATURE="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - -p "${PACKAGES[0]}")"
+  KEY_PUBLIC_KEY="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | xcrun swift "$PROJECT_ROOT/script/describe_update_key.swift")" || {
+    echo "::error::SPARKLE_PRIVATE_KEY is not a usable Sparkle private key (reason above)."
+    exit 1
+  }
+  if [[ "$KEY_PUBLIC_KEY" != "$PUBLIC_KEY" ]]; then
+    echo "::error::SPARKLE_PRIVATE_KEY does not match the app's public key. Public key of SPARKLE_PRIVATE_KEY: $KEY_PUBLIC_KEY; SUPublicEDKey built into the app: $PUBLIC_KEY"
+    exit 1
+  fi
+  echo "SPARKLE_PRIVATE_KEY matches the app's public key $PUBLIC_KEY."
+  SIGNATURE="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - -p "${PACKAGES[0]}")" || {
+    echo "::error::sign_update could not sign the update archive with SPARKLE_PRIVATE_KEY."
+    exit 1
+  }
 elif [[ "${GITHUB_ACTIONS:-}" != true && -n "${MACCY_UPDATE_SIGNING_ACCOUNT:-}" ]]; then
   SIGNATURE="$("$SIGN_UPDATE" --account "$MACCY_UPDATE_SIGNING_ACCOUNT" -p "${PACKAGES[0]}")"
 else
   echo "A dedicated update-signing key is required; unsigned updates cannot be published." >&2
   exit 2
 fi
-PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c 'Print SUPublicEDKey' "$APP/Contents/Info.plist")"
 env -u SPARKLE_PRIVATE_KEY xcrun swift "$PROJECT_ROOT/script/verify_update_signature.swift" \
-  "$PUBLIC_KEY" "${PACKAGES[0]}" "$SIGNATURE"
+  "$PUBLIC_KEY" "${PACKAGES[0]}" "$SIGNATURE" || {
+  echo "::error::The update archive signature does not verify against the app's public key."
+  exit 1
+}
 env -u SPARKLE_PRIVATE_KEY python3 "$PROJECT_ROOT/script/generate_update_feed.py" metadata \
   --archive "${PACKAGES[0]}" --app "$APP" --signature "$SIGNATURE" --revision "$REVISION" \
   --output "$MACCY_DIST_DIR/UPDATE-METADATA.json"
