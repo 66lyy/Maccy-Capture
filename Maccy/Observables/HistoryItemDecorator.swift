@@ -41,15 +41,27 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     return url.deletingPathExtension().lastPathComponent
   }
 
-  var hasImage: Bool { item.image != nil }
+  var hasImage: Bool { item.imageData != nil }
   var hasFileURLs: Bool { !item.fileURLs.isEmpty }
   var hasPlainText: Bool { item.text != nil }
-  var hasRichText: Bool { item.rtf != nil || item.html != nil }
+  var hasRichText: Bool { item.rtfData != nil || item.htmlData != nil }
 
   var previewImageGenerationTask: Task<(), Error>?
   var thumbnailImageGenerationTask: Task<(), Error>?
   var previewImage: NSImage?
-  private(set) var previewText = SizedString("")
+  private(set) var cachedPreviewText: SizedString?
+  var previewText: SizedString {
+    if let cachedPreviewText { return cachedPreviewText }
+    let text = withObservationTracking {
+      SizedString(item.previewableText, maxParagraphBytes: Self.previewMaxParagraphSize)
+    } onChange: { [weak self] in
+      DispatchQueue.main.async { [weak self] in
+        self?.cachedPreviewText = nil
+      }
+    }
+    cachedPreviewText = text
+    return text
+  }
   var thumbnailImage: NSImage?
   var applicationImage: ApplicationImage
 
@@ -121,12 +133,11 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
     synchronizeItemPin()
     synchronizeItemTitle()
-    synchronizeItemText()
   }
 
   @MainActor
   func ensureThumbnailImage() {
-    guard item.image != nil else {
+    guard hasImage else {
       return
     }
     guard thumbnailImage == nil else {
@@ -142,7 +153,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
   @MainActor
   func ensurePreviewImage() {
-    guard item.image != nil else {
+    guard hasImage else {
       return
     }
     guard previewImage == nil else {
@@ -254,13 +265,4 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
     }
   }
 
-  private func synchronizeItemText() {
-    previewText = withObservationTracking {
-      SizedString(item.previewableText, maxParagraphBytes: Self.previewMaxParagraphSize)
-    } onChange: { [weak self] in
-      DispatchQueue.main.async { [weak self] in
-        self?.synchronizeItemText()
-      }
-    }
-  }
 }

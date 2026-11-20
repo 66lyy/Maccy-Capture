@@ -140,15 +140,28 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   func load() async throws {
     let descriptor = FetchDescriptor<HistoryItem>()
     let results = try Storage.shared.context.fetch(descriptor)
-    let decorators = sorter.sort(results).map { HistoryItemDecorator($0) }
+    let maxSize = Defaults[.size]
+    var unpinnedCount = 0
+    var exceedingItems: [HistoryItem] = []
+    let retainedItems = sorter.sort(results).filter { item in
+      guard item.pin == nil else { return true }
+      unpinnedCount += 1
+      guard unpinnedCount > maxSize else { return true }
+      exceedingItems.append(item)
+      return false
+    }
+    if !exceedingItems.isEmpty {
+      exceedingItems.forEach { deleteFromStorage($0) }
+      Storage.shared.context.processPendingChanges()
+      try? Storage.shared.context.save()
+    }
+    let decorators = retainedItems.map { HistoryItemDecorator($0) }
     pinManager.load(from: decorators)
     allUnpinnedItems = decorators.filter(\.isUnpinned)
     unpinnedSortBy = Defaults[.sortBy]
     filteredPinnedItems = allPinnedItems
     filteredUnpinnedItems = allUnpinnedItems
     rebuildDuplicateIndex(decorators)
-
-    limitHistorySize(to: Defaults[.size])
 
     updateShortcuts()
     // Ensure that panel size is proper *after* loading all items.

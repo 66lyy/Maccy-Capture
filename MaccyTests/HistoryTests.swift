@@ -40,6 +40,36 @@ extension SharedStateTests {
       #expect(history.items.toArray() == [second, first])
     }
 
+    @Test("Loading trims unpinned items before decoration and retains all pins",
+          arguments: Sorter.By.allCases, PinsPosition.allCases)
+    func loadLimitedHistory(by: Sorter.By, pinTo: PinsPosition) async throws {
+      Defaults[.sortBy] = by
+      Defaults[.pinTo] = pinTo
+      var stored: [HistoryItem] = []
+      for index in 0..<5 {
+        let item = historyItem("stored \(index)")
+        item.firstCopiedAt = Date(timeIntervalSince1970: TimeInterval(index))
+        item.lastCopiedAt = Date(timeIntervalSince1970: TimeInterval(5 - index))
+        item.numberOfCopies = index + 1
+        stored.append(item)
+      }
+      let pinned = historyItem("pinned")
+      pinned.pin = "b"
+      try Storage.shared.context.save()
+      Defaults[.size] = 2
+      let expected = Array(Sorter().sort(stored, by: by).prefix(2)).map(\.title)
+      try await history.load()
+      #expect(history.unpinnedItems.map(\.title) == expected)
+      #expect(history.pinnedItems.map(\.title) == ["pinned"])
+      #expect(history.items.allSatisfy { $0.cachedPreviewText == nil })
+      try assertStorageCounts(items: 3, contents: 3)
+      Defaults[.size] = 0
+      try await history.load()
+      #expect(history.unpinnedItems.isEmpty)
+      #expect(history.pinnedItems.map(\.title) == ["pinned"])
+      try assertStorageCounts(items: 1, contents: 1)
+    }
+
     @Test("Binary insertion matches the full stable sort", arguments: Sorter.By.allCases)
     func binaryInsertionMatchesFullSort(by: Sorter.By) {
       Defaults[.sortBy] = by
