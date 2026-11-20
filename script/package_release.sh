@@ -31,7 +31,7 @@ sign_published_app() (
   p12_password="${release_signing_identity%%:*}"
   encoded_identity="$(printf '%s' "${release_signing_identity#*:}" | LC_ALL=C tr -d '[:space:]')" ||
     fail_signing "could not normalize the Base64 payload."
-  [[ "$encoded_identity" =~ ^[A-Za-z0-9+/]+={0,2}$ && $(("${#encoded_identity}" % 4)) -eq 0 ]] ||
+  [[ "$encoded_identity" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] && (( ${#encoded_identity} % 4 == 0 )) ||
     fail_signing "the payload is not valid Base64."
 
   signing_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/MaccyCaptureSigning.XXXXXX")" ||
