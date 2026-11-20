@@ -37,6 +37,13 @@ grep -Fxq "Source revision: $GITHUB_SHA" "$DIST_DIR/BUILD-INFO.txt"
   fi
 )
 
+if grep -Fxq "Signing: fixed self-signed certificate; not Developer ID signed or notarized" "$DIST_DIR/BUILD-INFO.txt"; then
+  SIGNING_NOTE="Signed with a fixed self-signed certificate, not Developer ID signed or notarized. Gatekeeper may block first launch; updating from a build with a different signature may require granting permissions again."
+  SIGNING_NOTE_ZH="应用使用固定的自签名证书签名，未使用 Developer ID 签名，也未通过 Apple 公证。首次启动可能被安全机制拦截；从签名不同的版本更新后，部分权限可能需要重新授权。"
+else
+  SIGNING_NOTE="Ad-hoc signed, not Developer ID signed or notarized. Gatekeeper may block first launch, and permissions may need to be granted again."
+  SIGNING_NOTE_ZH="应用采用 Ad Hoc 签名，未使用 Developer ID 签名，也未通过 Apple 公证。首次启动可能被安全机制拦截，部分权限可能需要重新授权。"
+fi
 NOTES_FILE="$(mktemp "${TMPDIR:-/tmp}/MaccyCaptureReleaseNotes.XXXXXX")"
 COMPARE_FILE="$(mktemp "${TMPDIR:-/tmp}/MaccyCaptureCompare.XXXXXX")"
 trap 'rm -f "$NOTES_FILE" "$COMPARE_FILE"' EXIT
@@ -53,7 +60,7 @@ This is a test build of commit \`${GITHUB_SHA:0:12}\`.
 - In-app updates use this repository's \`capture-appcast.xml\` and independently Ed25519-signed ZIP.
 - Install Update restarts the running modified app so the update takes effect immediately.
 - Packages include the upstream MIT license, English and Simplified Chinese distribution notices, and third-party licenses.
-- Ad-hoc signed, not Developer ID signed or notarized. Gatekeeper may block first launch, and permissions may need to be granted again.
+- $SIGNING_NOTE
 - This is not an official upstream release or a stable production release.
 
 ## 简体中文
@@ -68,7 +75,7 @@ This is a test build of commit \`${GITHUB_SHA:0:12}\`.
 - 应用内更新使用本仓库的 \`capture-appcast.xml\` 和独立 Ed25519 签名的 ZIP。
 - 安装更新后会重启正在运行的修改版，让更新立即生效。
 - 安装包包含上游 MIT 许可证、英中分发说明及第三方许可证。
-- 应用采用 Ad Hoc 签名，未使用 Developer ID 签名，也未通过 Apple 公证。首次启动可能被安全机制拦截，部分权限可能需要重新授权。
+- $SIGNING_NOTE_ZH
 - 这不是上游官方版本，也不是稳定版。
 NOTES
 
