@@ -21,10 +21,10 @@ You can also select **Run workflow** on the workflow page to build manually.
 Manual builds on the default branch also update the test release;
 other branches, version tags, and pull requests provide artifacts only.
 
-Automated builds are ad-hoc signed. They do not contain local signing private keys,
-are not Developer ID signed, and are not notarized by Apple.
-Gatekeeper may block the first launch, and updates may require screen recording permission again.
-For everyday local use, reuse your existing local signing identity.
+Published builds reuse a fixed self-signed certificate when configured. Other builds are ad-hoc signed.
+Neither is Developer ID signed or notarized by Apple, so Gatekeeper may block the first launch.
+The first upgrade from an older signing identity may require granting screen recording permission
+again; later builds using the same certificate keep the same signing identity.
 See the [capture, pinning, and annotation development guide](SCREENSHOT-DEVELOPMENT.md)
 for details.
 
@@ -48,7 +48,7 @@ Unavailable or incomplete releases leave the installed application unchanged.
 Existing versions without this updater need one manual upgrade first.
 
 The separate update-signing key is held in the maintainer's Keychain and the repository's
-`SPARKLE_PRIVATE_KEY` Actions Secret; it is **not** the local application-signing certificate.
+`SPARKLE_PRIVATE_KEY` Actions Secret; it is **not** the application-signing certificate.
 Only trusted default-branch builds receive that secret; pull requests do not.
 Archive signing does not confer Apple Developer ID signing or notarization, nor preserve recording grants
 when the installed code-signing identity changes. See the [development guide](SCREENSHOT-DEVELOPMENT.md#repository-updates).

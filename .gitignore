@@ -15,6 +15,7 @@ DerivedData/
 *.dmg
 *.p12
 *.pfx
+*.secret
 *.pem
 *.key
 *.mobileprovision

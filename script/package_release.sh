@@ -7,6 +7,69 @@ DIST_DIR="${MACCY_DIST_DIR:-$PROJECT_ROOT/dist}"
 APP_BUNDLE="$DERIVED_DATA/Build/Products/Release/Maccy.app"
 BUILD_LOG="$DERIVED_DATA/maccy-release-build.log"
 
+release_signing_identity=
+case "${1:-}" in
+  "") ;;
+  --ci-sign)
+    release_signing_identity="${MACCY_RELEASE_SIGNING_IDENTITY:-}"
+    if [[ -z "$release_signing_identity" ]]; then
+      echo "::warning::MACCY_RELEASE_SIGNING_IDENTITY is missing; this release will use ad-hoc signing."
+    elif [[ "$release_signing_identity" != ?*:?* ]]; then
+      echo "MACCY_RELEASE_SIGNING_IDENTITY is malformed." >&2
+      exit 2
+    fi
+    ;;
+  *) echo "Usage: $0 [--ci-sign]" >&2; exit 2 ;;
+esac
+unset MACCY_RELEASE_SIGNING_IDENTITY
+
+sign_published_app() (
+  umask 077
+  keychain_list="$(/usr/bin/security list-keychains -d user)"
+  while IFS= read -r entry; do
+    if [[ "$entry" == *\"*\" ]]; then
+      entry="${entry#*\"}"
+      set -- "$@" "${entry%\"}"
+    fi
+  done <<< "$keychain_list"
+
+  signing_dir="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/MaccyCaptureSigning.XXXXXX")"
+  signing_keychain="$signing_dir/signing.keychain-db"
+  identity_file="$signing_dir/identity.p12"
+  certificate_file="$signing_dir/certificate.pem"
+  cleanup_signing() {
+    local status=0
+    /usr/bin/security delete-keychain "$signing_keychain" >/dev/null 2>&1 || true
+    /usr/bin/security list-keychains -d user -s "$@" || status=$?
+    rm -rf "$signing_dir"
+    return "$status"
+  }
+  trap 'cleanup_signing "$@"' EXIT
+
+  p12_password="${release_signing_identity%%:*}"
+  printf '%s' "${release_signing_identity#*:}" | /usr/bin/base64 -D > "$identity_file"
+  P12_PASSWORD="$p12_password" /usr/bin/openssl pkcs12 -in "$identity_file" -clcerts -nokeys \
+    -passin env:P12_PASSWORD -out "$certificate_file"
+  fingerprint="$(/usr/bin/openssl x509 -in "$certificate_file" -outform DER |
+    /usr/bin/shasum -a 1 | awk '{print toupper($1)}')"
+
+  keychain_password="$(/usr/bin/openssl rand -base64 32)"
+  /usr/bin/security create-keychain -p "$keychain_password" "$signing_keychain"
+  /usr/bin/security unlock-keychain -p "$keychain_password" "$signing_keychain"
+  /usr/bin/security import "$identity_file" -k "$signing_keychain" -t cert -f pkcs12 \
+    -P "$p12_password" -T /usr/bin/codesign
+  /usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" \
+    "$signing_keychain" >/dev/null
+
+  # codesign also needs the temporary keychain in the user search list.
+  /usr/bin/security list-keychains -d user -s "$signing_keychain" "$@"
+
+  requirement="identifier \"$BUNDLE_ID\" and certificate leaf = H\"$fingerprint\""
+  codesign --force --sign "$fingerprint" --keychain "$signing_keychain" --timestamp=none \
+    --preserve-metadata=entitlements --requirements "=designated => $requirement" "$PACKAGED_APP"
+  codesign --verify --strict --all-architectures --test-requirement "=$requirement" "$PACKAGED_APP"
+)
+
 mkdir -p "$DERIVED_DATA" "$DIST_DIR"
 BUILD_OPTIONS=('ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO)
 if [[ -n "${MACCY_BUILD_VERSION:-}" ]]; then
@@ -112,9 +175,18 @@ ditto "$WORKSPACE/LICENSE" "$APP_RESOURCES/LICENSE"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.md"
 ditto "$WORKSPACE/DISTRIBUTION-NOTICE.zh-CN.md" "$APP_RESOURCES/DISTRIBUTION-NOTICE.zh-CN.md"
 ditto "$WORKSPACE/ThirdPartyLicenses" "$APP_RESOURCES/ThirdPartyLicenses"
-codesign --force --sign - --timestamp=none --preserve-metadata=entitlements,flags \
-  "$PACKAGED_APP"
+if [[ -n "$release_signing_identity" ]]; then
+  sign_published_app
+  unset release_signing_identity
+  SIGNING_DESCRIPTION="fixed self-signed certificate; not Developer ID signed or notarized"
+  SIGNING_NOTICE="The first update from an older signing identity may require granting screen recording permission again."
+else
+  codesign --force --sign - --timestamp=none --preserve-metadata=entitlements,flags "$PACKAGED_APP"
+  SIGNING_DESCRIPTION="ad-hoc; not Developer ID signed or notarized"
+  SIGNING_NOTICE="Updates from ad-hoc builds may require granting screen recording permission again."
+fi
 codesign --verify --deep --strict "$PACKAGED_APP"
+printf 'Release app signing: %s\n' "$SIGNING_DESCRIPTION"
 ditto -c -k --sequesterRsrc \
   "$WORKSPACE" "$DIST_DIR/$PACKAGE_NAME.zip"
 ln -s /Applications "$WORKSPACE/Applications"
@@ -130,12 +202,11 @@ Source revision: $REVISION
 Architectures: arm64, x86_64
 Optimization: $OPTIMIZATION
 Minimum macOS: 14.0
-Signing: ad-hoc; not Developer ID signed or notarized
+Signing: $SIGNING_DESCRIPTION
 
 This is a customized build, not an official Maccy release.
-No local signing identity, private key, clipboard history or screenshots are included.
-Gatekeeper may block first launch, and updates may require screen recording permission again.
-For a stable local signing identity, build from source with script/build_and_run.sh.
+No private key, clipboard history or screenshots are included.
+Gatekeeper may block first launch. $SIGNING_NOTICE
 INFO
 
 (

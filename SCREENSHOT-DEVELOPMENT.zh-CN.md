@@ -124,8 +124,8 @@ bash script/setup_local_signing.sh
 ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 `DISTRIBUTION-NOTICE.md`（英文）、`DISTRIBUTION-NOTICE.zh-CN.md`（简体中文）和第三方许可目录；
 打包会逐项读取锁定依赖，缺少相应 checkout 或许可全文时直接失败，不静默省略。
-来源记录包含依赖仓库和锁定提交。复制资源后重新执行 ad-hoc 签名并校验，
-不会把本机稳定自签私钥加入包内，也不修改已安装的应用。
+来源记录包含依赖仓库和锁定提交。复制资源后对应用重新签名并校验，
+产物不包含私钥，打包也不修改已安装的应用。
 
 成功运行的 Artifacts 保留 14 天，失败诊断保留 7 天。
 主分支成功构建后还会更新 Releases 中的 `capture-latest` 测试版，
@@ -139,12 +139,18 @@ ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 在默认分支上手动构建也会更新测试版 Release，其他分支、版本标签及 Pull Request 只提供 Artifacts。
 GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度与计费以该账号设置为准。
 
-CI 不访问本机应用自签证书及其私钥，不需要 Apple 开发者账号。
-默认分支更新使用经明确授权单独配置的 `SPARKLE_PRIVATE_KEY` 仓库 Secret，
-仅传给打包后的签名步骤，不传给 PR、Xcode 构建、测试或产物。
-产物默认使用 ad-hoc 签名，没有 Developer ID 签名或公证，不能保证下载后直接双击运行；
-不同构建的签名身份可能变化，录屏和辅助功能权限也可能需要重新授权。
-此流程不会替换当前机器上已安装的持久自签应用。正式对外分发需另行配置自己的
+默认分支的发布包复用已配置的 CI 专用自签名证书，指定要求校验包标识与证书指纹。
+其他 CI 产物和本地打包仍使用 ad-hoc 签名。两者均未使用 Developer ID 签名或公证；
+首次从旧签名身份升级时，可能需要重新授权。
+
+要启用固定发布签名，由仓库管理员登录 GitHub CLI 并运行
+`bash script/setup_release_signing.sh OWNER/REPO`，配置仓库 Actions Secret
+`MACCY_RELEASE_SIGNING_IDENTITY`。脚本提示的备份文件含有发布私钥，请离线妥善保管，不要分享。
+预览版和稳定版应共用该签名身份；更换证书会改变 macOS 识别到的身份。
+Secret 缺失时 CI 会发出警告并使用 ad-hoc 签名继续发布；已配置但无效时构建会失败。此 Secret 仅用于发布打包，
+不传给 PR、Xcode 构建、测试或产物。
+
+`SPARKLE_PRIVATE_KEY` 独立配置，仅在打包完成后用于更新归档签名。正式对外分发需另行配置自己的
 Developer ID 签名、公证与凭据管理，不能使用原作者证书或上传开发者本机私钥来冒充原版。
 
 本地只构建可下载包，不安装、不重启应用：

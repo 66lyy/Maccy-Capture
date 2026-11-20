@@ -19,8 +19,9 @@ Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-
 在该工作流页点击 **Run workflow** 可手动打包。
 在默认分支上手动构建也会更新测试版 Release；其他分支、版本标签和 Pull Request 只提供 Artifacts。
 
-自动构建产物使用 ad-hoc 签名，不包含本机证书私钥，未使用 Apple 开发者 ID 签名或公证。
-首次启动可能被 Gatekeeper 拦截，升级后可能需要重新授权录屏。日常本机使用仍建议复用现有本机自签证书。
+配置证书后，发布版会复用固定的自签名证书；其他构建使用 ad-hoc 签名。
+两者均未使用 Apple 开发者 ID 签名或公证，首次启动可能被 Gatekeeper 拦截。
+从旧签名身份首次升级时可能需要重新授权录屏；后续使用同一证书的版本保留相同签名身份。
 详细说明见 [截图、贴图与标注开发文档](SCREENSHOT-DEVELOPMENT.zh-CN.md)。
 
 分支推送和 Pull Request 仅修改文档时不触发自动构建或发布；代码、构建配置和应用资源改动仍会构建。
@@ -41,7 +42,7 @@ Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-
 旧版没有本更新器，首次仍需手动安装一次带更新器的新版。
 
 专用更新签名密钥存于维护者钥匙串及仓库 `SPARKLE_PRIVATE_KEY` Actions Secret，
-**不是本机应用签名证书**。仅受信任的默认分支构建使用该 Secret，PR 不接触。
+**不是应用签名证书**。仅受信任的默认分支构建使用该 Secret，PR 不接触。
 更新包验签不等于 Apple 开发者签名或公证，切换代码签名身份时仍可能需要重新授权录屏。
 详见[开发文档](SCREENSHOT-DEVELOPMENT.zh-CN.md#本仓库更新)。
 

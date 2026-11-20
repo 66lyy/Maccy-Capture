@@ -55,7 +55,7 @@ jobs:
 
       - name: Validate update scripts and synthetic feed generation
         run: |
-          for script in script/package_release.sh script/publish_prerelease.sh script/sign_update_archive.sh; do
+          for script in script/package_release.sh script/setup_release_signing.sh script/publish_prerelease.sh script/sign_update_archive.sh; do
             bash -n "$script"
           done
           python3 -m unittest discover -s script -p 'test_update_feed.py'
@@ -90,7 +90,18 @@ jobs:
             ENABLE_HARDENED_RUNTIME=NO \
             test 2>&1 | tee "$RUNNER_TEMP/MaccyCapture-tests.log"
 
-      - name: Package Release app for Apple Silicon and Intel
+      - name: Package default-branch Release app
+        if: >-
+          github.event_name != 'pull_request' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        env:
+          MACCY_RELEASE_SIGNING_IDENTITY: ${{ secrets.MACCY_RELEASE_SIGNING_IDENTITY }}
+        run: bash script/package_release.sh --ci-sign
+
+      - name: Package ad-hoc Release artifacts for Apple Silicon and Intel
+        if: >-
+          github.event_name == 'pull_request' ||
+          github.ref != format('refs/heads/{0}', github.event.repository.default_branch)
         run: bash script/package_release.sh
 
       - name: Sign repository update archive

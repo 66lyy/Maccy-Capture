@@ -42,9 +42,9 @@ Review the applicable requirements again whenever dependencies or assets change.
 
 ## Signing and Local Data
 
-Automated builds are ad-hoc signed. They do not use the upstream author's signing identity
-or include the local self-signing private key.
-Ad-hoc signing is not Apple Developer ID signing, notarization, or App Store review.
+Published builds use a dedicated self-signed certificate when configured; other automated builds are ad-hoc signed.
+Neither uses the upstream author's signing identity or includes any private key.
+Neither signature is Apple Developer ID signing, notarization, or App Store review.
 
 Source and distribution packages must not include real clipboard history, screenshots,
 personal information, databases, keys, or certificate private keys.

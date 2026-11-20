@@ -189,8 +189,8 @@ and the third-party license directory.
 Packaging checks each locked dependency and fails if its checkout or full license text is missing,
 rather than silently omitting it.
 Source records include dependency repositories and locked revisions.
-After copying these resources, the staged app is re-signed ad-hoc and verified.
-The process does not include the local signing private key or modify the installed app.
+After copying these resources, the staged app is re-signed and verified.
+The packages do not include private keys, and packaging does not modify the installed app.
 
 Successful artifacts are retained for 14 days and failure diagnostics for 7 days.
 Successful default-branch builds also update Releases → Latest test build (`capture-latest`)
@@ -210,15 +210,21 @@ other branches, version tags, and pull requests provide artifacts only.
 Private-repository macOS builds may count against GitHub Actions usage;
 consult your account's current limits and billing settings.
 
-CI does not access the local application-signing certificate or its private key,
-and does not require an Apple developer account. Default-branch update signing uses the separate,
-explicitly configured `SPARKLE_PRIVATE_KEY` repository Secret. This secret is given only to the
-post-build signing step, never to pull requests, Xcode builds, tests, or package artifacts.
-Packages are ad-hoc signed, not Developer ID signed or notarized,
-so downloading and double-clicking is not guaranteed to launch them.
-Signing identities may change between builds, and screen recording or accessibility permissions
-may need to be granted again.
-This workflow does not replace the locally installed app with its persistent self-signed identity.
+Default-branch packages reuse the configured CI-only self-signed certificate, with a designated requirement
+that matches the bundle identifier and certificate fingerprint. Other CI artifacts and local
+packages are ad-hoc signed. Neither signature is Developer ID signing or notarization.
+The first update from an older signing identity can require granting permissions again.
+
+To enable fixed signing for published builds, authenticate GitHub CLI as a repository administrator
+and run `bash script/setup_release_signing.sh OWNER/REPO`. It configures the
+`MACCY_RELEASE_SIGNING_IDENTITY` repository Actions Secret without using the local development certificate.
+Keep the backup file printed by the script offline and private: it contains the release signing key.
+Reuse this identity for both preview and stable packages; replacing it changes the identity
+that macOS uses to recognize the app. A missing secret warns in CI and publishes an ad-hoc build;
+an invalid configured secret fails the build. Only release packaging gets this secret; it is not passed to Xcode,
+tests, pull requests, or package artifacts.
+
+`SPARKLE_PRIVATE_KEY` is separate and used only to authenticate update archives after packaging.
 Public distribution requires your own Developer ID signing, notarization, and credential management;
 do not use the upstream author's certificate or upload local private keys to impersonate an official build.
 
@@ -273,7 +279,7 @@ The local update key uses Sparkle Keychain account `local.maccy.capture.updates`
 only this dedicated key is also stored as the repository's `SPARKLE_PRIVATE_KEY` Actions Secret.
 Do not rotate it casually: already-installed clients trust the original public key.
 The existing `Maccy Capture Local Signing` certificate and private key stay on the local Mac.
-Update authentication does not turn an ad-hoc app into a Developer ID signed or notarized app.
+Update authentication is separate from application code signing and notarization.
 
 CI assigns `CFBundleVersion` as `1000 + GITHUB_RUN_NUMBER`, followed by the run attempt.
 For example `1042.1` and `1042.2` are different upgradable builds even when the marketing version remains `2.8.0`.
