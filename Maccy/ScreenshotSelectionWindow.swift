@@ -13,6 +13,7 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     super.init(display: frame, visibleFrame: visibleFrame)
     level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
     collectionBehavior.insert(.canJoinAllApplications)
+    ignoresMouseEvents = false
     contentView = selectionView
     initialFirstResponder = selectionView
     selectionView.onCancel = { [weak self] in self?.cancelOperation(nil) }

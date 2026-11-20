@@ -403,8 +403,8 @@ final class ScreenshotSelectionView: NSView {
       let key = pinImmediately ? "ScreenshotSelectionPinInstructions" : "ScreenshotSelectionInstructions"
       selectionHint.update(localized(key), near: NSPoint(x: bounds.midX - 190, y: bounds.maxY - 64), in: bounds)
     }
-    elementHint.isHidden = !wantsSnapping
-    if wantsSnapping {
+    elementHint.isHidden = !wantsSnapping || snapRects.isEmpty
+    if !elementHint.isHidden {
       let title = AXIsProcessTrusted()
         ? String(localized: "ScreenshotElementActions", defaultValue: "Click to select · \(ScopedShortcut.selectParent.current?.description ?? "—") parent · \(ScopedShortcut.selectChild.current?.description ?? "—") child", table: "GeneralSettings")
         : localized("ScreenshotElementPermissionHint")
@@ -424,6 +424,9 @@ final class ScreenshotSelectionView: NSView {
     NSColor.black.withAlphaComponent(0.12).setFill()
     shade.fill()
     if let activeRect {
+      // A fully transparent hole would let clicks fall through to the window below.
+      NSColor.black.withAlphaComponent(0.001).setFill()
+      activeRect.fill(using: .sourceOver)
       NSColor.systemRed.setStroke()
       let border = NSBezierPath(rect: activeRect.insetBy(dx: 1, dy: 1))
       border.lineWidth = 2
