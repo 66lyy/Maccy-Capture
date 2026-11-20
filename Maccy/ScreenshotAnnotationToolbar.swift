@@ -250,8 +250,8 @@ final class ScreenshotToolbarButton: NSButton {
       image = swatchImage(swatchColor)
     }
     if usesGlass {
-      applyGlassBezel(tint: isChosen ? .controlAccentColor : nil)
-      contentTintColor = isChosen ? .white : .labelColor
+      applyGlassBezel(tint: isChosen ? LiquidGlass.selectionFill : nil)
+      contentTintColor = .labelColor
       return
     }
     wantsLayer = true

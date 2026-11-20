@@ -82,6 +82,7 @@ struct IgnoreSettingsPane: View {
 extension View {
   func ignoreRulesList(isEmpty: Bool) -> some View {
     listStyle(.plain)
+      .modifier(NeutralListSelection())
       .scrollContentBackground(.hidden)
       .frame(height: isEmpty ? 76 : 184)
       .background(.primary.opacity(0.04), in: .rect(cornerRadius: 8))
@@ -104,4 +105,13 @@ extension View {
 #Preview {
   IgnoreSettingsPane()
     .environment(\.locale, .init(identifier: "en"))
+}
+
+// Keeps native list selection neutral on clear glass instead of the saturated accent color.
+private struct NeutralListSelection: ViewModifier {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  func body(content: Content) -> some View {
+    content.tint(LiquidGlass.isActive(reduceTransparency: reduceTransparency) ? Color(nsColor: .systemGray) : nil)
+  }
 }

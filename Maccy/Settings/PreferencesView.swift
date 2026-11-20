@@ -193,7 +193,9 @@ struct PreferencesView: View {
       HStack(spacing: 9) {
         Image(systemName: page.symbol)
           .frame(width: 22)
-          .foregroundStyle(isSelected ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+          .foregroundStyle(isSelected
+            ? (LiquidGlass.isActive(reduceTransparency: reduceTransparency) ? Color.primary : Color.accentColor)
+            : Color(nsColor: .secondaryLabelColor))
           .accessibilityHidden(true)
         page.title
           .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
@@ -274,10 +276,17 @@ struct GlassSelection: ViewModifier {
   let isSelected: Bool
   let cornerRadius: CGFloat
   let fallbackOpacity: Double
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   func body(content: Content) -> some View {
     let shape = RoundedRectangle(cornerRadius: cornerRadius)
-    content.liquidGlass(in: shape, tint: Color.accentColor.opacity(0.25), interactive: true, enabled: isSelected) {
+    content
+      .background {
+        if isSelected, LiquidGlass.isActive(reduceTransparency: reduceTransparency) {
+          shape.fill(Color(nsColor: LiquidGlass.selectionFill))
+        }
+      }
+      .liquidGlass(in: shape, interactive: true, enabled: isSelected) {
       shape.fill(Color.accentColor.opacity(fallbackOpacity))
     }
   }

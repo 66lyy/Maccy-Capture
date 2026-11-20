@@ -132,17 +132,17 @@ struct ListItemView<Title: View, ID: Hashable>: View {
     .frame(minHeight: Popup.itemHeight)
     .id(id)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .foregroundStyle(isSelected ? Color.white : .primary)
+    .foregroundStyle(isSelected && !usesGlass ? Color.white : .primary)
     // macOS 26 broke hovering if no background is present.
     // The slight opcaity white background is a workaround
     .background(.white.opacity(0.001), in: selectionAppearance.rect(cornerRadius: Popup.cornerRadius))
     .background {
       if isSelected {
         selectionAppearance.rect(cornerRadius: Popup.cornerRadius)
-          .fill(Color.accentColor.opacity(usesGlass ? 0.7 : 0.8))
+          .fill(usesGlass ? Color(nsColor: LiquidGlass.selectionFill) : Color.accentColor.opacity(0.8))
       }
     }
-    .liquidGlass(in: selectionAppearance.rect(cornerRadius: Popup.cornerRadius), tint: .accentColor, enabled: isSelected) {
+    .liquidGlass(in: selectionAppearance.rect(cornerRadius: Popup.cornerRadius), enabled: isSelected) {
       EmptyView()
     }
     .accessibilityElement(children: .ignore)

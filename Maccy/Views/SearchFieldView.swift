@@ -46,7 +46,7 @@ struct SearchFieldView: View {
     }
     .overlay {
       if isFocused, LiquidGlass.isActive(reduceTransparency: reduceTransparency) {
-        Capsule().strokeBorder(Color.accentColor.opacity(0.45)).allowsHitTesting(false)
+        Capsule().strokeBorder(Color.primary.opacity(0.22)).allowsHitTesting(false)
       }
     }
   }

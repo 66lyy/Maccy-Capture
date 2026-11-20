@@ -6,6 +6,13 @@ enum LiquidGlass {
     return !reduceTransparency
   }
 
+  // Neutral highlight for selected items on clear glass, instead of the saturated accent color.
+  static let selectionFill = NSColor(name: nil) { appearance in
+    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+      ? NSColor.white.withAlphaComponent(0.2)
+      : NSColor.white.withAlphaComponent(0.6)
+  }
+
   // Light dimming laid over clear glass so text stays readable on busy backgrounds.
   static let clearDimming = NSColor(name: nil) { appearance in
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
