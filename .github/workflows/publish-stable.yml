@@ -36,4 +36,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           MACCY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           MACCY_RELEASE_TAG: ${{ inputs.tag }}
+          GH_DEBUG: api
         run: bash script/publish_stable.sh
