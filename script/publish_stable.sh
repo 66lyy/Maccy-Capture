@@ -6,9 +6,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${MACCY_DEFAULT_BRANCH:?MACCY_DEFAULT_BRANCH must identify the default branch}"
 : "${MACCY_RELEASE_TAG:?MACCY_RELEASE_TAG must name the stable release tag}"
 
-if [[ "${GITHUB_ACTIONS:-}" != "true" || "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ||
+if [[ "${GITHUB_ACTIONS:-}" != "true" ||
+  ( "${GITHUB_EVENT_NAME:-}" != "push" && "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ) ||
   "${GITHUB_REF:-}" != "refs/heads/$MACCY_DEFAULT_BRANCH" ]]; then
-  echo "Stable releases can only be published by a manual run on the default branch." >&2
+  echo "Stable releases can only be published by default-branch push or manual workflow runs." >&2
   exit 2
 fi
 if [[ ! "$MACCY_RELEASE_TAG" =~ ^maccy-capture-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then

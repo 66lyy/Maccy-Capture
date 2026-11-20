@@ -149,6 +149,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Check out publishing script
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -169,3 +170,21 @@ jobs:
           MACCY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           MACCY_DIST_DIR: ${{ runner.temp }}/MaccyCapture-dist
         run: bash script/publish_prerelease.sh
+
+      - name: Publish tagged stable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MACCY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/.*MARKETING_VERSION = \([0-9][0-9.]*\);/\1/p' Maccy.xcodeproj/project.pbxproj | head -n 1)"
+          tag="maccy-capture-v$version"
+          if [[ -f "docs/releases/$version.md" ]] &&
+            gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1 &&
+            ! gh api "repos/$GH_REPO/releases/tags/$tag" >/dev/null 2>&1; then
+            MACCY_RELEASE_TAG="$tag" bash script/publish_stable.sh
+          else
+            echo "No unpublished stable tag for $version."
+          fi
