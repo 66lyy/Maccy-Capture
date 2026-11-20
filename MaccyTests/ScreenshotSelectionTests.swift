@@ -66,6 +66,55 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
+  @Test("Long capture outputs the full PNG after a background preview", arguments: [false, true])
+  func scrollingOutput(pin: Bool) async throws {
+    let controller = controller()
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 30))
+    window.selectionView.endSelection(at: NSPoint(x: 220, y: 180))
+    window.beginLongScreenshot()
+    let panel = try #require(window.scrollingPanel)
+    for _ in 0..<100 {
+      if panel.image != nil { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let preview = try #require(panel.image)
+    #expect(preview.width <= 264 && preview.height <= 120)
+    panel.onFinish?(pin)
+    let selection = try #require(try await task.value)
+    let data = try #require(selection.renderedData)
+    let image = try ScreenshotCaptureSession.ValidatedImage.validate(data).image
+    #expect(image.width > preview.width && image.height > preview.height)
+    #expect(selection.renderedScale == 2)
+    #expect(selection.pinToScreen == pin)
+    #expect(controller.windows.isEmpty && !panel.isVisible)
+  }
+
+  @Test("Cancelling during background output cannot complete a later selection")
+  func scrollingOutputCancellation() async throws {
+    let controller = controller()
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 30))
+    window.selectionView.endSelection(at: NSPoint(x: 220, y: 180))
+    window.beginLongScreenshot()
+    let panel = try #require(window.scrollingPanel)
+    panel.onFinish?(false)
+    controller.cancel()
+    #expect(try await task.value == nil)
+    let next = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(controller.isSelecting)
+    controller.cancel()
+    #expect(try await next.value == nil)
+  }
+
   @Test("The glass selection hint does not intercept selection gestures")
   func selectionGlassHitTesting() throws {
     let view = ScreenshotSelectionView(

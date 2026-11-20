@@ -221,20 +221,28 @@ final class ScreenshotSelectionController {
         beside: screenRect, bounds: display.visibleFrame ?? display.frame, level: window.level.rawValue + 1
       )
       window.scrollingPanel = panel
+      let processor = ScrollingScreenshotProcessor()
       panel.onCancel = { [weak self] in self?.cancel() }
-      panel.onFinish = { [weak self, weak panel] pin in
-        guard let self, let image = panel?.stitcher?.image,
-              let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return }
-        var result = selection(rectangle, pinToScreen: pin, data: data)
-        result.renderedScale = display.scale
-        finish(result)
+      panel.onFinish = { [weak self] pin in
+        guard let self, isSelecting else { return }
+        scrollingTask?.cancel()
+        scrollingTask = Task { [weak self] in
+          do {
+            guard let data = try await processor.pngData(), !Task.isCancelled,
+                  let self, isSelecting else { return }
+            var result = selection(rectangle, pinToScreen: pin, data: data)
+            result.renderedScale = display.scale
+            finish(result)
+          } catch {
+            if !Task.isCancelled { self?.cancel() }
+          }
+        }
       }
       panel.orderFrontRegardless()
       panel.makeKey()
       let captureRect = Self.captureRectangle(rectangle, display: display)
       scrollingTask = Task { [weak self, weak panel] in
         var lastThumbnailUpdate: ContinuousClock.Instant?
-        var thumbnailNeedsUpdate = false
         while !Task.isCancelled {
           guard let self, let panel, isSelecting else { return }
           let ids = Set((windows.map(\.windowNumber) + [panel.windowNumber]).compactMap { CGWindowID(exactly: $0) })
@@ -244,27 +252,17 @@ final class ScreenshotSelectionController {
             guard let cgImage = frame.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
               throw ScreenshotCaptureSession.Failure.captureFailed
             }
-            if panel.stitcher == nil {
-              guard cgImage.width > 0, cgImage.height > 0,
-                    cgImage.width <= ScreenshotImageLimits.maximumPixels / cgImage.height else {
-                throw ScreenshotCaptureSession.Failure.captureFailed
-              }
-              panel.stitcher = ScrollingScreenshotStitcher(
-                width: cgImage.width, height: cgImage.height, maximumPixels: ScreenshotImageLimits.maximumPixels
-              )
-            }
-            let changed = panel.stitcher?.append(cgImage) == true
-            thumbnailNeedsUpdate = thumbnailNeedsUpdate || changed
-            let capped = panel.stitcher?.capReached == true
             let now = ContinuousClock.now
             let refreshDue = lastThumbnailUpdate.map { $0.duration(to: now) >= .milliseconds(500) } ?? true
-            if thumbnailNeedsUpdate, capped || refreshDue,
-               let image = panel.stitcher?.image {
-              panel.update(image, capped: capped)
+            let update = try await processor.append(
+              cgImage, refreshPreview: refreshDue, maximumPixels: ScreenshotImageLimits.maximumPixels
+            )
+            guard !Task.isCancelled, isSelecting else { return }
+            if let image = update.thumbnail {
+              panel.update(image, width: update.width, height: update.height, capped: update.capReached)
               lastThumbnailUpdate = now
-              thumbnailNeedsUpdate = false
             }
-            if capped { return }
+            if update.capReached { return }
             try await Task.sleep(for: .milliseconds(150))
           } catch {
             if !Task.isCancelled { cancel() }

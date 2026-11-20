@@ -93,7 +93,11 @@ final class ScreenshotCaptureSession {
   ) async throws -> NSImage {
     let source = sourceRectangle(rectangle, displayFrame: display.captureFrame)
     guard source.width >= 3, source.height >= 3, !overlayIDs.isEmpty else { throw Failure.captureFailed }
-    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    var content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    for _ in 0..<5 where !overlayIDs.isSubset(of: Set(content.windows.map(\.windowID))) {
+      try await Task.sleep(for: .milliseconds(50))
+      content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    }
     try Task.checkCancellation()
     guard let screen = content.displays.first(where: { $0.displayID == display.displayID }) else {
       throw Failure.captureFailed

@@ -74,7 +74,6 @@ final class ScrollingScreenshotPanel: NSPanel {
   var onFinish: ((Bool) -> Void)?
   var onCancel: (() -> Void)?
   private(set) var image: CGImage?
-  var stitcher: ScrollingScreenshotStitcher?
   private let thumbnail = NSImageView()
   private let dimensions = NSTextField(labelWithString: "")
   private let hint = NSTextField(wrappingLabelWithString: "")
@@ -130,10 +129,10 @@ final class ScrollingScreenshotPanel: NSPanel {
     ])
   }
 
-  func update(_ image: CGImage, capped: Bool) {
+  func update(_ image: CGImage, width: Int, height: Int, capped: Bool) {
     self.image = image
     thumbnail.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-    dimensions.stringValue = "\(image.width) × \(image.height) px"
+    dimensions.stringValue = "\(width) × \(height) px"
     hint.stringValue = text(capped ? "ScreenshotLongLimit" : "ScreenshotLongHint")
     outputButtons.forEach { $0.isEnabled = true }
   }

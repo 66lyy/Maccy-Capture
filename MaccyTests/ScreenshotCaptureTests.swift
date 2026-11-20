@@ -10,8 +10,10 @@ struct ScreenshotCaptureTests {
   private func scrollingFrame(_ start: Int, header: Int = 0, footer: Int = 0) -> [UInt8] {
     (0..<24).flatMap { y -> [UInt8] in
       let value = y < header ? 240 + y : y >= 24 - footer ? 250 + y - 24 : start + y - header
-      return (0..<8).flatMap { x in
-        [UInt8((value * 37 + x * 19) % 239), UInt8((value * 71 + x * 13) % 239), UInt8(value % 239), 255]
+      return (0..<8).flatMap { x -> [UInt8] in
+        let red = UInt8((value * 37 + x * 19) % 239)
+        let green = UInt8((value * 71 + x * 13) % 239)
+        return [red, green, UInt8(value % 239), 255]
       }
     }
   }
@@ -19,10 +21,10 @@ struct ScreenshotCaptureTests {
   @Test("Downward scrolling appends only new rows, including repeated captures")
   func scrollingDown() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
-    #expect(stitcher.append(rgba: scrollingFrame(0)))
-    #expect(stitcher.append(rgba: scrollingFrame(6)))
+    #expect({ stitcher.append(rgba: scrollingFrame(0)) }())
+    #expect({ stitcher.append(rgba: scrollingFrame(6)) }())
     #expect(stitcher.height == 30)
-    #expect(stitcher.append(rgba: scrollingFrame(12)))
+    #expect({ stitcher.append(rgba: scrollingFrame(12)) }())
     #expect(stitcher.height == 36)
     #expect(stitcher.pixels == scrollingFrame(0) + Array(scrollingFrame(6).suffix(6 * 32))
       + Array(scrollingFrame(12).suffix(6 * 32)))
@@ -33,8 +35,8 @@ struct ScreenshotCaptureTests {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
     let first = scrollingFrame(0, header: 3, footer: 2)
     let next = scrollingFrame(6, header: 3, footer: 2)
-    #expect(stitcher.append(rgba: first))
-    #expect(stitcher.append(rgba: next))
+    #expect({ stitcher.append(rgba: first) }())
+    #expect({ stitcher.append(rgba: next) }())
     #expect(stitcher.height == 30)
     #expect(stitcher.pixels == Array(first.prefix(22 * 32)) + Array(next.suffix(8 * 32)))
   }
@@ -42,50 +44,146 @@ struct ScreenshotCaptureTests {
   @Test("Unchanged, upward, jumped, blank and malformed frames do not extend a capture")
   func scrollingIgnoredFrames() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
-    #expect(stitcher.append(rgba: scrollingFrame(12)))
+    #expect({ stitcher.append(rgba: scrollingFrame(12)) }())
     let original = stitcher.pixels
-    #expect(!stitcher.append(rgba: scrollingFrame(12)))
-    #expect(!stitcher.append(rgba: scrollingFrame(6)))
-    #expect(!stitcher.append(rgba: scrollingFrame(100)))
-    #expect(!stitcher.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4)))
-    #expect(!stitcher.append(rgba: []))
+    #expect({ !stitcher.append(rgba: scrollingFrame(12)) }())
+    #expect({ !stitcher.append(rgba: scrollingFrame(6)) }())
+    #expect({ !stitcher.append(rgba: scrollingFrame(100)) }())
+    #expect({ !stitcher.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4)) }())
+    #expect({ !stitcher.append(rgba: []) }())
     #expect(stitcher.pixels == original)
     var blank = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
-    #expect(blank.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4)))
-    #expect(!blank.append(rgba: [UInt8](repeating: 254, count: 8 * 24 * 4)))
+    #expect({ blank.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4)) }())
+    #expect({ !blank.append(rgba: [UInt8](repeating: 254, count: 8 * 24 * 4)) }())
     #expect(blank.height == 24)
   }
 
   @Test("Height cap truncates new body rows and retains the latest footer")
   func scrollingHeightCap() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 27)
-    #expect(stitcher.append(rgba: scrollingFrame(0, header: 3, footer: 2)))
+    #expect({ stitcher.append(rgba: scrollingFrame(0, header: 3, footer: 2)) }())
     let next = scrollingFrame(6, header: 3, footer: 2)
-    #expect(stitcher.append(rgba: next))
+    #expect({ stitcher.append(rgba: next) }())
     #expect(stitcher.capReached)
     #expect(stitcher.height == 27)
     #expect(Array(stitcher.pixels.suffix(2 * 32)) == Array(next.suffix(2 * 32)))
-    #expect(!stitcher.append(rgba: scrollingFrame(12, header: 3, footer: 2)))
+    #expect({ !stitcher.append(rgba: scrollingFrame(12, header: 3, footer: 2)) }())
   }
 
   @Test("Bitmap adapter preserves image orientation")
   func scrollingBitmapRoundTrip() throws {
     let bytes = scrollingFrame(0)
     var source = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
-    #expect(source.append(rgba: bytes))
+    #expect({ source.append(rgba: bytes) }())
     let image = try #require(source.image)
     var destination = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
-    #expect(destination.append(image))
+    #expect({ destination.append(image) }())
     #expect(destination.pixels == source.pixels)
   }
 
   @Test("Tiny RGB noise does not prevent overlap matching")
   func scrollingPixelNoise() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
-    #expect(stitcher.append(rgba: scrollingFrame(0)))
+    #expect({ stitcher.append(rgba: scrollingFrame(0)) }())
     let noisy = scrollingFrame(6).enumerated().map { index, value in index % 4 == 3 ? value : value + 1 }
-    #expect(stitcher.append(rgba: noisy))
+    #expect({ stitcher.append(rgba: noisy) }())
     #expect(stitcher.height == 30)
+  }
+
+  @Test("Parallel signature tiles preserve every row across uneven frame dimensions")
+  func scrollingParallelRows() {
+    let width = 1031
+    let height = 1001
+    let shift = 37
+    var strip = [UInt8](repeating: 255, count: width * (height + shift) * 4)
+    var state: UInt64 = 123
+    for index in stride(from: 0, to: strip.count, by: 4) {
+      state = state &* 6_364_136_223_846_793_005 &+ 1
+      let value = UInt8(truncatingIfNeeded: state >> 32)
+      strip[index] = value
+      strip[index + 1] = value
+      strip[index + 2] = value
+    }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: height, maximumPixels: width * 2000)
+    #expect({ stitcher.append(rgba: Array(strip.prefix(width * height * 4))) }())
+    #expect({ stitcher.append(rgba: Array(strip.dropFirst(width * shift * 4))) }())
+    #expect(stitcher.height == height + shift)
+    #expect(stitcher.pixels == strip)
+  }
+
+  @Test("Thumbnails own their pixels and leave the full capture intact")
+  func scrollingThumbnailOwnership() throws {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect(stitcher.thumbnail() == nil)
+    let original = scrollingFrame(0)
+    stitcher.append(rgba: original)
+    #expect(stitcher.thumbnail(maximumWidth: 0) == nil)
+    let thumbnail = try #require(stitcher.thumbnail(maximumWidth: 8, maximumHeight: 24))
+    #expect({ stitcher.append(rgba: scrollingFrame(6)) }())
+    var snapshot = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    #expect({ snapshot.append(thumbnail) }())
+    #expect(snapshot.pixels == original)
+    let stitchedThumbnail = try #require(stitcher.thumbnail(maximumWidth: 8, maximumHeight: 30))
+    var stitchedSnapshot = ScrollingScreenshotStitcher(width: 8, height: 30, maximumPixels: 800)
+    #expect({ stitchedSnapshot.append(stitchedThumbnail) }())
+    #expect(stitchedSnapshot.pixels == stitcher.pixels)
+    let reduced = try #require(stitcher.thumbnail(maximumWidth: 4, maximumHeight: 12))
+    #expect(reduced.width <= 4 && reduced.height <= 12)
+    #expect(stitcher.height == 30)
+  }
+
+  @Test("Chunked captures replace sticky footers across multiple appends and stop at the cap")
+  func scrollingChunkedFooters() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 39)
+    let first = scrollingFrame(0, header: 3, footer: 2)
+    stitcher.append(rgba: first)
+    var expected = Array(first.prefix(22 * 32))
+    for offset in [6, 12, 18] {
+      let frame = scrollingFrame(offset, header: 3, footer: 2)
+      #expect({ stitcher.append(rgba: frame) }())
+      let count = min(6, 39 - (24 + offset - 6))
+      expected.append(contentsOf: frame[(16 * 32)..<((16 + count) * 32)])
+      #expect(stitcher.pixels == expected + Array(frame.suffix(2 * 32)))
+    }
+    #expect(stitcher.height == 39 && stitcher.capReached)
+  }
+
+  @Test("The background processor defers previews, flushes at the cap and exports the full PNG")
+  func scrollingProcessorOutput() async throws {
+    let processor = ScrollingScreenshotProcessor()
+    #expect(try await processor.pngData() == nil)
+    var first = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    first.append(rgba: scrollingFrame(0))
+    let firstImage = try #require(first.image)
+    let initial = try await processor.append(firstImage, refreshPreview: false, maximumPixels: 8 * 30)
+    #expect(initial.thumbnail == nil && initial.height == 24 && !initial.capReached)
+    let refreshed = try await processor.append(firstImage, refreshPreview: true, maximumPixels: 8 * 30)
+    #expect(refreshed.thumbnail != nil)
+    let unchanged = try await processor.append(firstImage, refreshPreview: true, maximumPixels: 8 * 30)
+    #expect(unchanged.thumbnail == nil)
+    var next = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    next.append(rgba: scrollingFrame(6))
+    let nextImage = try #require(next.image)
+    let capped = try await processor.append(nextImage, refreshPreview: false, maximumPixels: 8 * 30)
+    #expect(capped.thumbnail != nil && capped.capReached && capped.height == 30)
+    let data = try #require(try await processor.pngData())
+    let result = try ScreenshotCaptureSession.ValidatedImage.validate(data)
+    #expect(result.image.width == 8 && result.image.height == 30)
+  }
+
+  @Test("The background processor rejects invalid budgets and cancelled work")
+  func scrollingProcessorCancellation() async throws {
+    let processor = ScrollingScreenshotProcessor()
+    var source = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    source.append(rgba: scrollingFrame(0))
+    let image = try #require(source.image)
+    await #expect(throws: ScrollingScreenshotProcessor.Failure.self) {
+      try await processor.append(image, refreshPreview: true, maximumPixels: 1)
+    }
+    let task = Task { try await processor.append(image, refreshPreview: true, maximumPixels: 800) }
+    task.cancel()
+    await #expect(throws: CancellationError.self) { try await task.value }
+    #expect(try await processor.pngData() == nil)
   }
 
   @Test("Text-like glyph rows stitch exactly after uneven scrolls under a sticky header")
@@ -121,7 +219,7 @@ struct ScreenshotCaptureTests {
     )
     for offset in offsets {
       let frame = header + Array(strip[(offset * stride)..<((offset + bodyHeight) * stride)])
-      #expect(stitcher.append(rgba: frame))
+      #expect({ stitcher.append(rgba: frame) }())
       #expect(stitcher.pixels == header + Array(strip.prefix((bodyHeight + offset) * stride)))
     }
   }
@@ -131,8 +229,8 @@ struct ScreenshotCaptureTests {
     let first = (0..<6).flatMap { _ in Array(scrollingFrame(0).prefix(4 * 32)) }
     let shifted = Array(first.dropFirst(32)) + Array(first.prefix(32))
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
-    #expect(stitcher.append(rgba: first))
-    #expect(!stitcher.append(rgba: shifted))
+    #expect({ stitcher.append(rgba: first) }())
+    #expect({ !stitcher.append(rgba: shifted) }())
     #expect(stitcher.pixels == first)
   }
 
