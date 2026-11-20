@@ -159,7 +159,7 @@ extension ScreenshotAnnotationWindow {
   private func button(_ key: String, symbol: String, action: Selector, width: CGFloat = 28) -> ScreenshotToolbarButton {
     let button = ScreenshotToolbarButton(frame: .zero)
     button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: text(key))?
-      .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+      .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
     button.target = self
     button.action = action
     button.isBordered = false
@@ -292,7 +292,9 @@ final class ScreenshotToolbarButton: NSButton {
     }
     if usesGlass {
       applyGlassBezel(tint: isChosen ? LiquidGlass.selectionFill : nil)
-      contentTintColor = .labelColor
+      let foreground: NSColor = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .white : .black
+      image = image?.withSymbolConfiguration(.init(paletteColors: [foreground]))
+      image?.isTemplate = false
       return
     }
     wantsLayer = true

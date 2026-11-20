@@ -111,7 +111,7 @@ struct ScreenshotAnnotationTests {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
     let original = try #require(document.pngData())
     #expect(document.append(.init(
-      tool: tool, points: [NSPoint(x: 30, y: 30), NSPoint(x: 160, y: 110)],
+      tool: tool, points: [NSPoint(x: 30, y: 30), NSPoint(x: 160, y: 150)],
       color: .red, lineWidth: 6, text: "Value 42", fontSize: 24
     )))
     let output = try #require(document.pngData())
@@ -653,6 +653,7 @@ struct ScreenshotAnnotationTests {
     if #available(macOS 26.0, *) {
       let glass = try #require(toolbar.subviews.first as? NSGlassEffectView)
       #expect(glass.contentView === toolbar.controlsView)
+      #expect(glass.style == (NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? .regular : .clear))
     } else {
       #expect(toolbar.controlsView is NSVisualEffectView)
     }
@@ -662,6 +663,32 @@ struct ScreenshotAnnotationTests {
     #expect(toolbar.hitTest(contents.convert(copyCenter, from: copyButton)) === copyButton)
     let dragArea = NSPoint(x: 4, y: toolbar.bounds.midY)
     #expect(toolbar.hitTest(contents.convert(dragArea, from: toolbar)) === toolbar)
+  }
+
+  @Test("Glass symbols retain opaque foregrounds when appearance and selection change", arguments: [false, true])
+  func glassSymbolForeground(chosen: Bool) throws {
+    guard #available(macOS 26.0, *) else { return }
+    let button = ScreenshotToolbarButton(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
+    button.image = NSImage(systemSymbolName: "rectangle.fill", accessibilityDescription: nil)?
+      .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
+    button.usesGlass = true
+    for dark in [false, true, false] {
+      button.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      button.isChosen = chosen
+      let image = try #require(button.image)
+      #expect(!image.isTemplate)
+      let cgImage = try #require(image.cgImage(forProposedRect: nil, context: nil, hints: nil))
+      let bitmap = NSBitmapImageRep(cgImage: cgImage)
+      let foreground = try color(bitmap, x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)
+      #expect(foreground.alphaComponent > 0.99)
+      #expect(abs(foreground.redComponent - (dark ? 1 : 0)) < 0.01)
+      #expect(abs(foreground.greenComponent - (dark ? 1 : 0)) < 0.01)
+      #expect(abs(foreground.blueComponent - (dark ? 1 : 0)) < 0.01)
+      #expect(button.bezelStyle == .glass)
+    }
+    button.image = nil
+    button.isChosen.toggle()
+    #expect(button.image == nil)
   }
 
   @Test("The floating toolbar can move without moving the image or leaving the display")
@@ -776,19 +803,19 @@ struct ScreenshotAnnotationTests {
   @Test("Mosaic pixelates the covered region and keeps text under it from being dragged out")
   func mosaicPixelates() throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
-    document.append(.init(tool: .text, points: [NSPoint(x: 30, y: 5)], color: .black, text: "Value", fontSize: 20))
-    #expect(document.textMarkIndex(at: NSPoint(x: 35, y: 10), padding: 0) == 0)
+    document.append(.init(tool: .text, points: [NSPoint(x: 30, y: 125)], color: .black, text: "Value", fontSize: 20))
+    #expect(document.textMarkIndex(at: NSPoint(x: 35, y: 130), padding: 0) == 0)
     #expect(document.append(.init(
-      tool: .mosaic, points: [NSPoint(x: 0, y: 0), NSPoint(x: 120, y: 40)], lineWidth: 16
+      tool: .mosaic, points: [NSPoint(x: 0, y: 120), NSPoint(x: 120, y: 160)], lineWidth: 16
     )))
     #expect(document.marks.last?.mosaic != nil)
-    #expect(document.textMarkIndex(at: NSPoint(x: 35, y: 10), padding: 0) == nil)
+    #expect(document.textMarkIndex(at: NSPoint(x: 35, y: 130), padding: 0) == nil)
     let bitmap = try bitmap(document)
-    // Blocks are 16 px: every pixel in one block has the same color, and the blue/white edge at y = 20 is blended.
-    let block = try color(bitmap, x: 34, y: 159 - 18)
-    #expect(try color(bitmap, x: 33, y: 159 - 29) == block)
+    // The 40 px region becomes three blocks; the middle block blends the blue/white edge at y = 140.
+    let block = try color(bitmap, x: 34, y: 159 - 138)
+    #expect(try color(bitmap, x: 33, y: 159 - 144) == block)
     #expect(block.blueComponent > 0.9 && block.redComponent > 0.05 && block.redComponent < 0.95)
-    #expect(try color(bitmap, x: 200, y: 159 - 10).redComponent < 0.1)
+    #expect(try color(bitmap, x: 200, y: 159 - 150).redComponent < 0.1)
     document.undo()
     #expect(document.marks.count == 1)
   }
