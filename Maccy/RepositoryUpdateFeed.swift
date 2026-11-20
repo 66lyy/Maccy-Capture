@@ -32,6 +32,13 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     let name: String
     let size: Int
     let url: URL
+    let state: String
+    let createdAt: String
+
+    enum CodingKeys: String, CodingKey {
+      case id, name, size, url, state
+      case createdAt = "created_at"
+    }
   }
 
   struct Release: Decodable, Sendable {
@@ -90,25 +97,37 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
           channel.accepts(release) else {
       throw Failure.invalidRelease
     }
-    let feeds = release.assets.filter { $0.name == Self.feedName }
-    guard feeds.count == 1, let feed = feeds.first, valid(feed), feed.size <= 1_000_000 else {
-      throw Failure.unavailable
-    }
     let packages = release.assets.filter {
       $0.name.hasPrefix("Maccy-Capture-") && $0.name.hasSuffix("-universal.zip") && valid($0)
     }
     guard !packages.isEmpty, Set(packages.map(\.url)).count == packages.count else {
       throw Failure.invalidRelease
     }
-    let downloadPage = "https://github.com/\(repository)/releases/download/\(release.tagName)"
+    if channel == .preview {
+      let packagesByFeed = Dictionary(uniqueKeysWithValues: packages.map { ("capture-appcast-\($0.id).xml", $0) })
+      let feeds = release.assets.filter { packagesByFeed[$0.name] != nil && valid($0) && $0.size <= 1_000_000 }
+      if let latest = feeds.max(by: { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }),
+         let package = packagesByFeed[latest.name] {
+        return resolvedFeed(latest, tag: release.tagName, packages: [package])
+      }
+    }
+    let feeds = release.assets.filter { $0.name == Self.feedName }
+    guard feeds.count == 1, let feed = feeds.first, valid(feed), feed.size <= 1_000_000 else {
+      throw Failure.unavailable
+    }
+    return resolvedFeed(feed, tag: release.tagName, packages: packages)
+  }
+
+  private func resolvedFeed(_ feed: Asset, tag: String, packages: [Asset]) -> Resolved {
+    let downloadPage = "https://github.com/\(repository)/releases/download/\(tag)"
     return Resolved(
-      feedURL: URL(string: "\(downloadPage)/\(Self.feedName)?asset=\(feed.id)")!,
+      feedURL: URL(string: "\(downloadPage)/\(feed.name)?asset=\(feed.id)")!,
       archives: Dictionary(uniqueKeysWithValues: packages.map { ($0.url, $0.size) })
     )
   }
 
   private func valid(_ asset: Asset) -> Bool {
-    asset.id > 0 && asset.size > 0 &&
+    asset.state == "uploaded" && asset.id > 0 && asset.size > 0 &&
       asset.url.absoluteString == "https://api.github.com/repos/\(repository)/releases/assets/\(asset.id)"
   }
 }

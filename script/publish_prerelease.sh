@@ -19,6 +19,7 @@ fi
 
 DIST_DIR="$(cd "$MACCY_DIST_DIR" && pwd)"
 RELEASE_TAG="capture-latest"
+RELEASE_API="repos/$GH_REPO/releases/tags/$RELEASE_TAG"
 shopt -s nullglob
 ZIP_PACKAGES=("$DIST_DIR"/Maccy-Capture-*-"${GITHUB_SHA:0:12}"-universal.zip)
 DMG_PACKAGES=("$DIST_DIR"/Maccy-Capture-*-"${GITHUB_SHA:0:12}"-universal.dmg)
@@ -81,37 +82,80 @@ if ! gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
     --draft
 fi
 
-gh release upload "$RELEASE_TAG" \
-  "${ZIP_PACKAGES[0]}" "${DMG_PACKAGES[0]}" \
-  "$DIST_DIR/BUILD-INFO.txt" "$DIST_DIR/UPDATE-METADATA.json" \
-  --clobber
+upload_immutable_asset() {
+  local file="$1" name state digest expected
+  name="$(basename "$file")"
+  state="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .state' <<< "$RELEASE")"
+  case "$state" in
+    "")
+      ;;
+    starter)
+      gh release delete-asset "$RELEASE_TAG" "$name" --yes
+      ;;
+    uploaded)
+      digest="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .digest' <<< "$RELEASE")"
+      expected="sha256:$(python3 -c 'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$file")"
+      if [[ "$digest" == "$expected" ]]; then
+        return
+      fi
+      echo "Published asset does not match $name; refusing to replace it." >&2
+      return 2
+      ;;
+    *)
+      echo "Unexpected upload state for $name." >&2
+      return 2
+      ;;
+  esac
+  gh release upload "$RELEASE_TAG" "$file"
+}
 
+RELEASE="$(gh api "$RELEASE_API")"
+upload_immutable_asset "${ZIP_PACKAGES[0]}"
+upload_immutable_asset "${DMG_PACKAGES[0]}"
 ZIP_NAME="$(basename "${ZIP_PACKAGES[0]}")"
-ASSET_ID="$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" \
-  --jq ".assets[] | select(.name == \"$ZIP_NAME\") | .id")"
+RELEASE="$(gh api "$RELEASE_API")"
+ASSET_ID="$(jq -r --arg name "$ZIP_NAME" '.assets[] | select(.name == $name and .state == "uploaded") | .id' <<< "$RELEASE")"
 if [[ ! "$ASSET_ID" =~ ^[0-9]+$ ]]; then
   echo "Could not resolve the uploaded update archive." >&2
   exit 2
 fi
+VERSIONED_FEED="capture-appcast-$ASSET_ID.xml"
 python3 "$(dirname "${BASH_SOURCE[0]}")/generate_update_feed.py" appcast \
   --metadata "$DIST_DIR/UPDATE-METADATA.json" --repository "$GH_REPO" \
-  --asset-id "$ASSET_ID" --archive "${ZIP_PACKAGES[0]}" --output "$DIST_DIR/capture-appcast.xml"
+  --asset-id "$ASSET_ID" --archive "${ZIP_PACKAGES[0]}" --output "$DIST_DIR/$VERSIONED_FEED"
+upload_immutable_asset "$DIST_DIR/$VERSIONED_FEED"
+
+# Older clients still expect this fixed asset name.
+cp "$DIST_DIR/$VERSIONED_FEED" "$DIST_DIR/capture-appcast.xml"
 (
   cd "$DIST_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" \
+    sha256sum "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" "$VERSIONED_FEED" \
       BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
   else
-    shasum -a 256 "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" \
+    shasum -a 256 "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" "$VERSIONED_FEED" \
       BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
   fi
 )
-gh release upload "$RELEASE_TAG" "$DIST_DIR/SHA256SUMS.txt" --clobber
+gh release upload "$RELEASE_TAG" "$DIST_DIR/BUILD-INFO.txt" "$DIST_DIR/UPDATE-METADATA.json" \
+  "$DIST_DIR/SHA256SUMS.txt" --clobber
 gh release upload "$RELEASE_TAG" "$DIST_DIR/capture-appcast.xml" --clobber
 
-STALE_ASSETS="$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" --jq \
-  '[.assets[] | select(.name | test("^Maccy-Capture-.*-universal\\.(zip|dmg)$"))]
-  | sort_by(.created_at) | reverse | .[6:][] | .name')"
+# Keep the newest complete pairs and leave any recently resolved URLs usable.
+STALE_ASSETS="$(gh api "$RELEASE_API" --jq '
+  (.assets | map(select(.state == "uploaded")) | INDEX(.name)) as $published
+  | [.assets[].name] as $names
+  | [.assets[] | select(.name | test("^Maccy-Capture-.*-universal\\.zip$"))
+      | . + {appcast: ("capture-appcast-\(.id).xml"), dmg: (.name | sub("\\.zip$"; ".dmg"))}]
+      | sort_by(.created_at, .id) | reverse
+  | (map(select(.state == "uploaded" and $published[.appcast] != null))
+      | sort_by($published[.appcast].created_at, $published[.appcast].id) | .[-3:] | map(.id)) as $keep
+  | .[3:][]
+  | select(([.created_at, $published[.appcast].created_at] | max | fromdateiso8601) < (now - 86400))
+  | select(.id as $id | $keep | index($id) == null)
+  | (.appcast, .dmg, .name) as $name
+  | select($names | index($name)) | $name
+')"
 while IFS= read -r asset_name; do
   if [[ -n "$asset_name" && ! -f "$DIST_DIR/$asset_name" ]]; then
     gh release delete-asset "$RELEASE_TAG" "$asset_name" --yes

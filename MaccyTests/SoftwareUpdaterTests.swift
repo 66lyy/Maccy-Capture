@@ -59,6 +59,41 @@ struct SoftwareUpdaterTests {
     #expect(nextFeed.feedURL.query == "asset=20")
   }
 
+  @Test("Preview checks keep using a complete appcast and signed ZIP while another build is published")
+  func previewPublishInProgress() throws {
+    let preview = RepositoryUpdateFeed(repository: "fixture/capture", channel: .preview)
+    let previewResponse = try #require(HTTPURLResponse(
+      url: preview.releaseURL, statusCode: 200, httpVersion: nil, headerFields: nil
+    ))
+    let oldZip = asset(11, packageName, 200)
+    let oldFeed = asset(12, "capture-appcast-11.xml", 100)
+    let newZip = asset(20, "Maccy-Capture-2.8.0-fedcba987654-universal.zip", 300)
+    let newFeed = asset(21, "capture-appcast-20.xml", 120)
+    let unfinishedFeed = asset(21, "capture-appcast-20.xml", 120, state: "starter")
+
+    func resolve(_ assets: [[String: Any]]) throws -> RepositoryUpdateFeed.Resolved {
+      let data = try releaseData(["tag_name": "capture-latest", "prerelease": true, "assets": assets])
+      return try preview.resolve(data: data, response: previewResponse)
+    }
+
+    for assets in [
+      [oldZip, oldFeed, newZip],
+      [oldZip, oldFeed, newZip, unfinishedFeed],
+      [oldZip, oldFeed, newFeed]
+    ] {
+      let previous = try resolve(assets)
+      #expect(previous.feedURL.lastPathComponent == "capture-appcast-11.xml")
+      #expect(previous.permits(URL(string: assetURL(11)), length: 200))
+      #expect(!previous.permits(URL(string: assetURL(20)), length: 300))
+    }
+
+    let complete = try resolve([newFeed, oldFeed, oldZip, newZip])
+    #expect(complete.feedURL.lastPathComponent == "capture-appcast-20.xml")
+    #expect(complete.feedURL.query == "asset=21")
+    #expect(complete.permits(URL(string: assetURL(20)), length: 300))
+    #expect(!complete.permits(URL(string: assetURL(11)), length: 200))
+  }
+
   @Test("Failed release discovery reports update unavailability")
   func unavailableRelease() {
     for status in [401, 403, 404, 429, 500] {
@@ -346,8 +381,11 @@ struct SoftwareUpdaterTests {
     "https://api.github.com/repos/fixture/capture/releases/assets/\(identifier)"
   }
 
-  private func asset(_ identifier: Int, _ name: String, _ size: Int) -> [String: Any] {
-    ["id": identifier, "name": name, "size": size, "url": assetURL(identifier)]
+  private func asset(_ identifier: Int, _ name: String, _ size: Int, state: String = "uploaded") -> [String: Any] {
+    [
+      "id": identifier, "name": name, "size": size, "url": assetURL(identifier),
+      "state": state, "created_at": "2026-11-20T02:07:00Z"
+    ]
   }
 
   private func releaseData(_ override: [String: Any] = [:]) throws -> Data {

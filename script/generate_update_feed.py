@@ -1,6 +1,5 @@
 import argparse
 import base64
-import datetime
 import hashlib
 import json
 import pathlib
@@ -52,9 +51,6 @@ def create_appcast(metadata, repository, asset_id, archive):
     ET.SubElement(channel, "title").text = "Maccy Capture updates"
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = f'Maccy Capture {metadata["shortVersion"]} ({metadata["version"]})'
-    ET.SubElement(item, "pubDate").text = datetime.datetime.now(datetime.timezone.utc).strftime(
-        "%a, %d %b %Y %H:%M:%S GMT"
-    )
     for key in ["version", "shortVersion", "minimumSystemVersion"]:
         tag = "shortVersionString" if key == "shortVersion" else key
         ET.SubElement(item, f"{{{SPARKLE}}}{tag}").text = metadata[key]
