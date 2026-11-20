@@ -28,10 +28,12 @@ if gh api "repos/$GH_REPO/releases/tags/$MACCY_RELEASE_TAG" >/dev/null 2>&1; the
 fi
 
 # Use an existing tag, or tag the default branch head.
+TARGET=()
 if SHA="$(gh api "repos/$GH_REPO/commits/tags/$MACCY_RELEASE_TAG" --jq .sha 2>/dev/null)"; then
   :
 else
   SHA="$(gh api "repos/$GH_REPO/commits/heads/$MACCY_DEFAULT_BRANCH" --jq .sha)"
+  TARGET=(--target "$SHA")
 fi
 if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Could not resolve the release commit." >&2
@@ -73,7 +75,7 @@ if [[ "$(jq -r .sourceRevision UPDATE-METADATA.json)" != "$SHA" ||
   exit 2
 fi
 
-gh release create "$MACCY_RELEASE_TAG" --draft --target "$SHA" --title "Maccy Capture $VERSION" \
+gh release create "$MACCY_RELEASE_TAG" --draft "${TARGET[@]}" --title "Maccy Capture $VERSION" \
   --notes-file "$NOTES" "$ZIP" "$DMG" BUILD-INFO.txt UPDATE-METADATA.json
 ASSET_ID="$(gh release view "$MACCY_RELEASE_TAG" --json assets \
   --jq ".assets[] | select(.name == \"$ZIP\") | .apiUrl" | sed 's#.*/##')"
