@@ -14,10 +14,10 @@
 提交到 `master` / `main` 后，GitHub Actions 自动运行合成图片回归测试，并构建
 Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-256 校验文件。
 日常使用请下载 **[最新版稳定版](https://github.com/66lyy/Maccy-Capture/releases/latest)**；
-试用新功能可下载 **[最新测试版](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**，
+试用新功能可在 **[Releases](https://github.com/66lyy/Maccy-Capture/releases)** 下载测试版；每次默认分支构建都有独立的预发布版本及更新内容，
 也可以在 **Actions → Build Maccy Capture → 成功的运行 → Artifacts** 下载；
 在该工作流页点击 **Run workflow** 可手动打包。
-在默认分支上手动构建也会更新测试版 Release；其他分支、版本标签和 Pull Request 只提供 Artifacts。
+在默认分支上手动构建也会发布独立的测试版 Release；其他分支、版本标签和 Pull Request 只提供 Artifacts。
 
 配置证书后，发布版会复用固定的自签名证书；其他构建使用 ad-hoc 签名。
 两者均未使用 Apple 开发者 ID 签名或公证，首次启动可能被 Gatekeeper 拦截。

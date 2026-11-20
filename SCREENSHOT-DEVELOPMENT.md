@@ -159,8 +159,9 @@ instead of running two versions together.
 The workflow is `.github/workflows/build-capture.yml`.
 It runs on pushes to `master` / `main`, `capture-v*` tags, pull requests, and manual dispatch.
 The build job has read-only source permissions.
-After a successful default-branch build, a separate publishing job updates the
-`capture-latest` prerelease. Only that publishing job can write repository contents.
+After a successful default-branch build, a separate publishing job creates a
+`maccy-capture-vMAJOR.MINOR.PATCH-buildBUILD` prerelease with its changes.
+Only that publishing job can write repository contents.
 Pull requests never publish. In-app updates require the release to be publicly accessible.
 
 Branch pushes and pull requests that change only Markdown, `docs/`, `LICENSE`,
@@ -200,10 +201,9 @@ After copying these resources, the staged app is re-signed and verified.
 The packages do not include private keys, and packaging does not modify the installed app.
 
 Successful artifacts are retained for 14 days and failure diagnostics for 7 days.
-Successful default-branch builds also update Releases → Latest test build (`capture-latest`)
+Successful default-branch builds each publish a separate test build in Releases
 with the ZIP, DMG, `SHA256SUMS.txt`, and `BUILD-INFO.txt`.
-The `capture-appcast.xml` update feed is activated only after the signed ZIP and supporting files upload.
-The newest three ZIP/DMG pairs are retained for in-flight updates.
+The release stays a draft until the signed ZIP, supporting files, and `capture-appcast.xml` upload.
 Promote a verified default-branch build to stable by creating a separate draft Release with a
 `maccy-capture-vMAJOR.MINOR.PATCH` tag at its source commit. Upload the unchanged signed ZIP and DMG
 with their build information and update metadata. Use `script/generate_update_feed.py appcast`
@@ -264,8 +264,9 @@ official releases over customized features.
 `SoftwareUpdater` is a single application-lifetime Sparkle controller started after normal launch.
 The application's own preference controls a single automatic check at launch. Manual checks remain available.
 Each check anonymously resolves the configured channel. Stable (default) accepts only a published
-`maccy-capture-vMAJOR.MINOR.PATCH` release from GitHub's Latest Release endpoint; Preview accepts
-only the rolling `capture-latest` prerelease. Channel changes do not downgrade the app.
+`maccy-capture-vMAJOR.MINOR.PATCH` release from GitHub's Latest Release endpoint; Preview selects
+the newest published valid stable release or per-build prerelease among the ten releases returned by the API.
+Channel changes do not downgrade the app.
 Each check confirms `capture-appcast.xml` exists and loads it from the public download URL.
 The attachment ID varies the download URL when a new release replaces the file, avoiding a stale cached redirect.
 Sparkle requests RSS; the GitHub asset API can respond with JSON instead of the file to that request.

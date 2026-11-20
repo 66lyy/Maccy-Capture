@@ -98,78 +98,6 @@ upload_immutable_asset() {
   gh release upload "$tag" "$file"
 }
 
-publish_legacy_mirror() {
-local RELEASE_TAG="capture-latest"
-local RELEASE_API="repos/$GH_REPO/releases/tags/$RELEASE_TAG"
-RELEASE="$(gh api "$RELEASE_API")"
-upload_immutable_asset "$RELEASE_TAG" "${ZIP_PACKAGES[0]}"
-upload_immutable_asset "$RELEASE_TAG" "${DMG_PACKAGES[0]}"
-ZIP_NAME="$(basename "${ZIP_PACKAGES[0]}")"
-RELEASE="$(gh api "$RELEASE_API")"
-ASSET_ID="$(jq -r --arg name "$ZIP_NAME" '.assets[] | select(.name == $name and .state == "uploaded") | .id' <<< "$RELEASE")"
-if [[ ! "$ASSET_ID" =~ ^[0-9]+$ ]]; then
-  echo "Could not resolve the uploaded update archive." >&2
-  exit 2
-fi
-VERSIONED_FEED="capture-appcast-$ASSET_ID.xml"
-python3 "$(dirname "${BASH_SOURCE[0]}")/generate_update_feed.py" appcast \
-  --metadata "$DIST_DIR/UPDATE-METADATA.json" --repository "$GH_REPO" \
-  --asset-id "$ASSET_ID" --archive "${ZIP_PACKAGES[0]}" --output "$DIST_DIR/$VERSIONED_FEED"
-upload_immutable_asset "$RELEASE_TAG" "$DIST_DIR/$VERSIONED_FEED"
-
-# Older clients still expect this fixed asset name.
-cp "$DIST_DIR/$VERSIONED_FEED" "$DIST_DIR/capture-appcast.xml"
-(
-  cd "$DIST_DIR"
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" "$VERSIONED_FEED" \
-      BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
-  else
-    shasum -a 256 "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" "$VERSIONED_FEED" \
-      BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
-  fi
-)
-gh release upload "$RELEASE_TAG" "$DIST_DIR/BUILD-INFO.txt" "$DIST_DIR/UPDATE-METADATA.json" \
-  "$DIST_DIR/SHA256SUMS.txt" --clobber
-gh release upload "$RELEASE_TAG" "$DIST_DIR/capture-appcast.xml" --clobber
-
-# Keep the newest complete pairs and leave any recently resolved URLs usable.
-STALE_ASSETS="$(gh api "$RELEASE_API" --jq '
-  (.assets | map(select(.state == "uploaded")) | INDEX(.name)) as $published
-  | [.assets[].name] as $names
-  | [.assets[] | select(.name | test("^Maccy-Capture-.*-universal\\.zip$"))
-      | . + {appcast: ("capture-appcast-\(.id).xml"), dmg: (.name | sub("\\.zip$"; ".dmg"))}]
-      | sort_by(.created_at, .id) | reverse
-  | (map(select(.state == "uploaded" and $published[.appcast] != null))
-      | sort_by($published[.appcast].created_at, $published[.appcast].id) | .[-3:] | map(.id)) as $keep
-  | .[3:][]
-  | select(([.created_at, $published[.appcast].created_at] | max | fromdateiso8601) < (now - 86400))
-  | select(.id as $id | $keep | index($id) == null)
-  | (.appcast, .dmg, .name) as $name
-  | select($names | index($name)) | $name
-')"
-while IFS= read -r asset_name; do
-  if [[ -n "$asset_name" && ! -f "$DIST_DIR/$asset_name" ]]; then
-    gh release delete-asset "$RELEASE_TAG" "$asset_name" --yes
-  fi
-done <<< "$STALE_ASSETS"
-
-if gh api "repos/$GH_REPO/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-  gh api --method PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \
-    -f sha="$GITHUB_SHA" -F force=true >/dev/null
-else
-  gh api --method POST "repos/$GH_REPO/git/refs" \
-    -f ref="refs/tags/$RELEASE_TAG" -f sha="$GITHUB_SHA" >/dev/null
-fi
-
-gh release edit "$RELEASE_TAG" \
-  --title "Latest test build" \
-  --notes-file "$NOTES_FILE" \
-  --prerelease \
-  --draft=false
-gh release view "$RELEASE_TAG" --json url --jq '.url'
-}
-
 SHORT_VERSION="$(jq -r '.shortVersion' "$DIST_DIR/UPDATE-METADATA.json")"
 BUILD_VERSION="$(jq -r '.version' "$DIST_DIR/UPDATE-METADATA.json")"
 if [[ ! "$SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ||
@@ -238,7 +166,3 @@ done
 gh release edit "$RELEASE_TAG" --title "$TITLE" --notes-file "$NOTES_FILE" \
   --draft=false --prerelease --latest=false
 gh release view "$RELEASE_TAG" --json url --jq '.url'
-
-if gh release view capture-latest --json tagName >/dev/null 2>&1; then
-  publish_legacy_mirror
-fi

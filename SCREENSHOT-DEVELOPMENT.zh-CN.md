@@ -101,7 +101,7 @@ bash script/setup_local_signing.sh
 
 工作流位于 `.github/workflows/build-capture.yml`，在推送到 `master` / `main`、
 推送 `capture-v*` 标签、提交 Pull Request 或手动触发时运行。构建任务只有读取源码的权限，
-主分支成功构建后，由独立的发布任务自动更新 `capture-latest` 测试版 Release。
+主分支成功构建后，由独立的发布任务创建 `maccy-capture-v主版本.次版本.补丁版本-build构建号` 测试版 Release，并附上更新内容。
 只有发布任务具有写入仓库内容的权限；Pull Request 不发布，仓库可保持私有。
 分支推送与 Pull Request 仅涉及 Markdown、`docs/`、`LICENSE`、Issue/PR 模板、
 `.gitignore` 或 `.gitattributes` 时不触发构建；混合代码改动仍会构建。
@@ -130,9 +130,9 @@ ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 产物不包含私钥，打包也不修改已安装的应用。
 
 成功运行的 Artifacts 保留 14 天，失败诊断保留 7 天。
-主分支成功构建后还会更新 Releases 中的 `capture-latest` 测试版，
+主分支每次成功构建后都会在 Releases 中发布独立测试版，
 附带 ZIP、DMG、`SHA256SUMS.txt`、`BUILD-INFO.txt` 及更新元数据；
-新包和支持文件上传成功后才启用 `capture-appcast.xml`，保留最近三组 ZIP/DMG 供进行中的更新使用。
+新包、支持文件及 `capture-appcast.xml` 上传完成前，Release 保持草稿状态。
 发布稳定版时，从已验证的默认分支构建提取原样签名的 ZIP 和 DMG，按源码提交创建
 `maccy-capture-v主版本.次版本.补丁版本` 标签的独立 Release 草稿，上传安装包、构建信息及更新元数据。
 用 `script/generate_update_feed.py appcast` 和**稳定版自身的 ZIP 附件 ID**生成更新源，
@@ -181,7 +181,8 @@ bash script/package_release.sh
 `SoftwareUpdater` 使用应用生命周期内唯一的 Sparkle 实例，在正常启动后开启。
 自动检查由本机偏好控制，仅在启动时执行一次，仍可手动检查。
 检查时以匿名请求解析所选渠道：稳定版（默认）只接受 GitHub Latest Release 接口返回的已发布版本标签，
-测试版只接受 `capture-latest` 预发布。切换渠道不会降级现有应用。
+测试版从 API 返回的十个版本中选择发布时间最新且附件完整的稳定版或按构建发布的预发布版本。
+切换渠道不会降级现有应用。
 每次确认 `capture-appcast.xml` 附件存在后，从公开下载地址读取。
 附件 ID 随发布替换而变化，并作为下载地址参数，避免复用旧版的缓存重定向。
 Sparkle 请求 RSS 时，GitHub 附件 API 可能返回附件元数据 JSON，而不是文件内容。

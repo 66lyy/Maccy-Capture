@@ -140,7 +140,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: Update rolling test release
+    name: Publish test build release
     needs: build
     if: >-
       github.event_name != 'pull_request' &&
@@ -162,7 +162,7 @@ jobs:
           name: Maccy-Capture-macOS-universal-${{ github.run_number }}
           path: ${{ runner.temp }}/MaccyCapture-dist
 
-      - name: Publish or update test release
+      - name: Publish test build release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

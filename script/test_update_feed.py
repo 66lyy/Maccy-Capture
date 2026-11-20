@@ -89,13 +89,7 @@ class UpdateFeedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.metadata()
 
-    def test_publishing_without_legacy_release(self):
-        self.check_publishing(False)
-
     def test_publishing_uploads_packages_before_activating_the_feed(self):
-        self.check_publishing(True)
-
-    def check_publishing(self, legacy):
         repository_root = pathlib.Path(__file__).resolve().parent.parent
         distribution = self.root / "dist"
         distribution.mkdir()
@@ -117,36 +111,20 @@ class UpdateFeedTests(unittest.TestCase):
         )
         command_log = self.root / "commands.jsonl"
         asset_store = self.root / "assets.json"
-        snapshot_log = self.root / "snapshots.jsonl"
-        previous_feed = "capture-appcast-51.xml"
-        previous_archive = "Maccy-Capture-2.8.0-previous-universal.zip"
-        stale_archive = "Maccy-Capture-2.8.0-stale-universal.zip"
-        asset_store.write_text(json.dumps({
-            name: {"id": identifier, "name": name, "state": "uploaded", "created_at": "2026-01-01T00:00:00Z"}
-            for identifier, name in [
-                (41, "Maccy-Capture-2.8.0-archived-universal.zip"), (42, "capture-appcast-41.xml"),
-                (31, stale_archive), (32, "capture-appcast-31.xml"),
-                (51, previous_archive), (52, previous_feed), (53, "capture-appcast.xml")
-            ]
-        }))
         mock_gh = self.root / "gh"
         mock_gh.write_text(
             f"#!{sys.executable}\n"
-            "import hashlib, json, os, pathlib, subprocess, sys\n"
+            "import hashlib, json, os, pathlib, sys\n"
             "arguments = sys.argv[1:]\n"
-            "tag = arguments[2] if arguments[0] == 'release' else arguments[1].split('/')[-1]\n"
-            "legacy = tag == 'capture-latest'\n"
-            "store = pathlib.Path(os.environ['ASSET_STORE'] + ('' if legacy else '.build'))\n"
+            "store = pathlib.Path(os.environ['ASSET_STORE'])\n"
             "exists = store.exists()\n"
             "assets = json.loads(store.read_text()) if exists else {}\n"
             "draft_marker = pathlib.Path(os.environ['ASSET_STORE'] + '.draft')\n"
             "def snapshot():\n"
             "    store.write_text(json.dumps(assets))\n"
-            "    if legacy:\n"
-            "        with open(os.environ['SNAPSHOT_LOG'], 'a') as log:\n"
-            "            log.write(json.dumps(sorted(assets)) + '\\n')\n"
             "with open(os.environ['COMMAND_LOG'], 'a') as log:\n"
             "    log.write(json.dumps(arguments) + '\\n')\n"
+            "if any('capture-latest' in arg for arg in arguments): sys.exit('rolling release must not be touched')\n"
             "if arguments[:2] == ['api', 'repos/fixture/capture/releases?per_page=30']:\n"
             "    print(json.dumps([\n"
             "        {'tag_name': 'maccy-capture-v2.7.0', 'draft': False, 'published_at': '2026-11-20T07:26:36Z'},\n"
@@ -158,22 +136,15 @@ class UpdateFeedTests(unittest.TestCase):
             "        {'sha': 'a'*40, 'parents': [{}], 'commit': {'message': 'Newest change'}}]}))\n"
             "elif arguments[0] == 'api' and ('/releases/tags/' in arguments[1] or\n"
             "        arguments[1] == 'https://api.github.com/repos/fixture/capture/releases/99'):\n"
-            "    if not legacy and '/releases/tags/' in arguments[1] and draft_marker.exists():\n"
+            "    if '/releases/tags/' in arguments[1] and draft_marker.exists():\n"
             "        sys.exit('HTTP 404: Not Found')\n"
             "    response = json.dumps({'assets': list(assets.values())})\n"
-            "    if '--jq' in arguments:\n"
-            "        subprocess.run(['jq', '-r', arguments[-1]], input=response, text=True, check=True)\n"
-            "    else:\n"
-            "        print(response)\n"
+            "    print(response)\n"
             "elif arguments[:2] == ['release', 'upload']:\n"
-            "    clobber = '--clobber' in arguments\n"
-            "    for path in map(pathlib.Path, (arg for arg in arguments[3:] if arg != '--clobber')):\n"
+            "    for path in map(pathlib.Path, arguments[3:]):\n"
             "        identifier = max([122] + [asset['id'] for asset in assets.values()]) + 1\n"
             "        if path.name in assets:\n"
-            "            if not clobber:\n"
-            "                sys.exit('cannot replace an asset without --clobber')\n"
-            "            del assets[path.name]\n"
-            "            snapshot()\n"
+            "            sys.exit('cannot replace an immutable asset')\n"
             "        assets[path.name] = {'id': identifier, 'name': path.name, 'state': 'uploaded',\n"
             "            'created_at': '2026-11-20T02:00:00Z',\n"
             "            'digest': 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()}\n"
@@ -182,14 +153,14 @@ class UpdateFeedTests(unittest.TestCase):
             "    del assets[arguments[3]]\n"
             "    snapshot()\n"
             "elif arguments[:2] == ['release', 'view']:\n"
-            "    if not exists or (legacy and os.environ['LEGACY'] == 'false'): sys.exit(1)\n"
+            "    if not exists: sys.exit(1)\n"
             "    print('https://api.github.com/repos/fixture/capture/releases/99' if 'apiUrl' in arguments else '{}')\n"
             "elif arguments[:2] == ['release', 'create']:\n"
             "    draft_marker.touch()\n"
             "    snapshot()\n"
             "elif arguments[:2] == ['release', 'edit']:\n"
             "    assert '--draft=false' in arguments and '--prerelease' in arguments\n"
-            "    if not legacy and draft_marker.exists(): draft_marker.unlink()\n"
+            "    if draft_marker.exists(): draft_marker.unlink()\n"
             "if '--notes-file' in arguments:\n"
             "    pathlib.Path(os.environ['NOTES_COPY']).write_text(pathlib.Path(arguments[arguments.index('--notes-file')+1]).read_text())\n",
             encoding="utf-8",
@@ -199,8 +170,6 @@ class UpdateFeedTests(unittest.TestCase):
             "PATH": f"{self.root}{os.pathsep}{os.environ['PATH']}",
             "COMMAND_LOG": str(command_log),
             "ASSET_STORE": str(asset_store),
-            "SNAPSHOT_LOG": str(snapshot_log),
-            "LEGACY": str(legacy).lower(),
             "NOTES_COPY": str(self.root / "notes.md"),
             "GH_REPO": "fixture/capture",
             "GITHUB_SHA": self.revision,
@@ -241,7 +210,7 @@ class UpdateFeedTests(unittest.TestCase):
         self.assertIn("Changes / 更新内容", notes)
         self.assertLess(notes.index('Newest change'), notes.index('First change'))
         self.assertNotIn('Merge omitted', notes)
-        build_store = pathlib.Path(str(asset_store) + '.build')
+        build_store = asset_store
         published_assets = json.loads(build_store.read_text())
         published_assets[archive.name]['digest'] = 'sha256:wrong'
         build_store.write_text(json.dumps(published_assets))
@@ -251,32 +220,8 @@ class UpdateFeedTests(unittest.TestCase):
         )
         self.assertNotEqual(mismatch.returncode, 0)
         self.assertIn('refusing to replace it', mismatch.stderr)
-        if not legacy:
-            self.assertFalse(any(c[:3] == ['release', 'upload', 'capture-latest'] for c in commands))
-            return
-        commands = [c for c in commands if len(c) > 2 and c[2] == 'capture-latest']
-        uploads = [command for command in commands if command[:2] == ["release", "upload"]]
-        self.assertIn(str(archive), uploads[0])
-        self.assertNotIn("--clobber", uploads[0])
-        versioned_feed = distribution / "capture-appcast-123.xml"
-        immutable_uploads = [command for command in uploads if str(versioned_feed) in command]
-        self.assertEqual(len(immutable_uploads), 1)
-        self.assertNotIn("--clobber", immutable_uploads[0])
-        self.assertIn(str(distribution / "capture-appcast.xml"), uploads[-1])
-        edits = [command for command in commands if command[:2] == ["release", "edit"]]
-        self.assertIn("--prerelease", edits[-1])
-        self.assertIn("--draft=false", edits[-1])
-        self.assertEqual(versioned_feed.read_bytes(), (distribution / "capture-appcast.xml").read_bytes())
-
-        snapshots = [set(json.loads(line)) for line in snapshot_log.read_text().splitlines()]
-        replacement_gaps = [names for names in snapshots if "capture-appcast.xml" not in names]
-        self.assertTrue(replacement_gaps, "clobber deletes the fixed appcast before uploading its replacement")
-        for names in snapshots:
-            self.assertTrue({previous_archive, previous_feed} <= names or {archive.name, versioned_feed.name} <= names)
-        for names in replacement_gaps:
-            self.assertTrue({archive.name, versioned_feed.name} <= names)
-        self.assertTrue({previous_archive, previous_feed} <= snapshots[-1])
-        self.assertTrue({stale_archive, "capture-appcast-31.xml"}.isdisjoint(snapshots[-1]))
+        commands = [json.loads(line) for line in command_log.read_text().splitlines()]
+        self.assertFalse(any("capture-latest" in arg for command in commands for arg in command))
 
 
 if __name__ == "__main__":
