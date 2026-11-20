@@ -388,7 +388,7 @@ private final class ScreenshotAnnotationOverlay: NSView {
     shade.windingRule = .evenOdd
     NSColor.black.withAlphaComponent(0.12).setFill()
     shade.fill()
-    NSColor.controlAccentColor.setStroke()
+    NSColor.systemRed.setStroke()
     let border = NSBezierPath(rect: imageFrame.insetBy(dx: -1, dy: -1))
     border.lineWidth = 2
     border.stroke()

@@ -196,6 +196,14 @@ struct ScreenshotSelectionTests {
     #expect(try await task.value == nil)
   }
 
+  @Test("Dragging reports the pointer's pixel position from the display's top-left corner")
+  func pointerPixelPosition() {
+    let bounds = NSRect(x: 0, y: 0, width: 800, height: 600)
+    #expect(ScreenshotSelectionView.pixelPositionText(of: NSPoint(x: 120.6, y: 450), in: bounds, scale: 2) == "X 241  Y 300")
+    #expect(ScreenshotSelectionView.pixelPositionText(of: NSPoint(x: -40, y: 700), in: bounds, scale: 1) == "X 0  Y 0")
+    #expect(ScreenshotSelectionView.pixelPositionText(of: NSPoint(x: 900, y: -5), in: bounds, scale: 1) == "X 800  Y 600")
+  }
+
   @Test("An existing selection can move, resize and nudge without capturing")
   func adjustSelection() {
     let view = ScreenshotSelectionView(

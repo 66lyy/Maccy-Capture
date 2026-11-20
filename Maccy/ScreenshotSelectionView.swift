@@ -367,6 +367,12 @@ final class ScreenshotSelectionView: NSView {
     )
   }
 
+  static func pixelPositionText(of point: NSPoint, in bounds: NSRect, scale: CGFloat) -> String {
+    let x = min(max(point.x, bounds.minX), bounds.maxX) - bounds.minX
+    let y = bounds.maxY - min(max(point.y, bounds.minY), bounds.maxY)
+    return "X \(Int(x * scale))  Y \(Int(y * scale))"
+  }
+
   private var activeRect: NSRect? {
     selectedRect ?? pointer.flatMap { snapRectangle(near: $0) }
   }
@@ -379,7 +385,10 @@ final class ScreenshotSelectionView: NSView {
   override func layout() {
     super.layout()
     if let activeRect {
-      let dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
+      var dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
+      if drag != nil, let pointer {
+        dimensions += "  ·  " + Self.pixelPositionText(of: pointer, in: bounds, scale: scale)
+      }
       selectionHint.update(dimensions, near: NSPoint(x: activeRect.minX, y: activeRect.maxY + 8), in: bounds)
     } else {
       let key = pinImmediately ? "ScreenshotSelectionPinInstructions" : "ScreenshotSelectionInstructions"
@@ -406,7 +415,7 @@ final class ScreenshotSelectionView: NSView {
     NSColor.black.withAlphaComponent(0.12).setFill()
     shade.fill()
     if let activeRect {
-      NSColor.systemCyan.setStroke()
+      NSColor.systemRed.setStroke()
       let border = NSBezierPath(rect: activeRect.insetBy(dx: 1, dy: 1))
       border.lineWidth = 2
       border.stroke()
