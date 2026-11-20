@@ -653,7 +653,9 @@ struct ScreenshotAnnotationTests {
     if #available(macOS 26.0, *) {
       let glass = try #require(toolbar.subviews.first as? NSGlassEffectView)
       #expect(glass.contentView === toolbar.controlsView)
-      #expect(glass.style == (NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? .regular : .clear))
+      #expect(glass.style == (NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        ? .regular
+        : LiquidGlass.effectStyle(LiquidGlass.style)))
     } else {
       #expect(toolbar.controlsView is NSVisualEffectView)
     }

@@ -41,3 +41,7 @@
 "GlassTransparencyReset" = "重設";
 "GlassTransparencyTooltip" = "數值越高越透明，越低玻璃越暗。\n預設：50%。";
 "GlassTransparencyReduceTransparency" = "輔助使用中開啟「減少透明度」時無法使用。";
+"GlassStyle" = "玻璃樣式：";
+"GlassStyleFrosted" = "磨砂";
+"GlassStyleClear" = "透明";
+"GlassStyleTooltip" = "磨砂會模糊玻璃後方的內容；透明則讓其清晰透出。\n預設：磨砂。";

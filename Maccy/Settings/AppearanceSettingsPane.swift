@@ -17,6 +17,7 @@ struct AppearanceSettingsPane: View {
   @Default(.showFooter) private var showFooter
   @Default(.windowPosition) private var windowPosition
   @Default(.glassTransparency) private var glassTransparency
+  @Default(.glassStyle) private var glassStyle
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   @State private var screens = NSScreen.screens
@@ -205,6 +206,21 @@ struct AppearanceSettingsPane: View {
 
   private var glass: some View {
     PreferencesGroup(title: label("GlassSection"), symbol: "drop") {
+      PreferencesRow(title: label("GlassStyle")) {
+        Picker("", selection: $glassStyle) {
+          ForEach(GlassStyle.allCases) { style in
+            Text(style.description)
+          }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .disabled(reduceTransparency)
+        .help(label(reduceTransparency ? "GlassTransparencyReduceTransparency" : "GlassStyleTooltip"))
+        .accessibilityLabel(label("GlassStyle"))
+      }
+      Divider()
+
       PreferencesRow(title: label("GlassTransparency")) {
         HStack(spacing: 12) {
           Slider(value: $glassTransparency, in: LiquidGlass.transparencyRange, step: 0.1)

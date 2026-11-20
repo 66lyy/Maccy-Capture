@@ -21,9 +21,8 @@ final class PreferencesWindowController: NSWindowController {
     let contentView: NSView
     if #available(macOS 26.0, *), !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency {
       let glass = NSGlassEffectView(frame: contentRect)
-      glass.style = .clear
-      glass.tintColor = LiquidGlass.clearDimming
-      LiquidGlass.followDimming(of: glass, owner: window)
+      LiquidGlass.apply(to: glass)
+      LiquidGlass.followSettings(of: glass, owner: window)
       let content = NSView(frame: contentRect)
       content.autoresizingMask = [.width, .height]
       glass.contentView = content
@@ -243,6 +242,7 @@ extension View {
 private struct PreferencesGlassSurface: ViewModifier {
   let radius: CGFloat
   @Default(.glassTransparency) private var glassTransparency
+  @Default(.glassStyle) private var glassStyle
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorScheme) private var colorScheme
 
@@ -252,7 +252,11 @@ private struct PreferencesGlassSurface: ViewModifier {
       if reduceTransparency {
         content.background(Color(nsColor: .controlBackgroundColor), in: shape)
       } else if #available(macOS 26.0, *) {
-        content.glassEffect(.clear.tint(Color(nsColor: LiquidGlass.clearDimming(transparency: glassTransparency))), in: shape)
+        content.glassEffect(
+          LiquidGlass.glass(glassStyle)
+            .tint(Color(nsColor: LiquidGlass.dimming(transparency: glassTransparency, style: glassStyle))),
+          in: shape
+        )
       } else {
         content.background(.regularMaterial, in: shape)
       }
