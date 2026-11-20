@@ -157,64 +157,76 @@ struct AnnotationToolSettings: View {
 
   @Default(.annotationToolOrder) private var order
   @Default(.disabledAnnotationTools) private var disabled
-  @GestureState private var draggedTool: Tool?
-  @GestureState private var dragOffset: CGFloat = 0
+  @Default(.toolbarItemOrder) private var itemOrder
+  @Default(.disabledToolbarItems) private var disabledItems
 
-  private static let rowHeight: CGFloat = 28
+  static let rowHeight: CGFloat = 28
 
   private var tools: [Tool] { Tool.toolbarTools(order: order, disabled: []) }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      VStack(spacing: 0) {
-        ForEach(tools, id: \.self) { tool in
-          HStack(spacing: 8) {
-            HStack(spacing: 8) {
-              Image(systemName: "line.3.horizontal")
-                .foregroundStyle(.secondary)
-              Image(systemName: ScreenshotAnnotationWindow.symbol(for: tool))
-                .frame(width: 20)
-              Text(LocalizedStringKey(tool.titleKey), tableName: "GeneralSettings")
-              Spacer(minLength: 0)
-            }
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .gesture(
-              DragGesture(minimumDistance: 4, coordinateSpace: .named("annotation-tools"))
-                .updating($draggedTool) { _, state, _ in state = tool }
-                .updating($dragOffset) { value, state, _ in state = value.translation.height }
-                .onEnded { value in
-                  if let reordered = Self.reorderedTools(tool, translation: value.translation.height, order: order) {
-                    order = reordered
-                  }
-                }
-            )
-            Toggle(isOn: binding(for: tool)) {
-              Text(LocalizedStringKey(tool.titleKey), tableName: "GeneralSettings")
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .labelsHidden()
-            .disabled(isLastEnabled(tool))
+    VStack(alignment: .leading, spacing: 10) {
+      ReorderableToggleList(
+        title: "AnnotationTools",
+        rows: tools.map { .init(id: $0.rawValue, symbol: ScreenshotAnnotationWindow.symbol(for: $0), titleKey: $0.titleKey) },
+        isOn: { !disabled.contains($0) },
+        canSwitchOff: { id in tools.filter { !disabled.contains($0.rawValue) }.count > 1 || disabled.contains(id) },
+        setOn: { id, enabled in
+          disabled.removeAll { $0 == id }
+          if !enabled { disabled.append(id) }
+        },
+        move: { id, translation in
+          if let tool = Tool(rawValue: id), let reordered = Self.reorderedTools(tool, translation: translation, order: order) {
+            order = reordered
           }
-          .padding(.horizontal, 8)
-          .frame(height: Self.rowHeight)
-          .background(draggedTool == tool ? Color.accentColor.opacity(0.15) : Color.clear)
-          .offset(y: draggedTool == tool ? dragOffset : 0)
-          .zIndex(draggedTool == tool ? 1 : 0)
         }
-        Color.clear
-          .frame(height: 8)
-      }
-      .coordinateSpace(name: "annotation-tools")
-      .background(.background)
-      .overlay {
-        Rectangle().strokeBorder(.separator).allowsHitTesting(false)
+      )
+      ForEach(ScreenshotToolbarItem.Group.allCases, id: \.self) { group in
+        let items = ScreenshotToolbarItem.items(in: group, order: itemOrder, disabled: [])
+        ReorderableToggleList(
+          title: Self.titleKey(for: group),
+          rows: items.map { .init(id: $0.rawValue, symbol: $0.symbol, titleKey: $0.titleKey) },
+          isOn: { !disabledItems.contains($0) },
+          canSwitchOff: { _ in true },
+          setOn: { id, enabled in
+            disabledItems.removeAll { $0 == id }
+            if !enabled { disabledItems.append(id) }
+          },
+          move: { id, translation in
+            if let item = ScreenshotToolbarItem(rawValue: id),
+               let reordered = Self.reorderedItems(item, translation: translation, order: itemOrder) {
+              itemOrder = reordered
+            }
+          }
+        )
       }
       Text("AnnotationToolsHelp", tableName: "GeneralSettings")
         .font(.caption)
         .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
+  }
+
+  static func titleKey(for group: ScreenshotToolbarItem.Group) -> String {
+    switch group {
+    case .history: "ToolbarHistoryGroup"
+    case .output: "ToolbarOutputGroup"
+    case .style: "ToolbarStyleGroup"
+    }
+  }
+
+  static func reorderedItems(_ item: ScreenshotToolbarItem, translation: CGFloat, order: [String]) -> [String]? {
+    guard translation.isFinite else { return nil }
+    let group = ScreenshotToolbarItem.items(in: item.group, order: order, disabled: [])
+    guard let source = group.firstIndex(of: item) else { return nil }
+    let destination = Int(min(max(CGFloat(source) + (translation / rowHeight).rounded(), 0), CGFloat(group.count - 1)))
+    guard destination != source else { return nil }
+    var reordered = group
+    reordered.remove(at: source)
+    reordered.insert(item, at: destination)
+    let others = ScreenshotToolbarItem.Group.allCases.filter { $0 != item.group }
+      .flatMap { ScreenshotToolbarItem.items(in: $0, order: order, disabled: []) }
+    return (reordered + others).map(\.rawValue)
   }
 
   static func reorderedTools(_ tool: Tool, translation: CGFloat, order: [Int]) -> [Int]? {
@@ -241,18 +253,70 @@ struct AnnotationToolSettings: View {
     }
     return reordered.map(\.rawValue)
   }
+}
 
-  private func isLastEnabled(_ tool: Tool) -> Bool {
-    !disabled.contains(tool.rawValue) && tools.filter { !disabled.contains($0.rawValue) }.count == 1
+struct ReorderableToggleList<ID: Hashable>: View {
+  struct Row: Identifiable {
+    let id: ID
+    let symbol: String
+    let titleKey: String
   }
 
-  private func binding(for tool: Tool) -> Binding<Bool> {
-    Binding(
-      get: { !disabled.contains(tool.rawValue) },
-      set: { enabled in
-        disabled.removeAll { $0 == tool.rawValue }
-        if !enabled { disabled.append(tool.rawValue) }
+  let title: String
+  let rows: [Row]
+  let isOn: (ID) -> Bool
+  let canSwitchOff: (ID) -> Bool
+  let setOn: (ID, Bool) -> Void
+  let move: (ID, CGFloat) -> Void
+
+  @GestureState private var dragged: ID?
+  @GestureState private var offset: CGFloat = 0
+  @Namespace private var dragCoordinateSpace
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(LocalizedStringKey(title), tableName: "GeneralSettings")
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.secondary)
+      VStack(spacing: 0) {
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+          if index > 0 { Divider().frame(height: 1) }
+          HStack(spacing: 8) {
+            HStack(spacing: 8) {
+              Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+              Image(systemName: row.symbol)
+                .frame(width: 20)
+              Text(LocalizedStringKey(row.titleKey), tableName: "GeneralSettings")
+              Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+              DragGesture(minimumDistance: 4, coordinateSpace: .named(dragCoordinateSpace))
+                .updating($dragged) { _, state, _ in state = row.id }
+                .updating($offset) { value, state, _ in state = value.translation.height }
+                .onEnded { value in move(row.id, value.translation.height) }
+            )
+            Toggle(isOn: Binding(get: { isOn(row.id) }, set: { setOn(row.id, $0) })) {
+              Text(LocalizedStringKey(row.titleKey), tableName: "GeneralSettings")
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
+            .disabled(isOn(row.id) && !canSwitchOff(row.id))
+          }
+          .frame(height: AnnotationToolSettings.rowHeight - 1)
+          .background {
+            if dragged == row.id {
+              RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.15))
+            }
+          }
+          .offset(y: dragged == row.id ? offset : 0)
+          .zIndex(dragged == row.id ? 1 : 0)
+        }
       }
-    )
+      .coordinateSpace(name: dragCoordinateSpace)
+    }
   }
 }

@@ -184,9 +184,15 @@
 "AnnotationNumber" = "序号";
 "AnnotationMagnifier" = "放大镜";
 "AnnotationMagnification" = "倍数";
-"AnnotationToolsSection" = "标注工具";
-"AnnotationToolsHelp" = "拖动工具可调整标注工具条的顺序，关闭的工具不会显示在工具条中。";
+"AnnotationToolsSection" = "截图工具条";
+"AnnotationToolsHelp" = "拖动可调整各项在所在工具条行中的顺序，关闭的项不会显示在工具条中，快捷键仍然有效。";
 
 "ScreenshotLong" = "长截图";
 "ScreenshotLongHint" = "滚动内容以延长截图";
 "ScreenshotLongLimit" = "已达到截图尺寸上限";
+"ToolbarPinOrApply" = "贴屏 / 应用";
+"ToolbarPalette" = "预设颜色";
+"ToolbarSize" = "粗细滑块";
+"ToolbarHistoryGroup" = "撤销与重做";
+"ToolbarOutputGroup" = "操作";
+"ToolbarStyleGroup" = "颜色与粗细";

@@ -101,10 +101,16 @@
 "AnnotationNumber" = "序號";
 "AnnotationMagnifier" = "放大鏡";
 "AnnotationMagnification" = "倍數";
-"AnnotationToolsSection" = "標註工具";
-"AnnotationToolsHelp" = "拖移工具可調整標註工具列的順序，關閉的工具不會顯示在工具列中。";
+"AnnotationToolsSection" = "截圖工具列";
+"AnnotationToolsHelp" = "拖移可調整各項在所在工具列行中的順序，關閉的項目不會顯示在工具列中，快速鍵仍然有效。";
 "AnnotationInlineHelp" = "直接在截圖原位標註。按一下標註可選取，拖移可移動，拖移控制點可調整大小，按刪除鍵可移除。輸出的圖片不包含工具列。";
 
 "ScreenshotLong" = "長截圖";
 "ScreenshotLongHint" = "捲動內容以延長截圖";
 "ScreenshotLongLimit" = "已達到截圖尺寸上限";
+"ToolbarPinOrApply" = "貼到螢幕 / 套用";
+"ToolbarPalette" = "預設顏色";
+"ToolbarSize" = "粗細滑桿";
+"ToolbarHistoryGroup" = "還原與重做";
+"ToolbarOutputGroup" = "操作";
+"ToolbarStyleGroup" = "顏色與粗細";

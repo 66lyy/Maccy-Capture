@@ -34,7 +34,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   let statusLabel = NSTextField(labelWithString: "")
   let editingPin: Bool
   let toolbarBounds: NSRect
-  private let toolbarSize: NSSize
+  var toolbarSize = NSSize(width: 610, height: 0)
   private let originalWasCopied: Bool
   private(set) var isToolbarPrepared = false
   private static let statusRowHeight: CGFloat = 17
@@ -96,9 +96,6 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     self.editingPin = editingPin
     self.originalWasCopied = originalWasCopied
     toolbarBounds = visibleFrame.offsetBy(dx: -display.minX, dy: -display.minY)
-    let compact = visibleFrame.width < 626
-    let narrow = visibleFrame.width < 440
-    toolbarSize = NSSize(width: 610, height: narrow ? 132 : compact ? 103 : 72)
     super.init(
       contentRect: display, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
     )

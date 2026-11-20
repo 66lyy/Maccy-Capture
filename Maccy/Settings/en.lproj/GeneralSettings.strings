@@ -183,9 +183,15 @@
 "AnnotationNumber" = "Number";
 "AnnotationMagnifier" = "Magnifier";
 "AnnotationMagnification" = "Zoom";
-"AnnotationToolsSection" = "Annotation Tools";
-"AnnotationToolsHelp" = "Drag tools to reorder the annotation toolbar. Tools that are switched off are hidden from it.";
+"AnnotationToolsSection" = "Screenshot Toolbar";
+"AnnotationToolsHelp" = "Drag items to reorder them within their toolbar row. Items that are switched off are hidden from the toolbar; their keyboard shortcuts keep working.";
 
 "ScreenshotLong" = "Long Screenshot";
 "ScreenshotLongHint" = "Scroll the content to extend the screenshot";
 "ScreenshotLongLimit" = "Screenshot size limit reached";
+"ToolbarPinOrApply" = "Pin / Apply";
+"ToolbarPalette" = "Color swatches";
+"ToolbarSize" = "Size slider";
+"ToolbarHistoryGroup" = "Undo and redo";
+"ToolbarOutputGroup" = "Actions";
+"ToolbarStyleGroup" = "Color and size";

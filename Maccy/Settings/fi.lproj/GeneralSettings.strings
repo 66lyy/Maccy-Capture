@@ -10,3 +10,9 @@
 "AnnotationMagnification" = "Zoom";
 "AnnotationToolsSection" = "Annotation Tools";
 "AnnotationToolsHelp" = "Drag tools to reorder the annotation toolbar. Tools that are switched off are hidden from it.";
+"ToolbarPinOrApply" = "Pin / Apply";
+"ToolbarPalette" = "Color swatches";
+"ToolbarSize" = "Size slider";
+"ToolbarHistoryGroup" = "Undo and redo";
+"ToolbarOutputGroup" = "Actions";
+"ToolbarStyleGroup" = "Color and size";

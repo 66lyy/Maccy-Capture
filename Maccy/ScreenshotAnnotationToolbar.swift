@@ -1,6 +1,67 @@
 import AppKit
 import Defaults
 
+nonisolated enum ScreenshotToolbarItem: String, CaseIterable, Sendable {
+  case undo, redo, longScreenshot, recognizeText, pin, save, copy, cancel, palette, customColor, size
+
+  enum Group: CaseIterable, Sendable { case history, output, style }
+
+  var group: Group {
+    switch self {
+    case .undo, .redo: .history
+    case .palette, .customColor, .size: .style
+    default: .output
+    }
+  }
+
+  var titleKey: String {
+    switch self {
+    case .undo: "AnnotationUndo"
+    case .redo: "AnnotationRedo"
+    case .longScreenshot: "ScreenshotLong"
+    case .recognizeText: "AnnotationRecognizeText"
+    case .pin: "ToolbarPinOrApply"
+    case .save: "AnnotationSave"
+    case .copy: "AnnotationCopy"
+    case .cancel: "ScreenshotCancel"
+    case .palette: "ToolbarPalette"
+    case .customColor: "AnnotationColor"
+    case .size: "ToolbarSize"
+    }
+  }
+
+  var symbol: String {
+    switch self {
+    case .undo: "arrow.uturn.backward"
+    case .redo: "arrow.uturn.forward"
+    case .longScreenshot: "arrow.up.arrow.down"
+    case .recognizeText: "text.viewfinder"
+    case .pin: "pin.fill"
+    case .save: "square.and.arrow.down"
+    case .copy: "doc.on.doc"
+    case .cancel: "xmark"
+    case .palette: "circle.grid.2x2"
+    case .customColor: "paintpalette"
+    case .size: "slider.horizontal.3"
+    }
+  }
+
+  // Items follow the order chosen in Settings within their toolbar row; items added later are appended.
+  static func items(in group: Group, order: [String], disabled: [String]) -> [Self] {
+    var items: [Self] = []
+    for item in order.compactMap(Self.init(rawValue:)) + allCases where item.group == group && !items.contains(item) {
+      items.append(item)
+    }
+    return items.filter { !disabled.contains($0.rawValue) }
+  }
+
+  static func styleRows(order: [String], disabled: [String], narrow: Bool) -> [[Self]] {
+    let style = items(in: .style, order: order, disabled: disabled)
+    guard narrow, let size = style.firstIndex(of: .size) else { return style.isEmpty ? [] : [style] }
+    return [Array(style[..<size]), [.size], Array(style[(size + 1)...])].filter { !$0.isEmpty }
+  }
+}
+
 extension ScreenshotAnnotationWindow {
   static func toolbarFrame(beside imageFrame: NSRect, bounds: NSRect, size: NSSize) -> NSRect {
     let margin: CGFloat = min(8, bounds.width / 4, bounds.height / 4)
@@ -20,11 +81,11 @@ extension ScreenshotAnnotationWindow {
 
   func configureToolbar(originalWasCopied: Bool, compact: Bool, narrow: Bool) {
     annotationToolbar.setAccessibilityLabel(text("AnnotationTools"))
-    let tools = ScreenshotAnnotationDocument.Tool.toolbarTools(
+    let availableTools = ScreenshotAnnotationDocument.Tool.toolbarTools(
       order: Defaults[.annotationToolOrder], disabled: Defaults[.disabledAnnotationTools]
     )
-    if let selected = selectedTool, !tools.contains(selected) { selectedTool = tools.first }
-    toolButtons = tools.map { tool in
+    if let selected = selectedTool, !availableTools.contains(selected) { selectedTool = availableTools.first }
+    toolButtons = availableTools.map { tool in
       let control = button(tool.titleKey, symbol: Self.symbol(for: tool), action: #selector(selectTool(_:)))
       control.tag = tool.rawValue
       control.isChosen = tool == selectedTool
@@ -43,9 +104,9 @@ extension ScreenshotAnnotationWindow {
     recognitionButton = button("AnnotationRecognizeText", symbol: "text.viewfinder", action: #selector(recognizeText))
     let saveButton = button("AnnotationSave", symbol: "square.and.arrow.down", action: #selector(saveImage))
     addShortcutHint(to: saveButton, [ScopedShortcut.saveCapture])
-    var outputControls: [NSView] = [
-      recognitionButton, pinButton, saveButton,
-      copyButton, button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor))
+    var controls: [ScreenshotToolbarItem: NSView] = [
+      .undo: undoButton, .redo: redoButton, .recognizeText: recognitionButton, .pin: pinButton, .save: saveButton,
+      .copy: copyButton, .cancel: button("ScreenshotCancel", symbol: "xmark", action: #selector(cancelEditor))
     ]
     if let selection = self as? ScreenshotSelectionWindow, selection.allowsLongScreenshot {
       let symbol = NSImage(systemSymbolName: "arrow.up.and.down.text.horizontal", accessibilityDescription: nil) != nil
@@ -54,12 +115,8 @@ extension ScreenshotAnnotationWindow {
         "ScreenshotLong", symbol: symbol, action: #selector(ScreenshotSelectionWindow.beginLongScreenshot)
       )
       selection.longScreenshotButton = control
-      outputControls.insert(control, at: 0)
+      controls[.longScreenshot] = control
     }
-    let outputRow = row(outputControls)
-    let toolsRow = row(toolButtons)
-    let historyRow = row([undoButton, redoButton])
-    let toolRow = row([toolsRow, separator(), historyRow])
     swatches = palette.enumerated().map { index, entry in
       let swatch = button(entry.1, symbol: "", action: #selector(selectColor(_:)), width: 23)
       swatch.tag = index
@@ -104,34 +161,53 @@ extension ScreenshotAnnotationWindow {
     ) ?? NSImage())
     grip.toolTip = text("AnnotationMoveToolbar")
     grip.contentTintColor = .secondaryLabelColor
-    let colors = row(swatches.map { $0 as NSView } + [colorWell])
-    let adjustment = row([styleLabel, styleSlider, styleValue])
-    var rows: [NSView] = narrow ? [row([grip, toolsRow]), row([historyRow, separator(), outputRow])]
-      : compact ? [row([grip, toolRow]), outputRow] : [row([grip, toolRow, separator(), outputRow])]
-    if narrow {
-      rows += [row([colors, info]), adjustment]
-    } else {
-      rows.append(row([colors, separator(), adjustment, info]))
+    controls[.palette] = row(swatches.map { $0 as NSView })
+    controls[.customColor] = colorWell
+    controls[.size] = row([styleLabel, styleSlider, styleValue])
+    let order = Defaults[.toolbarItemOrder], disabled = Defaults[.disabledToolbarItems]
+    func items(_ group: ScreenshotToolbarItem.Group) -> [ScreenshotToolbarItem] {
+      ScreenshotToolbarItem.items(in: group, order: order, disabled: disabled).filter { controls[$0] != nil }
     }
+    func joined(_ groups: [[NSView]]) -> [NSView] {
+      groups.filter { !$0.isEmpty }.map { row($0) as NSView }.enumerated().flatMap { $0.offset == 0 ? [$0.element] : [separator(), $0.element] }
+    }
+    let tools: [NSView] = toolButtons
+    let history = items(.history).compactMap { controls[$0] }
+    let output = items(.output).compactMap { controls[$0] }
+    var styleRows = ScreenshotToolbarItem.styleRows(order: order, disabled: disabled, narrow: narrow)
+      .map { $0.compactMap { controls[$0] } }
+    if styleRows.isEmpty { styleRows = [[]] }
+    styleRows[styleRows.count - 1].append(info)
+    var rows: [NSView]
+    if narrow {
+      rows = [row([grip] + joined([tools]))]
+      let actions = joined([history, output])
+      if !actions.isEmpty { rows.append(row(actions)) }
+    } else {
+      rows = compact ? [row([grip] + joined([tools, history]))] : [row([grip] + joined([tools, history, output]))]
+      if compact, !output.isEmpty { rows.append(row(output)) }
+    }
+    rows.append(contentsOf: styleRows.map { row($0) })
     rows.append(statusLabel)
     let stack = NSStackView(views: rows)
     stack.orientation = .vertical
     stack.alignment = .leading
     stack.spacing = 3
     stack.translatesAutoresizingMaskIntoConstraints = false
-    let controls = annotationToolbar.controlsView
-    let group = GlassContainerView(frame: controls.bounds)
+    toolbarSize.height = stack.fittingSize.height + 19
+    let controlsView = annotationToolbar.controlsView
+    let group = GlassContainerView(frame: controlsView.bounds)
     group.translatesAutoresizingMaskIntoConstraints = false
     group.controlsView.addSubview(stack)
-    controls.addSubview(group)
+    controlsView.addSubview(group)
     NSLayoutConstraint.activate([
-      group.leadingAnchor.constraint(equalTo: controls.leadingAnchor),
-      group.trailingAnchor.constraint(equalTo: controls.trailingAnchor),
-      group.topAnchor.constraint(equalTo: controls.topAnchor),
-      group.bottomAnchor.constraint(equalTo: controls.bottomAnchor),
-      stack.leadingAnchor.constraint(equalTo: controls.leadingAnchor, constant: 10),
-      stack.trailingAnchor.constraint(lessThanOrEqualTo: controls.trailingAnchor, constant: -10),
-      stack.centerYAnchor.constraint(equalTo: controls.centerYAnchor)
+      group.leadingAnchor.constraint(equalTo: controlsView.leadingAnchor),
+      group.trailingAnchor.constraint(equalTo: controlsView.trailingAnchor),
+      group.topAnchor.constraint(equalTo: controlsView.topAnchor),
+      group.bottomAnchor.constraint(equalTo: controlsView.bottomAnchor),
+      stack.leadingAnchor.constraint(equalTo: controlsView.leadingAnchor, constant: 10),
+      stack.trailingAnchor.constraint(lessThanOrEqualTo: controlsView.trailingAnchor, constant: -10),
+      stack.centerYAnchor.constraint(equalTo: controlsView.centerYAnchor)
     ])
   }
 

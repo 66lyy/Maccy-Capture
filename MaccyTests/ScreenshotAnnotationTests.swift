@@ -635,6 +635,82 @@ struct ScreenshotAnnotationTests {
     #expect(window.selectedTool == .arrow)
   }
 
+  @Test("Toolbar items keep their saved order within each row and skip switched-off items")
+  func toolbarItemOrder() throws {
+    typealias Item = ScreenshotToolbarItem
+    #expect(Item.items(in: .output, order: [], disabled: []) == [.longScreenshot, .recognizeText, .pin, .save, .copy, .cancel])
+    #expect(Array(Item.items(in: .output, order: ["copy", "undo", "bogus"], disabled: ["save"]).prefix(2)) == [.copy, .longScreenshot])
+    #expect(!Item.items(in: .output, order: [], disabled: ["save"]).contains(.save))
+    #expect(Item.items(in: .history, order: [], disabled: ["undo", "redo"]).isEmpty)
+    let moved = try #require(AnnotationToolSettings.reorderedItems(.copy, translation: -10000, order: []))
+    #expect(Item.items(in: .output, order: moved, disabled: []).first == .copy)
+    #expect(Item.items(in: .history, order: moved, disabled: []) == [.undo, .redo])
+    #expect(AnnotationToolSettings.reorderedItems(.copy, translation: 5, order: []) == nil)
+
+    let originalOrder = Defaults[.toolbarItemOrder], originalDisabled = Defaults[.disabledToolbarItems]
+    defer {
+      Defaults[.toolbarItemOrder] = originalOrder
+      Defaults[.disabledToolbarItems] = originalDisabled
+    }
+    Defaults[.disabledToolbarItems] = ["copy", "undo", "size"]
+    let window = try editor()
+    defer { window.close() }
+    window.contentView?.layoutSubtreeIfNeeded()
+    #expect(window.copyButton.window == nil && window.undoButton.window == nil && window.styleSlider.window == nil)
+    #expect(window.pinButton.window === window && window.redoButton.window === window && window.colorWell.window === window)
+  }
+
+  @Test("Style rows preserve saved order even when split and omit disabled controls")
+  func toolbarStyleRows() {
+    typealias Item = ScreenshotToolbarItem
+    let order = ["palette", "size", "customColor"]
+    #expect(Item.styleRows(order: order, disabled: [], narrow: false) == [[.palette, .size, .customColor]])
+    #expect(Item.styleRows(order: order, disabled: [], narrow: true).flatMap { $0 } == [.palette, .size, .customColor])
+    #expect(Item.styleRows(order: order, disabled: ["size"], narrow: true) == [[.palette, .customColor]])
+    #expect(Item.styleRows(order: [], disabled: ["palette", "size", "customColor"], narrow: true).isEmpty)
+    #expect(Item.styleRows(order: ["bogus", "size", "size"], disabled: [], narrow: false) == [[.size, .palette, .customColor]])
+  }
+
+  @Test("Row-center drag distances select the destination row")
+  func toolbarReorderDistances() throws {
+    let pitch = AnnotationToolSettings.rowHeight
+    let moved = try #require(AnnotationToolSettings.reorderedItems(.save, translation: -2 * pitch, order: []))
+    #expect(ScreenshotToolbarItem.items(in: .output, order: moved, disabled: []) == [.longScreenshot, .save, .recognizeText, .pin, .copy, .cancel])
+    let style = try #require(AnnotationToolSettings.reorderedItems(.size, translation: -2 * pitch, order: []))
+    #expect(ScreenshotToolbarItem.items(in: .style, order: style, disabled: []).first == .size)
+    #expect(AnnotationToolSettings.reorderedItems(.size, translation: .nan, order: []) == nil)
+    #expect(AnnotationToolSettings.reorderedItems(.size, translation: pitch / 3, order: []) == nil)
+  }
+
+  @Test("Hidden action groups shrink both editor and selection toolbars", arguments: [420.0, 450.0, 800.0])
+  func hiddenToolbarGroups(displayWidth: CGFloat) throws {
+    let original = Defaults[.disabledToolbarItems]
+    defer { Defaults[.disabledToolbarItems] = original }
+    let display = NSRect(x: 0, y: 0, width: displayWidth, height: 800)
+    func toolbar(selection: Bool) throws -> ScreenshotAnnotationWindow {
+      if selection {
+        let window = ScreenshotSelectionWindow(frame: display, visibleFrame: display, scale: 1, pinImmediately: false)
+        window.showToolbar(beside: display.insetBy(dx: 50, dy: 50))
+        return window
+      }
+      return try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
+    }
+    for selection in [false, true] {
+      Defaults[.disabledToolbarItems] = []
+      let full = try toolbar(selection: selection)
+      defer { full.close() }
+      Defaults[.disabledToolbarItems] = ScreenshotToolbarItem.allCases.filter { $0.group != .style }.map(\.rawValue)
+      let reduced = try toolbar(selection: selection)
+      defer { reduced.close() }
+      reduced.contentView?.layoutSubtreeIfNeeded()
+      if displayWidth < 626 {
+        #expect(reduced.annotationToolbar.frame.height < full.annotationToolbar.frame.height)
+      }
+      #expect(reduced.copyButton.window == nil && reduced.undoButton.window == nil)
+      #expect(reduced.annotationToolbar.bounds.contains(reduced.annotationToolbar.convert(reduced.colorWell.bounds, from: reduced.colorWell)))
+    }
+  }
+
   @Test("OCR results remain attached to the selection and are selectable without changing the image")
   func recognitionResults() throws {
     let window = try editor()
@@ -830,8 +906,7 @@ struct ScreenshotAnnotationTests {
       #expect(window.annotationToolbar.bounds.contains(window.annotationToolbar.convert(control.bounds, from: control)))
       #expect(control.frame.width > 20)
     }
-    let expectedHeight: CGFloat = displayWidth < 440 ? 132 : displayWidth < 590 ? 103 : 72
-    #expect(window.annotationToolbar.frame.height == expectedHeight)
+    #expect(window.annotationToolbar.frame.height == window.toolbarSize.height)
   }
 
   @Test("The glass panel leaves screenshot buttons and the toolbar drag area interactive")
