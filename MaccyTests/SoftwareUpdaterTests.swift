@@ -30,7 +30,7 @@ struct SoftwareUpdaterTests {
     #expect(!resolved.permits(nil, length: 200))
   }
 
-  @Test("Preview selects the first complete stable or test release in API order")
+  @Test("Preview selects the newest published complete stable or test release")
   func previewRelease() throws {
     let preview = RepositoryUpdateFeed(repository: "fixture/capture", channel: .preview)
     #expect(preview.request().url?.absoluteString ==
@@ -40,11 +40,16 @@ struct SoftwareUpdaterTests {
     ))
     func releases(_ overrides: [[String: Any]]) throws -> Data {
       let objects = try overrides.map {
-        try JSONSerialization.jsonObject(with: releaseData($0))
+        var object = try #require(JSONSerialization.jsonObject(with: releaseData($0)) as? [String: Any])
+        if $0["published_at"] is NSNull { object.removeValue(forKey: "published_at") }
+        return object
       }
       return try JSONSerialization.data(withJSONObject: objects)
     }
-    let test: [String: Any] = ["tag_name": "maccy-capture-v2.8.1-build1042.1", "prerelease": true]
+    let test: [String: Any] = [
+      "tag_name": "maccy-capture-v2.8.1-build1042.1", "prerelease": true,
+      "published_at": "2026-11-20T07:36:57Z"
+    ]
     let skipped: [[String: Any]] = [
       ["draft": true],
       ["tag_name": "capture-latest", "prerelease": true],
@@ -56,13 +61,20 @@ struct SoftwareUpdaterTests {
       ["assets": [asset(10, "capture-appcast.xml", 100), asset(12, "capture-appcast.xml", 100),
                   asset(11, packageName, 200)]]
     ]
-    let resolved = try preview.resolve(data: releases(skipped + [test, [:]]), response: previewResponse)
-    #expect(resolved.feedURL.absoluteString ==
-      "https://github.com/fixture/capture/releases/download/maccy-capture-v2.8.1-build1042.1/capture-appcast.xml?asset=10")
-    #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
-    let stable = try preview.resolve(data: releases([[:], test]), response: previewResponse)
+    let invalidNewer = skipped.map {
+      $0.merging(["published_at": "2026-11-20T08:00:00Z"]) { _, value in value }
+    }
+    let undated: [[String: Any]] = [["published_at": NSNull()], ["published_at": "invalid"]]
+    for candidates in [[[:], test], [test, [:]], invalidNewer + undated + [[:], test]] {
+      let resolved = try preview.resolve(data: releases(candidates), response: previewResponse)
+      #expect(resolved.feedURL.absoluteString ==
+        "https://github.com/fixture/capture/releases/download/maccy-capture-v2.8.1-build1042.1/capture-appcast.xml?asset=10")
+      #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
+    }
+    let newerStable: [String: Any] = ["published_at": "2026-11-20T09:00:00Z"]
+    let stable = try preview.resolve(data: releases([test, newerStable]), response: previewResponse)
     #expect(stable.feedURL.path.contains("maccy-capture-v2.8.0/"))
-    for overrides in [[], skipped] {
+    for overrides in [[], invalidNewer, undated] {
       #expect(throws: RepositoryUpdateFeed.Failure.unavailable) {
         _ = try preview.resolve(data: releases(overrides), response: previewResponse)
       }
@@ -384,6 +396,7 @@ struct SoftwareUpdaterTests {
   private func releaseData(_ override: [String: Any] = [:]) throws -> Data {
     let release: [String: Any] = [
       "tag_name": "maccy-capture-v2.8.0", "draft": false, "prerelease": false,
+      "published_at": "2026-11-20T07:26:36Z",
       "assets": [asset(10, "capture-appcast.xml", 100), asset(11, packageName, 200)]
     ]
     return try JSONSerialization.data(withJSONObject: release.merging(override) { _, value in value })

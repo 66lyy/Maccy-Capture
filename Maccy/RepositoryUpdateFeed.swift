@@ -50,9 +50,11 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
     let draft: Bool
     let prerelease: Bool
     let assets: [Asset]
+    let publishedAt: String?
 
     enum CodingKeys: String, CodingKey {
       case tagName = "tag_name"
+      case publishedAt = "published_at"
       case draft, prerelease, assets
     }
   }
@@ -101,9 +103,16 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
       guard let releases = try? JSONDecoder().decode([Release].self, from: data) else {
         throw Failure.invalidRelease
       }
+      let formatter = ISO8601DateFormatter()
+      var newest: (date: Date, resolved: Resolved)?
       for release in releases where channel.accepts(release) {
-        if let resolved = try? resolve(release) { return resolved }
+        guard let publishedAt = release.publishedAt,
+              let date = formatter.date(from: publishedAt),
+              let resolved = try? resolve(release) else { continue }
+        if let newest, date <= newest.date { continue }
+        newest = (date, resolved)
       }
+      if let newest { return newest.resolved }
       throw Failure.unavailable
     }
     guard let release = try? JSONDecoder().decode(Release.self, from: data),
