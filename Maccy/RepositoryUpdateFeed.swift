@@ -6,8 +6,8 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
 
     var releasePath: String {
       switch self {
-      case .stable: "latest"
-      case .preview: "tags/capture-latest"
+      case .stable: "/latest"
+      case .preview: "?per_page=10"
       }
     }
 
@@ -18,7 +18,11 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
         return !release.prerelease &&
           release.tagName.range(of: #"\Amaccy-capture-v[0-9]+\.[0-9]+\.[0-9]+\z"#, options: .regularExpression) != nil
       case .preview:
-        return release.prerelease && release.tagName == "capture-latest"
+        return Channel.stable.accepts(release) || (release.prerelease &&
+          release.tagName.range(
+            of: #"\Amaccy-capture-v[0-9]+\.[0-9]+\.[0-9]+-build[0-9]+(\.[0-9]+){0,2}\z"#,
+            options: .regularExpression
+          ) != nil)
       }
     }
   }
@@ -75,7 +79,7 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
   }
 
   var releaseURL: URL {
-    URL(string: "https://api.github.com/repos/\(repository)/releases/\(channel.releasePath)")!
+    URL(string: "https://api.github.com/repos/\(repository)/releases\(channel.releasePath)")!
   }
 
   func request() -> URLRequest {
@@ -92,24 +96,29 @@ nonisolated struct RepositoryUpdateFeed: Sendable {
       throw Failure.invalidRelease
     }
     guard response.statusCode == 200 else { throw Failure.unavailable }
-    guard data.count <= 2_000_000,
-          let release = try? JSONDecoder().decode(Release.self, from: data),
+    guard data.count <= 2_000_000 else { throw Failure.invalidRelease }
+    if channel == .preview {
+      guard let releases = try? JSONDecoder().decode([Release].self, from: data) else {
+        throw Failure.invalidRelease
+      }
+      for release in releases where channel.accepts(release) {
+        if let resolved = try? resolve(release) { return resolved }
+      }
+      throw Failure.unavailable
+    }
+    guard let release = try? JSONDecoder().decode(Release.self, from: data),
           channel.accepts(release) else {
       throw Failure.invalidRelease
     }
+    return try resolve(release)
+  }
+
+  private func resolve(_ release: Release) throws -> Resolved {
     let packages = release.assets.filter {
       $0.name.hasPrefix("Maccy-Capture-") && $0.name.hasSuffix("-universal.zip") && valid($0)
     }
     guard !packages.isEmpty, Set(packages.map(\.url)).count == packages.count else {
       throw Failure.invalidRelease
-    }
-    if channel == .preview {
-      let packagesByFeed = Dictionary(uniqueKeysWithValues: packages.map { ("capture-appcast-\($0.id).xml", $0) })
-      let feeds = release.assets.filter { packagesByFeed[$0.name] != nil && valid($0) && $0.size <= 1_000_000 }
-      if let latest = feeds.max(by: { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }),
-         let package = packagesByFeed[latest.name] {
-        return resolvedFeed(latest, tag: release.tagName, packages: [package])
-      }
     }
     let feeds = release.assets.filter { $0.name == Self.feedName }
     guard feeds.count == 1, let feed = feeds.first, valid(feed), feed.size <= 1_000_000 else {

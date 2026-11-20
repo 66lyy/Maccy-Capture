@@ -20,10 +20,11 @@ Depending on macOS keyboard settings, you may need to hold Fn to send F1 or F3 i
 Pushing to `master` / `main` runs synthetic-image regression tests in GitHub Actions
 and builds a universal Release `.app` for Apple Silicon and Intel, packaged as ZIP and DMG
 with SHA-256 checksums. Download the **[latest stable release](https://github.com/66lyy/Maccy-Capture/releases/latest)** for everyday use.
-For testing, download the **[latest preview build](https://github.com/66lyy/Maccy-Capture/releases/tag/capture-latest)**
-or use **Actions → Build Maccy Capture → a successful run → Artifacts**.
+For testing, download a **[preview build from Releases](https://github.com/66lyy/Maccy-Capture/releases)**.
+Each successful default-branch build publishes its own pre-release with a list of its changes.
+Alternatively, use **Actions → Build Maccy Capture → a successful run → Artifacts**.
 You can also select **Run workflow** on the workflow page to build manually.
-Manual builds on the default branch also update the test release;
+Manual builds on the default branch also publish a test release;
 other branches, version tags, and pull requests provide artifacts only.
 
 Published builds reuse a fixed self-signed certificate when configured. Other builds are ad-hoc signed.

@@ -18,8 +18,6 @@ if [[ ! "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 DIST_DIR="$(cd "$MACCY_DIST_DIR" && pwd)"
-RELEASE_TAG="capture-latest"
-RELEASE_API="repos/$GH_REPO/releases/tags/$RELEASE_TAG"
 shopt -s nullglob
 ZIP_PACKAGES=("$DIST_DIR"/Maccy-Capture-*-"${GITHUB_SHA:0:12}"-universal.zip)
 DMG_PACKAGES=("$DIST_DIR"/Maccy-Capture-*-"${GITHUB_SHA:0:12}"-universal.dmg)
@@ -45,7 +43,7 @@ cat > "$NOTES_FILE" <<NOTES
 ## English
 
 Unofficial Maccy Capture test build based on [p0deje/Maccy](https://github.com/p0deje/Maccy).
-This rolling prerelease is updated after successful default-branch builds.
+This is a test build of commit \`${GITHUB_SHA:0:12}\`.
 
 - Source revision and changes: [\`${GITHUB_SHA:0:12}\`](https://github.com/$GH_REPO/commit/$GITHUB_SHA).
 - Universal macOS application for Apple Silicon and Intel; requires macOS 14 or later.
@@ -60,7 +58,7 @@ This rolling prerelease is updated after successful default-branch builds.
 ## 简体中文
 
 这是基于 [p0deje/Maccy](https://github.com/p0deje/Maccy) 的 Maccy Capture 非官方测试版。
-默认分支构建成功后会更新这个滚动预发布版本。
+这是提交 \`${GITHUB_SHA:0:12}\` 的测试构建。
 
 - 源码版本与变更：[\`${GITHUB_SHA:0:12}\`](https://github.com/$GH_REPO/commit/$GITHUB_SHA)。
 - 通用版支持 Apple 芯片和 Intel Mac，要求 macOS 14 或更高版本。
@@ -73,24 +71,15 @@ This rolling prerelease is updated after successful default-branch builds.
 - 这不是上游官方版本，也不是稳定版。
 NOTES
 
-if ! gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
-  gh release create "$RELEASE_TAG" \
-    --target "$GITHUB_SHA" \
-    --title "Latest test build" \
-    --notes-file "$NOTES_FILE" \
-    --prerelease \
-    --draft
-fi
-
 upload_immutable_asset() {
-  local file="$1" name state digest expected
+  local tag="$1" file="$2" name state digest expected
   name="$(basename "$file")"
   state="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .state' <<< "$RELEASE")"
   case "$state" in
     "")
       ;;
     starter)
-      gh release delete-asset "$RELEASE_TAG" "$name" --yes
+      gh release delete-asset "$tag" "$name" --yes
       ;;
     uploaded)
       digest="$(jq -r --arg name "$name" '.assets[] | select(.name == $name) | .digest' <<< "$RELEASE")"
@@ -106,12 +95,15 @@ upload_immutable_asset() {
       return 2
       ;;
   esac
-  gh release upload "$RELEASE_TAG" "$file"
+  gh release upload "$tag" "$file"
 }
 
+publish_legacy_mirror() {
+local RELEASE_TAG="capture-latest"
+local RELEASE_API="repos/$GH_REPO/releases/tags/$RELEASE_TAG"
 RELEASE="$(gh api "$RELEASE_API")"
-upload_immutable_asset "${ZIP_PACKAGES[0]}"
-upload_immutable_asset "${DMG_PACKAGES[0]}"
+upload_immutable_asset "$RELEASE_TAG" "${ZIP_PACKAGES[0]}"
+upload_immutable_asset "$RELEASE_TAG" "${DMG_PACKAGES[0]}"
 ZIP_NAME="$(basename "${ZIP_PACKAGES[0]}")"
 RELEASE="$(gh api "$RELEASE_API")"
 ASSET_ID="$(jq -r --arg name "$ZIP_NAME" '.assets[] | select(.name == $name and .state == "uploaded") | .id' <<< "$RELEASE")"
@@ -123,7 +115,7 @@ VERSIONED_FEED="capture-appcast-$ASSET_ID.xml"
 python3 "$(dirname "${BASH_SOURCE[0]}")/generate_update_feed.py" appcast \
   --metadata "$DIST_DIR/UPDATE-METADATA.json" --repository "$GH_REPO" \
   --asset-id "$ASSET_ID" --archive "${ZIP_PACKAGES[0]}" --output "$DIST_DIR/$VERSIONED_FEED"
-upload_immutable_asset "$DIST_DIR/$VERSIONED_FEED"
+upload_immutable_asset "$RELEASE_TAG" "$DIST_DIR/$VERSIONED_FEED"
 
 # Older clients still expect this fixed asset name.
 cp "$DIST_DIR/$VERSIONED_FEED" "$DIST_DIR/capture-appcast.xml"
@@ -176,3 +168,77 @@ gh release edit "$RELEASE_TAG" \
   --prerelease \
   --draft=false
 gh release view "$RELEASE_TAG" --json url --jq '.url'
+}
+
+SHORT_VERSION="$(jq -r '.shortVersion' "$DIST_DIR/UPDATE-METADATA.json")"
+BUILD_VERSION="$(jq -r '.version' "$DIST_DIR/UPDATE-METADATA.json")"
+if [[ ! "$SHORT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ||
+  ! "$BUILD_VERSION" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+  echo "Expected numeric release and build versions." >&2
+  exit 2
+fi
+RELEASE_TAG="maccy-capture-v$SHORT_VERSION-build$BUILD_VERSION"
+TITLE="Maccy Capture $SHORT_VERSION test build $BUILD_VERSION"
+PREVIOUS_TAG="$(gh api "repos/$GH_REPO/releases?per_page=30" | jq -r --arg tag "$RELEASE_TAG" \
+  '[.[] | select(.draft == false and (.tag_name | startswith("maccy-capture-v")) and .tag_name != $tag)][0].tag_name // empty')"
+printf '\n## Changes / 更新内容\n\n' >> "$NOTES_FILE"
+COMPARE=''
+if [[ -n "$PREVIOUS_TAG" ]]; then
+  COMPARE="$(gh api "repos/$GH_REPO/compare/$PREVIOUS_TAG...$GITHUB_SHA" 2>/dev/null || true)"
+fi
+python3 - "$GH_REPO" "$GITHUB_SHA" "$PREVIOUS_TAG" "$COMPARE" >> "$NOTES_FILE" <<'PY'
+import json, subprocess, sys
+repo, revision, previous, comparison = sys.argv[1:]
+try:
+    commits = [c for c in json.loads(comparison)['commits'] if len(c['parents']) < 2][::-1]
+except (ValueError, KeyError, TypeError):
+    commits = []
+if not commits:
+    subject = subprocess.check_output(['git', 'show', '-s', '--format=%s', revision], text=True).strip()
+    commits = [{'sha': revision, 'commit': {'message': subject}}]
+for commit in commits[:50]:
+    sha = commit['sha']
+    subject = commit['commit']['message'].splitlines()[0]
+    print(f'- {subject} ([`{sha[:12]}`](https://github.com/{repo}/commit/{sha}))')
+if len(commits) > 50:
+    print(f'- [and {len(commits) - 50} more / 更多更新](https://github.com/{repo}/compare/{previous}...{revision})')
+PY
+
+if ! gh release view "$RELEASE_TAG" --json tagName >/dev/null 2>&1; then
+  gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$TITLE" \
+    --notes-file "$NOTES_FILE" --draft --prerelease --latest=false
+fi
+RELEASE_API="$(gh release view "$RELEASE_TAG" --json apiUrl --jq .apiUrl)"
+RELEASE="$(gh api "$RELEASE_API")"
+upload_immutable_asset "$RELEASE_TAG" "${ZIP_PACKAGES[0]}"
+upload_immutable_asset "$RELEASE_TAG" "${DMG_PACKAGES[0]}"
+RELEASE="$(gh api "$RELEASE_API")"
+ZIP_NAME="$(basename "${ZIP_PACKAGES[0]}")"
+ASSET_ID="$(jq -r --arg name "$ZIP_NAME" '.assets[] | select(.name == $name and .state == "uploaded") | .id' <<< "$RELEASE")"
+if [[ ! "$ASSET_ID" =~ ^[0-9]+$ ]]; then
+  echo "Could not resolve the uploaded update archive." >&2
+  exit 2
+fi
+python3 "$(dirname "${BASH_SOURCE[0]}")/generate_update_feed.py" appcast \
+  --metadata "$DIST_DIR/UPDATE-METADATA.json" --repository "$GH_REPO" \
+  --asset-id "$ASSET_ID" --archive "${ZIP_PACKAGES[0]}" --output "$DIST_DIR/capture-appcast.xml"
+(
+  cd "$DIST_DIR"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" \
+      BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
+  else
+    shasum -a 256 "$ZIP_NAME" "$(basename "${DMG_PACKAGES[0]}")" \
+      BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml > SHA256SUMS.txt
+  fi
+)
+for name in BUILD-INFO.txt UPDATE-METADATA.json capture-appcast.xml SHA256SUMS.txt; do
+  upload_immutable_asset "$RELEASE_TAG" "$DIST_DIR/$name"
+done
+gh release edit "$RELEASE_TAG" --title "$TITLE" --notes-file "$NOTES_FILE" \
+  --draft=false --prerelease --latest=false
+gh release view "$RELEASE_TAG" --json url --jq '.url'
+
+if gh release view capture-latest --json tagName >/dev/null 2>&1; then
+  publish_legacy_mirror
+fi

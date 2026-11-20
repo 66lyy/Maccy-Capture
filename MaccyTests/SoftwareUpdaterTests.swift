@@ -30,23 +30,50 @@ struct SoftwareUpdaterTests {
     #expect(!resolved.permits(nil, length: 200))
   }
 
-  @Test("Preview releases are only accepted on the preview channel")
+  @Test("Preview selects the first complete stable or test release in API order")
   func previewRelease() throws {
     let preview = RepositoryUpdateFeed(repository: "fixture/capture", channel: .preview)
-    let previewURL = try #require(preview.request().url)
-    #expect(previewURL.absoluteString == "https://api.github.com/repos/fixture/capture/releases/tags/capture-latest")
+    #expect(preview.request().url?.absoluteString ==
+      "https://api.github.com/repos/fixture/capture/releases?per_page=10")
     let previewResponse = try #require(HTTPURLResponse(
-      url: previewURL, statusCode: 200, httpVersion: nil, headerFields: nil
+      url: preview.releaseURL, statusCode: 200, httpVersion: nil, headerFields: nil
     ))
-    let data = try releaseData(["tag_name": "capture-latest", "prerelease": true])
-    let resolved = try preview.resolve(data: data, response: previewResponse)
+    func releases(_ overrides: [[String: Any]]) throws -> Data {
+      let objects = try overrides.map {
+        try JSONSerialization.jsonObject(with: releaseData($0))
+      }
+      return try JSONSerialization.data(withJSONObject: objects)
+    }
+    let test: [String: Any] = ["tag_name": "maccy-capture-v2.8.1-build1042.1", "prerelease": true]
+    let skipped: [[String: Any]] = [
+      ["draft": true],
+      ["tag_name": "capture-latest", "prerelease": true],
+      ["tag_name": "maccy-capture-v2.8.1-build1042.1.2.3", "prerelease": true],
+      ["assets": []],
+      ["assets": [asset(11, packageName, 200)]],
+      ["assets": [asset(10, "capture-appcast.xml", 100), asset(11, packageName, 0)]],
+      ["assets": [asset(10, "capture-appcast.xml", 100, state: "starter"), asset(11, packageName, 200)]],
+      ["assets": [asset(10, "capture-appcast.xml", 100), asset(12, "capture-appcast.xml", 100),
+                  asset(11, packageName, 200)]]
+    ]
+    let resolved = try preview.resolve(data: releases(skipped + [test, [:]]), response: previewResponse)
     #expect(resolved.feedURL.absoluteString ==
-      "https://github.com/fixture/capture/releases/download/capture-latest/capture-appcast.xml?asset=10")
-    #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
-      _ = try feed.resolve(data: data, response: response())
+      "https://github.com/fixture/capture/releases/download/maccy-capture-v2.8.1-build1042.1/capture-appcast.xml?asset=10")
+    #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
+    let stable = try preview.resolve(data: releases([[:], test]), response: previewResponse)
+    #expect(stable.feedURL.path.contains("maccy-capture-v2.8.0/"))
+    for overrides in [[], skipped] {
+      #expect(throws: RepositoryUpdateFeed.Failure.unavailable) {
+        _ = try preview.resolve(data: releases(overrides), response: previewResponse)
+      }
+    }
+    for data in [Data("{}".utf8), Data("invalid".utf8), Data(repeating: 32, count: 2_000_001)] {
+      #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
+        _ = try preview.resolve(data: data, response: previewResponse)
+      }
     }
     #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
-      _ = try preview.resolve(data: releaseData(), response: previewResponse)
+      _ = try feed.resolve(data: releaseData(test), response: response())
     }
   }
 
@@ -59,40 +86,6 @@ struct SoftwareUpdaterTests {
     #expect(nextFeed.feedURL.query == "asset=20")
   }
 
-  @Test("Preview checks keep using a complete appcast and signed ZIP while another build is published")
-  func previewPublishInProgress() throws {
-    let preview = RepositoryUpdateFeed(repository: "fixture/capture", channel: .preview)
-    let previewResponse = try #require(HTTPURLResponse(
-      url: preview.releaseURL, statusCode: 200, httpVersion: nil, headerFields: nil
-    ))
-    let oldZip = asset(11, packageName, 200)
-    let oldFeed = asset(12, "capture-appcast-11.xml", 100)
-    let newZip = asset(20, "Maccy-Capture-2.8.0-fedcba987654-universal.zip", 300)
-    let newFeed = asset(21, "capture-appcast-20.xml", 120)
-    let unfinishedFeed = asset(21, "capture-appcast-20.xml", 120, state: "starter")
-
-    func resolve(_ assets: [[String: Any]]) throws -> RepositoryUpdateFeed.Resolved {
-      let data = try releaseData(["tag_name": "capture-latest", "prerelease": true, "assets": assets])
-      return try preview.resolve(data: data, response: previewResponse)
-    }
-
-    for assets in [
-      [oldZip, oldFeed, newZip],
-      [oldZip, oldFeed, newZip, unfinishedFeed],
-      [oldZip, oldFeed, newFeed]
-    ] {
-      let previous = try resolve(assets)
-      #expect(previous.feedURL.lastPathComponent == "capture-appcast-11.xml")
-      #expect(previous.permits(URL(string: assetURL(11)), length: 200))
-      #expect(!previous.permits(URL(string: assetURL(20)), length: 300))
-    }
-
-    let complete = try resolve([newFeed, oldFeed, oldZip, newZip])
-    #expect(complete.feedURL.lastPathComponent == "capture-appcast-20.xml")
-    #expect(complete.feedURL.query == "asset=21")
-    #expect(complete.permits(URL(string: assetURL(20)), length: 300))
-    #expect(!complete.permits(URL(string: assetURL(11)), length: 200))
-  }
 
   @Test("Failed release discovery reports update unavailability")
   func unavailableRelease() {

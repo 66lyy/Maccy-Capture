@@ -89,7 +89,13 @@ class UpdateFeedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.metadata()
 
+    def test_publishing_without_legacy_release(self):
+        self.check_publishing(False)
+
     def test_publishing_uploads_packages_before_activating_the_feed(self):
+        self.check_publishing(True)
+
+    def check_publishing(self, legacy):
         repository_root = pathlib.Path(__file__).resolve().parent.parent
         distribution = self.root / "dist"
         distribution.mkdir()
@@ -128,15 +134,30 @@ class UpdateFeedTests(unittest.TestCase):
             f"#!{sys.executable}\n"
             "import hashlib, json, os, pathlib, subprocess, sys\n"
             "arguments = sys.argv[1:]\n"
-            "store = pathlib.Path(os.environ['ASSET_STORE'])\n"
-            "assets = json.loads(store.read_text())\n"
+            "tag = arguments[2] if arguments[0] == 'release' else arguments[1].split('/')[-1]\n"
+            "legacy = tag == 'capture-latest'\n"
+            "store = pathlib.Path(os.environ['ASSET_STORE'] + ('' if legacy else '.build'))\n"
+            "exists = store.exists()\n"
+            "assets = json.loads(store.read_text()) if exists else {}\n"
+            "draft_marker = pathlib.Path(os.environ['ASSET_STORE'] + '.draft')\n"
             "def snapshot():\n"
             "    store.write_text(json.dumps(assets))\n"
-            "    with open(os.environ['SNAPSHOT_LOG'], 'a') as log:\n"
-            "        log.write(json.dumps(sorted(assets)) + '\\n')\n"
+            "    if legacy:\n"
+            "        with open(os.environ['SNAPSHOT_LOG'], 'a') as log:\n"
+            "            log.write(json.dumps(sorted(assets)) + '\\n')\n"
             "with open(os.environ['COMMAND_LOG'], 'a') as log:\n"
             "    log.write(json.dumps(arguments) + '\\n')\n"
-            "if arguments[:2] == ['api', 'repos/fixture/capture/releases/tags/capture-latest']:\n"
+            "if arguments[:2] == ['api', 'repos/fixture/capture/releases?per_page=30']:\n"
+            "    print(json.dumps([{'tag_name': 'maccy-capture-v2.7.0', 'draft': False}]))\n"
+            "elif arguments[0] == 'api' and '/compare/' in arguments[1]:\n"
+            "    print(json.dumps({'commits': [\n"
+            "        {'sha': 'b'*40, 'parents': [{}], 'commit': {'message': 'First change\\nbody'}},\n"
+            "        {'sha': 'c'*40, 'parents': [{}, {}], 'commit': {'message': 'Merge omitted'}},\n"
+            "        {'sha': 'a'*40, 'parents': [{}], 'commit': {'message': 'Newest change'}}]}))\n"
+            "elif arguments[0] == 'api' and ('/releases/tags/' in arguments[1] or\n"
+            "        arguments[1] == 'https://api.github.com/repos/fixture/capture/releases/99'):\n"
+            "    if not legacy and '/releases/tags/' in arguments[1] and draft_marker.exists():\n"
+            "        sys.exit('HTTP 404: Not Found')\n"
             "    response = json.dumps({'assets': list(assets.values())})\n"
             "    if '--jq' in arguments:\n"
             "        subprocess.run(['jq', '-r', arguments[-1]], input=response, text=True, check=True)\n"
@@ -145,7 +166,7 @@ class UpdateFeedTests(unittest.TestCase):
             "elif arguments[:2] == ['release', 'upload']:\n"
             "    clobber = '--clobber' in arguments\n"
             "    for path in map(pathlib.Path, (arg for arg in arguments[3:] if arg != '--clobber')):\n"
-            "        identifier = max(122, *(asset['id'] for asset in assets.values())) + 1\n"
+            "        identifier = max([122] + [asset['id'] for asset in assets.values()]) + 1\n"
             "        if path.name in assets:\n"
             "            if not clobber:\n"
             "                sys.exit('cannot replace an asset without --clobber')\n"
@@ -159,7 +180,16 @@ class UpdateFeedTests(unittest.TestCase):
             "    del assets[arguments[3]]\n"
             "    snapshot()\n"
             "elif arguments[:2] == ['release', 'view']:\n"
-            "    print('{}')\n",
+            "    if not exists or (legacy and os.environ['LEGACY'] == 'false'): sys.exit(1)\n"
+            "    print('https://api.github.com/repos/fixture/capture/releases/99' if 'apiUrl' in arguments else '{}')\n"
+            "elif arguments[:2] == ['release', 'create']:\n"
+            "    draft_marker.touch()\n"
+            "    snapshot()\n"
+            "elif arguments[:2] == ['release', 'edit']:\n"
+            "    assert '--draft=false' in arguments and '--prerelease' in arguments\n"
+            "    if not legacy and draft_marker.exists(): draft_marker.unlink()\n"
+            "if '--notes-file' in arguments:\n"
+            "    pathlib.Path(os.environ['NOTES_COPY']).write_text(pathlib.Path(arguments[arguments.index('--notes-file')+1]).read_text())\n",
             encoding="utf-8",
         )
         mock_gh.chmod(0o700)
@@ -168,6 +198,8 @@ class UpdateFeedTests(unittest.TestCase):
             "COMMAND_LOG": str(command_log),
             "ASSET_STORE": str(asset_store),
             "SNAPSHOT_LOG": str(snapshot_log),
+            "LEGACY": str(legacy).lower(),
+            "NOTES_COPY": str(self.root / "notes.md"),
             "GH_REPO": "fixture/capture",
             "GITHUB_SHA": self.revision,
             "GITHUB_ACTIONS": "true",
@@ -186,6 +218,37 @@ class UpdateFeedTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
         commands = [json.loads(line) for line in command_log.read_text().splitlines()]
+        tag = "maccy-capture-v2.8.0-build1042.1"
+        creates = [c for c in commands if c[:2] == ["release", "create"]]
+        self.assertEqual(len(creates), 1)
+        self.assertEqual(creates[0][2], tag)
+        self.assertIn("Maccy Capture 2.8.0 test build 1042.1", creates[0])
+        for option in ["--draft", "--prerelease", "--latest=false", self.revision]:
+            self.assertIn(option, creates[0])
+        build_commands = [c for c in commands if len(c) > 2 and c[2] == tag]
+        build_uploads = [c for c in build_commands if c[1] == "upload"]
+        self.assertEqual(len(build_uploads), 6, "retry must skip all identical assets")
+        self.assertTrue(all('--clobber' not in c for c in build_uploads))
+        self.assertGreater(build_commands.index(next(c for c in build_commands if c[1] == 'edit')),
+                           max(i for i, c in enumerate(build_commands) if c[1] == 'upload'))
+        notes = (self.root / "notes.md").read_text()
+        self.assertIn("Changes / 更新内容", notes)
+        self.assertLess(notes.index('Newest change'), notes.index('First change'))
+        self.assertNotIn('Merge omitted', notes)
+        build_store = pathlib.Path(str(asset_store) + '.build')
+        published_assets = json.loads(build_store.read_text())
+        published_assets[archive.name]['digest'] = 'sha256:wrong'
+        build_store.write_text(json.dumps(published_assets))
+        mismatch = subprocess.run(
+            ['bash', str(repository_root / 'script/publish_prerelease.sh')],
+            env=environment, capture_output=True, text=True, check=False,
+        )
+        self.assertNotEqual(mismatch.returncode, 0)
+        self.assertIn('refusing to replace it', mismatch.stderr)
+        if not legacy:
+            self.assertFalse(any(c[:3] == ['release', 'upload', 'capture-latest'] for c in commands))
+            return
+        commands = [c for c in commands if len(c) > 2 and c[2] == 'capture-latest']
         uploads = [command for command in commands if command[:2] == ["release", "upload"]]
         self.assertIn(str(archive), uploads[0])
         self.assertNotIn("--clobber", uploads[0])
