@@ -391,7 +391,7 @@ final class ScreenshotAnnotationDocument {
        visibleMarks[replacing.index].tool == replacing.mark.tool {
       var mark = replacing.mark
       if mark.tool == .mosaic, mark.points != visibleMarks[replacing.index].points {
-        mark.mosaic = Self.pixelated(sourceImage, in: mark.shapeBounds, blockSize: mark.lineWidth)
+        mark.mosaic = previewMosaic(in: mark.shapeBounds, blockSize: mark.lineWidth)
       }
       visibleMarks[replacing.index] = mark
     }
@@ -400,12 +400,12 @@ final class ScreenshotAnnotationDocument {
     }
     if var preview, preview.tool.drawsMark {
       if preview.tool == .mosaic {
-        preview.mosaic = Self.pixelated(sourceImage, in: preview.shapeBounds, blockSize: preview.lineWidth)
+        preview.mosaic = previewMosaic(in: preview.shapeBounds, blockSize: preview.lineWidth)
       }
       visibleMarks.append(preview)
     }
     let rendered = visibleMarks.map(RenderMark.init)
-    let lens = Self.lensSource(sourceImage, marks: rendered)
+    let lens = cachedLensSource(marks: rendered)
     for mark in rendered where mark.tool != .redact {
       Self.drawRenderedMark(mark, source: lens, in: context)
     }
@@ -414,10 +414,46 @@ final class ScreenshotAnnotationDocument {
     }
   }
 
+  private struct CoverKey: Equatable {
+    let tool: Tool
+    let bounds: CGRect
+    let lineWidth: CGFloat
+    let color: CGColor
+  }
+
+  private var lensCache: (covers: [CoverKey], image: CGImage?)?
+  private var mosaicCache: (bounds: CGRect, blockSize: CGFloat, image: CGImage?)?
+  private(set) var lensSourceRenders = 0
+  private(set) var previewMosaicRenders = 0
+
+  private func previewMosaic(in bounds: CGRect, blockSize: CGFloat) -> CGImage? {
+    if let mosaicCache, mosaicCache.bounds == bounds, mosaicCache.blockSize == blockSize { return mosaicCache.image }
+    let image = Self.pixelated(sourceImage, in: bounds, blockSize: blockSize)
+    previewMosaicRenders += 1
+    mosaicCache = (bounds, blockSize, image)
+    return image
+  }
+
+  private func cachedLensSource(marks: [RenderMark]) -> CGImage? {
+    guard marks.contains(where: { $0.tool == .magnifier }) else { return nil }
+    let covers = Self.covers(marks).map {
+      CoverKey(tool: $0.tool, bounds: $0.shapeBounds, lineWidth: $0.lineWidth, color: $0.color)
+    }
+    if let lensCache, lensCache.covers == covers { return lensCache.image }
+    let image = Self.lensSource(sourceImage, marks: marks)
+    lensSourceRenders += 1
+    lensCache = (covers, image)
+    return image
+  }
+
+  nonisolated private static func covers(_ marks: [RenderMark]) -> [RenderMark] {
+    marks.filter { $0.tool == .mosaic } + marks.filter { $0.tool == .redact }
+  }
+
   // A magnifier enlarges the screenshot with every mosaic and solid cover applied, so it never reveals hidden content.
   nonisolated static func lensSource(_ source: CGImage, marks: [RenderMark]) -> CGImage? {
     guard marks.contains(where: { $0.tool == .magnifier }) else { return nil }
-    let covers = marks.filter { $0.tool == .mosaic } + marks.filter { $0.tool == .redact }
+    let covers = covers(marks)
     guard !covers.isEmpty else { return source }
     guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(

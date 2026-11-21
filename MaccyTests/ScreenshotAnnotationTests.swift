@@ -543,6 +543,36 @@ struct ScreenshotAnnotationTests {
     #expect(try magnifiedSample(canvasBitmap(covered)) > 0.6)
   }
 
+  @Test("Redraws reuse the magnifier's covered image and the preview mosaic until they change")
+  func lensAndMosaicCaches() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    #expect(document.append(.init(tool: .mosaic, points: [NSPoint(x: 90, y: 60), NSPoint(x: 170, y: 105)], lineWidth: 20)))
+    #expect(document.append(.init(tool: .magnifier, points: [NSPoint(x: 60, y: 30), NSPoint(x: 160, y: 130)], zoom: 3)))
+    let context = try #require(CGContext(
+      data: nil, width: 240, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    document.draw(in: context)
+    document.draw(in: context)
+    #expect(document.lensSourceRenders == 1)
+    let preview = ScreenshotAnnotationDocument.Mark(
+      tool: .mosaic, points: [NSPoint(x: 10, y: 10), NSPoint(x: 50, y: 50)], lineWidth: 10
+    )
+    document.draw(in: context, preview: preview)
+    document.draw(in: context, preview: preview)
+    #expect(document.previewMosaicRenders == 1)
+    #expect(document.lensSourceRenders == 2)
+    var grown = preview
+    grown.points[1] = NSPoint(x: 60, y: 60)
+    document.draw(in: context, preview: grown)
+    #expect(document.previewMosaicRenders == 2)
+    #expect(document.lensSourceRenders == 3)
+    #expect(document.append(.init(tool: .redact, points: [NSPoint(x: 100, y: 70), NSPoint(x: 120, y: 90)])))
+    document.draw(in: context)
+    document.draw(in: context)
+    #expect(document.lensSourceRenders == 4)
+  }
+
   @Test("A finished mark is selected and can be moved, resized and deleted with one undo step each")
   func moveAndResizeMarks() throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
