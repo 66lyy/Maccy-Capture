@@ -124,6 +124,11 @@ final class ScreenshotSelectionController {
         if let keyWindow = windows.first(where: { $0.frame.contains(pointer) }) ?? windows.first {
           for window in windows where window !== keyWindow { presentWindow(window, false) }
           presentWindow(keyWindow, true)
+          if keyWindow.frame.contains(pointer) {
+            keyWindow.selectionView.moveHover(to: NSPoint(
+              x: pointer.x - keyWindow.frame.minX, y: pointer.y - keyWindow.frame.minY
+            ))
+          }
         }
       }
     } onCancel: {
@@ -192,6 +197,12 @@ final class ScreenshotSelectionController {
     window.selectionView.canAdjustSelection = { [weak self] in
       self?.windows.allSatisfy { $0.canvas == nil && !$0.isPreparingImage && !$0.selectionView.isScrolling } ?? false
     }
+    window.selectionView.canPickColor = { [weak self, weak window] in
+      self?.windows.allSatisfy {
+        $0.canvas == nil && !$0.isPreparingImage && !$0.selectionView.isScrolling &&
+          ($0 === window || !$0.selectionView.hasSelectionInteraction)
+      } ?? false
+    }
     func selection(_ rectangle: NSRect, pinToScreen: Bool, data: Data? = nil) -> Selection {
       let captureRect = Self.captureRectangle(rectangle, display: display)
       let screenRect = Self.screenRectangle(captureRect, display: display)
@@ -212,7 +223,7 @@ final class ScreenshotSelectionController {
       timeoutTask = nil
       for overlay in windows {
         overlay.ignoresMouseEvents = true
-        overlay.selectionView.frozen = nil
+        overlay.selectionView.setFrozenImage(nil)
         overlay.selectionView.isScrolling = true
         overlay.annotationToolbar.isHidden = true
       }

@@ -10,15 +10,16 @@ final class ScreenshotSelectionView: NSView {
   var canAdjustSelection: (() -> Bool)?
   var onCancel: (() -> Void)?
   var movePointer: ((NSPoint) -> Void)?
+  var canPickColor: (() -> Bool)?
   var findElements: (@Sendable (NSPoint) -> [NSRect])?
   private(set) var selectedRect: NSRect?
-  var frozen: NSImage? {
-    didSet { needsDisplay = true }
-  }
+  var hasSelectionInteraction: Bool { selectedRect != nil || drag != nil || colorCopyTask != nil }
+  private(set) var frozen: NSImage?
   var isScrolling = false {
     didSet {
       selectionHint.isHidden = isScrolling
       elementHint.isHidden = isScrolling
+      updateLoupe()
       needsDisplay = true
     }
   }
@@ -46,6 +47,8 @@ final class ScreenshotSelectionView: NSView {
   private var elementTask: Task<Void, Never>?
   private let selectionHint = GlassSelectionLabel()
   private let elementHint = GlassSelectionLabel()
+  private let loupe = ScreenshotPixelLoupe()
+  private var colorCopyTask: Task<Void, Never>?
 
   init(frame: NSRect, scale: CGFloat, pinImmediately: Bool) {
     self.scale = scale
@@ -54,6 +57,7 @@ final class ScreenshotSelectionView: NSView {
     setAccessibilityLabel(localized("ScreenshotSelectionHint"))
     addSubview(selectionHint)
     addSubview(elementHint)
+    addSubview(loupe)
     refreshOverlay()
   }
 
@@ -85,7 +89,19 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func mouseMoved(with event: NSEvent) {
-    pointer = convert(event.locationInWindow, from: nil)
+    moveHover(to: convert(event.locationInWindow, from: nil))
+  }
+
+  override func mouseEntered(with event: NSEvent) {
+    moveHover(to: convert(event.locationInWindow, from: nil))
+  }
+
+  func moveHover(to point: NSPoint) {
+    pointer = point
+    if canShowLoupe, let window, window.isVisible, !window.isKeyWindow {
+      window.makeKey()
+      window.makeFirstResponder(self)
+    }
     updateProbe(enabled: true)
   }
 
@@ -95,12 +111,14 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func flagsChanged(with event: NSEvent) {
-    pointer = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
+    if pointer == nil, let window, window.isKeyWindow {
+      pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+    }
     updateProbe(enabled: true)
   }
 
   override func mouseDown(with event: NSEvent) {
-    guard canAdjustSelection?() != false else { return }
+    guard colorCopyTask == nil, canAdjustSelection?() != false else { return }
     window?.makeKey()
     window?.makeFirstResponder(self)
     let point = convert(event.locationInWindow, from: nil)
@@ -150,6 +168,7 @@ final class ScreenshotSelectionView: NSView {
       onCancel?()
       return
     }
+    guard colorCopyTask == nil else { return }
     if ScopedShortcut.pinCapture.matches(event) {
       captureSelection(pinToScreen: true)
       return
@@ -166,6 +185,7 @@ final class ScreenshotSelectionView: NSView {
       }
       return
     }
+    if handleColorShortcut(event) { return }
     switch event.keyCode {
     case 53:
       onCancel?()
@@ -188,6 +208,31 @@ final class ScreenshotSelectionView: NSView {
       cycleSnap(towardParent: false)
     } else {
       return false
+    }
+    return true
+  }
+
+  func setFrozenImage(_ image: CGImage?) {
+    frozen = image.map { NSImage(cgImage: $0, size: bounds.size) }
+    loupe.source = image
+    updateLoupe()
+    needsDisplay = true
+  }
+
+  func handleColorShortcut(_ event: NSEvent, to target: NSPasteboard? = nil) -> Bool {
+    let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift, .function])
+    guard event.charactersIgnoringModifiers?.lowercased() == "c",
+          modifiers.isEmpty || modifiers == .shift, !loupe.isHidden,
+          let color = loupe.color else { return false }
+    guard colorCopyTask == nil else { return true }
+    let pasteboard = target ?? .general
+    pasteboard.clearContents()
+    let value = modifiers == .shift ? color.rgb : color.hex
+    guard pasteboard.setString(value, forType: .string) else { return true }
+    loupe.copied = localized("AnnotationTextCopied")
+    colorCopyTask = Task { [weak self] in
+      do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
+      self?.onCancel?()
     }
     return true
   }
@@ -255,6 +300,8 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func finishInteraction() {
+    colorCopyTask?.cancel()
+    colorCopyTask = nil
     elementTask?.cancel()
     elementTask = nil
     probeID = nil
@@ -265,6 +312,7 @@ final class ScreenshotSelectionView: NSView {
     canAdjustSelection = nil
     onCancel = nil
     movePointer = nil
+    canPickColor = nil
     findElements = nil
   }
 
@@ -279,7 +327,13 @@ final class ScreenshotSelectionView: NSView {
       self.selectedRect = Self.translated(selectedRect, dx: dx, dy: dy, bounds: bounds)
       updateControls()
     } else if let point = pointer ?? window.map({ convert($0.mouseLocationOutsideOfEventStream, from: nil) }) {
-      _ = moveCrosshair(from: point, dx: dx, dy: dy)
+      if canShowLoupe, let image = loupe.source {
+        let next = ScreenshotPixelLoupe.nudged(point, dx: dx, dy: dy, in: bounds, image: image)
+        pointer = next
+        movePointer?(next)
+      } else {
+        _ = moveCrosshair(from: point, dx: dx, dy: dy)
+      }
       updateProbe(enabled: wantsSnapping)
     }
   }
@@ -316,6 +370,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   private func updateProbe(enabled: Bool) {
+    updateLoupe()
     wantsSnapping = enabled && selectedRect == nil && drag == nil
     if !wantsSnapping {
       snapRects = []
@@ -417,6 +472,29 @@ final class ScreenshotSelectionView: NSView {
     layoutSubtreeIfNeeded()
   }
 
+  private var canShowLoupe: Bool {
+    loupe.source != nil && !isScrolling && drag == nil && selectedRect == nil && canPickColor?() != false
+  }
+
+  private func updateLoupe() {
+    guard colorCopyTask == nil else { return }
+    let oldFrame = loupe.isHidden ? nil : loupe.frame
+    if canShowLoupe, let pointer,
+       pointer.x >= bounds.minX, pointer.x <= bounds.maxX,
+       pointer.y >= bounds.minY, pointer.y <= bounds.maxY {
+      loupe.update(near: pointer, in: bounds)
+      loupe.isHidden = false
+    } else {
+      loupe.isHidden = true
+    }
+    let newFrame = loupe.isHidden ? nil : loupe.frame
+    if oldFrame != newFrame {
+      for frame in [oldFrame, newFrame].compactMap({ $0 }) {
+        setNeedsDisplay(frame.intersection(bounds))
+      }
+    }
+  }
+
   static func dirtyRect(from old: NSRect?, to new: NSRect?, in bounds: NSRect) -> NSRect? {
     let rectangles = [old, new].compactMap { $0 }.filter { !$0.isEmpty }
     guard let first = rectangles.first else { return nil }
@@ -426,6 +504,7 @@ final class ScreenshotSelectionView: NSView {
 
   override func layout() {
     super.layout()
+    updateLoupe()
     let showsHandles = selectedRect != nil && drag == nil && !isScrolling
     let oldLabels = [selectionHint, elementHint].filter { !$0.isHidden }.map(\.frame)
     defer {
@@ -502,6 +581,137 @@ final class ScreenshotSelectionView: NSView {
 
   private func localized(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+}
+
+@MainActor
+final class ScreenshotPixelLoupe: NSView {
+  struct Color: Equatable {
+    let red: Int
+    let green: Int
+    let blue: Int
+
+    var hex: String { String(format: "#%02X%02X%02X", red, green, blue) }
+    var rgb: String { "rgb(\(red), \(green), \(blue))" }
+  }
+
+  var source: CGImage? {
+    didSet { currentPixel = nil }
+  }
+  private(set) var color: Color?
+  var copied: String? {
+    didSet { needsDisplay = true }
+  }
+  private var currentPixel: CGPoint?
+  private var patch: NSImage?
+  private var patchFrame: NSRect = .zero
+  private let cell: CGFloat = 12
+  private let radius: CGFloat = 4
+  private let size = NSSize(width: 176, height: 176)
+  private var grid: NSRect {
+    let side = (2 * radius + 1) * cell
+    return NSRect(x: (size.width - side) / 2, y: 60, width: side, height: side)
+  }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  static func pixel(at point: NSPoint, in bounds: NSRect, image: CGImage) -> CGPoint {
+    CGPoint(
+      x: max(0, min(floor((point.x - bounds.minX) * CGFloat(image.width) / bounds.width), CGFloat(image.width - 1))),
+      y: max(0, min(floor((bounds.maxY - point.y) * CGFloat(image.height) / bounds.height), CGFloat(image.height - 1)))
+    )
+  }
+
+  static func nudged(_ point: NSPoint, dx: CGFloat, dy: CGFloat, in bounds: NSRect, image: CGImage) -> NSPoint {
+    let start = pixel(at: point, in: bounds, image: image)
+    let x = max(0, min(start.x + dx, CGFloat(image.width - 1)))
+    let y = max(0, min(start.y - dy, CGFloat(image.height - 1)))
+    return NSPoint(
+      x: bounds.minX + (x + 0.5) * bounds.width / CGFloat(image.width),
+      y: bounds.maxY - (y + 0.5) * bounds.height / CGFloat(image.height)
+    )
+  }
+
+  static func sample(_ image: CGImage, at pixel: CGPoint) -> Color? {
+    guard let crop = image.cropping(to: CGRect(origin: pixel, size: CGSize(width: 1, height: 1))),
+          let space = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+          ), let rgba = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+    context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    return Color(red: Int(rgba[0]), green: Int(rgba[1]), blue: Int(rgba[2]))
+  }
+
+  func update(near point: NSPoint, in bounds: NSRect) {
+    guard let source, !bounds.isEmpty else { return }
+    let gap: CGFloat = 20
+    let right = point.x + gap
+    let above = point.y + gap
+    let x = right + size.width <= bounds.maxX ? right : point.x - gap - size.width
+    let y = above + size.height <= bounds.maxY ? above : point.y - gap - size.height
+    let origin = NSPoint(
+      x: max(bounds.minX, min(x.rounded(), bounds.maxX - size.width)),
+      y: max(bounds.minY, min(y.rounded(), bounds.maxY - size.height))
+    )
+    let nextFrame = NSRect(origin: origin, size: size)
+    if frame != nextFrame { frame = nextFrame }
+
+    let pixel = Self.pixel(at: point, in: bounds, image: source)
+    guard currentPixel != pixel else { return }
+    currentPixel = pixel
+    color = Self.sample(source, at: pixel)
+    let side = 2 * radius + 1
+    let neighborhood = CGRect(x: pixel.x - radius, y: pixel.y - radius, width: side, height: side)
+    let crop = neighborhood.intersection(CGRect(x: 0, y: 0, width: source.width, height: source.height))
+    patch = source.cropping(to: crop).map { NSImage(cgImage: $0, size: crop.size) }
+    patchFrame = NSRect(
+      x: grid.minX + (crop.minX - neighborhood.minX) * cell,
+      y: grid.minY + (neighborhood.maxY - crop.maxY) * cell,
+      width: crop.width * cell, height: crop.height * cell
+    )
+    needsDisplay = true
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    let background = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 10, yRadius: 10)
+    NSColor(white: 0.13, alpha: 0.97).setFill()
+    background.fill()
+    NSColor.white.withAlphaComponent(0.35).setStroke()
+    background.stroke()
+    NSColor(white: 0.23, alpha: 1).setFill()
+    grid.fill()
+    patch?.draw(in: patchFrame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
+                hints: [.interpolation: NSImageInterpolation.none])
+
+    let lines = NSBezierPath()
+    for index in 0...Int(2 * radius + 1) {
+      let offset = CGFloat(index) * cell
+      lines.move(to: NSPoint(x: grid.minX + offset, y: grid.minY))
+      lines.line(to: NSPoint(x: grid.minX + offset, y: grid.maxY))
+      lines.move(to: NSPoint(x: grid.minX, y: grid.minY + offset))
+      lines.line(to: NSPoint(x: grid.maxX, y: grid.minY + offset))
+    }
+    NSColor.black.withAlphaComponent(0.45).setStroke()
+    lines.stroke()
+    let center = NSRect(x: grid.midX - cell / 2, y: grid.midY - cell / 2, width: cell, height: cell)
+    NSColor.black.setStroke()
+    NSBezierPath.stroke(center.insetBy(dx: -1.5, dy: -1.5))
+    NSColor.white.setStroke()
+    NSBezierPath.stroke(center.insetBy(dx: -0.5, dy: -0.5))
+
+    if let color {
+      drawLabel(color.hex, at: 41, size: 13, color: .white)
+      drawLabel(color.rgb, at: 25, size: 12, color: .white)
+      drawLabel(copied ?? "C → HEX   ·   ⇧C → RGB", at: 8, size: 11, color: NSColor(white: 0.82, alpha: 1))
+    }
+  }
+
+  private func drawLabel(_ text: String, at y: CGFloat, size: CGFloat, color: NSColor) {
+    let label = NSAttributedString(string: text, attributes: [
+      .font: NSFont.monospacedSystemFont(ofSize: size, weight: .medium), .foregroundColor: color
+    ])
+    label.draw(at: NSPoint(x: round((bounds.width - label.size().width) / 2), y: y))
   }
 }
 

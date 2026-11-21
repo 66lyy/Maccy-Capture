@@ -20,7 +20,7 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     selectionView = ScreenshotSelectionView(
       frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately
     )
-    selectionView.frozen = frozen.map { NSImage(cgImage: $0, size: frame.size) }
+    selectionView.setFrozenImage(frozen)
     super.init(display: frame, visibleFrame: visibleFrame, deferToolbar: true)
     level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
     collectionBehavior.insert(.canJoinAllApplications)

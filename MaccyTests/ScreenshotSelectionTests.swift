@@ -407,6 +407,80 @@ struct ScreenshotSelectionTests {
     #expect(view.selectedRect == nil)
   }
 
+  @Test("The loupe samples frozen pixels in top-left order and formats their sRGB components")
+  func loupeSample() throws {
+    let image = try colorPickerImage()
+    let bounds = NSRect(x: 10, y: 20, width: 1, height: 1)
+    let topRight = ScreenshotPixelLoupe.pixel(at: NSPoint(x: 10.9, y: 20.9), in: bounds, image: image)
+    let bottomLeft = ScreenshotPixelLoupe.pixel(at: NSPoint(x: 10.1, y: 20.1), in: bounds, image: image)
+    #expect(topRight == CGPoint(x: 1, y: 0))
+    #expect(bottomLeft == CGPoint(x: 0, y: 1))
+    let color = try #require(ScreenshotPixelLoupe.sample(image, at: topRight))
+    #expect(color.hex == "#04A0FF")
+    #expect(color.rgb == "rgb(4, 160, 255)")
+    #expect(ScreenshotPixelLoupe.sample(image, at: bottomLeft)?.hex == "#00FF00")
+  }
+
+  @Test("Arrow keys move the hovered sample one frozen pixel and stop at the display edge")
+  func nudgeLoupe() throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 1, height: 1), scale: 2, pinImmediately: false
+    )
+    view.setFrozenImage(try colorPickerImage())
+    view.moveHover(to: NSPoint(x: 0.1, y: 0.1))
+    var steps: [NSPoint] = []
+    view.movePointer = { steps.append($0) }
+    for (code, character) in [(124, "\u{F703}"), (126, "\u{F700}"), (124, "\u{F703}"), (126, "\u{F700}")] {
+      let event = try #require(NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [.numericPad, .function], timestamp: 0,
+        windowNumber: 0, context: nil, characters: character, charactersIgnoringModifiers: character,
+        isARepeat: false, keyCode: UInt16(code)
+      ))
+      view.keyDown(with: event)
+    }
+    #expect(steps == [
+      NSPoint(x: 0.75, y: 0.25), NSPoint(x: 0.75, y: 0.75),
+      NSPoint(x: 0.75, y: 0.75), NSPoint(x: 0.75, y: 0.75)
+    ])
+  }
+
+  @Test("C and Shift-C copy the hovered color as text but Command-C remains a capture shortcut",
+        arguments: [false, true])
+  func copyLoupeColor(rgb: Bool) throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 100, height: 100), scale: 1, pinImmediately: false
+    )
+    defer { view.finishInteraction() }
+    view.setFrozenImage(try colorPickerImage())
+    view.moveHover(to: NSPoint(x: 75, y: 75))
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    func event(_ modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
+      try #require(NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+        windowNumber: 0, context: nil, characters: "c", charactersIgnoringModifiers: "c",
+        isARepeat: false, keyCode: 8
+      ))
+    }
+    #expect(try !view.handleColorShortcut(event(.command), to: pasteboard))
+    #expect(try view.handleColorShortcut(event(rgb ? .shift : []), to: pasteboard))
+    #expect(pasteboard.string(forType: .string) == (rgb ? "rgb(4, 160, 255)" : "#04A0FF"))
+  }
+
+  private func colorPickerImage() throws -> CGImage {
+    let rows: [UInt8] = [
+      255, 0, 0, 255, 4, 160, 255, 255,
+      0, 255, 0, 255, 255, 255, 255, 255
+    ]
+    let data = try #require(CGDataProvider(data: Data(rows) as CFData))
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    return try #require(CGImage(
+      width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 8, space: space,
+      bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: data,
+      decode: nil, shouldInterpolate: false, intent: .defaultIntent
+    ))
+  }
+
   @Test("Element bounds clip to the current display and keep the child-to-parent order")
   func snapCandidates() {
     let child = NSRect(x: 20, y: 30, width: 60, height: 30)
