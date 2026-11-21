@@ -14,6 +14,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
       guard isClickThrough != oldValue else { return }
       ignoresMouseEvents = isClickThrough
       controls.isHidden = isClickThrough
+      clickThroughSign.isHidden = !isClickThrough
       clickThroughItem.state = isClickThrough ? .on : .off
       onClickThroughChange?()
     }
@@ -22,6 +23,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   private(set) var image: NSImage
   private let imageView = PinnedScreenshotImageView()
   private let controls: GlassControlStrip
+  private let clickThroughSign = PinnedClickThroughSignView()
   private let clickThroughItem = NSMenuItem()
   private let initialVisibleFrame: NSRect
   private var imageScale: CGFloat
@@ -77,6 +79,12 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
                                     y: container.bounds.maxY - controls.frame.height - 4)
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     container.addSubview(controls)
+
+    clickThroughSign.frame = container.bounds
+    clickThroughSign.autoresizingMask = [.width, .height]
+    clickThroughSign.isHidden = true
+    clickThroughSign.setAccessibilityLabel(Self.localized("PinnedClickThrough"))
+    container.addSubview(clickThroughSign)
 
     let menu = NSMenu()
     let copyItem = NSMenuItem(title: Self.localized("ScreenshotCopy"), action: #selector(copyImage), keyEquivalent: "")
@@ -277,6 +285,8 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
 }
 
 private final class PinnedScreenshotImageView: NSImageView {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
   override func scrollWheel(with event: NSEvent) {
     window?.scrollWheel(with: event)
   }
@@ -291,6 +301,57 @@ private final class PinnedScreenshotImageView: NSImageView {
     } else {
       window?.makeKey()
       window?.performDrag(with: event)
+    }
+  }
+}
+
+// Marks a click-through pin with a dashed edge and a corner badge, leaving the image itself untinted.
+final class PinnedClickThroughSignView: NSView {
+  static let badgeSize: CGFloat = 22
+  private let border = CAShapeLayer()
+  private let badge = NSView()
+
+  override init(frame: NSRect) {
+    super.init(frame: frame)
+    wantsLayer = true
+    border.fillColor = nil
+    border.lineWidth = 2
+    border.lineDashPattern = [6, 4]
+    layer?.addSublayer(border)
+
+    let size = Self.badgeSize
+    badge.frame = NSRect(x: bounds.maxX - size - 6, y: bounds.maxY - size - 6, width: size, height: size)
+    badge.autoresizingMask = [.minXMargin, .minYMargin]
+    badge.wantsLayer = true
+    badge.layer?.cornerRadius = size / 2
+    let icon = NSImageView(frame: badge.bounds.insetBy(dx: 4, dy: 4))
+    icon.image = NSImage(systemSymbolName: "cursorarrow.motionlines", accessibilityDescription: nil)
+    icon.contentTintColor = .white
+    icon.imageScaling = .scaleProportionallyUpOrDown
+    badge.addSubview(icon)
+    addSubview(badge)
+  }
+
+  required init?(coder: NSCoder) { nil }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override func layout() {
+    super.layout()
+    border.frame = bounds
+    border.path = CGPath(rect: bounds.insetBy(dx: border.lineWidth / 2, dy: border.lineWidth / 2), transform: nil)
+    updateColors()
+  }
+
+  override func viewDidChangeEffectiveAppearance() {
+    super.viewDidChangeEffectiveAppearance()
+    updateColors()
+  }
+
+  private func updateColors() {
+    effectiveAppearance.performAsCurrentDrawingAppearance {
+      border.strokeColor = NSColor.controlAccentColor.cgColor
+      badge.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
     }
   }
 }

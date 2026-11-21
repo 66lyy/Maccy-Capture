@@ -1140,7 +1140,7 @@ struct ScreenshotCaptureTests {
     #expect(PinnedScreenshotWindow.adjustedOpacity(0.5, delta: .nan, precise: true) == 0.5)
   }
 
-  @Test("Click-through lets mouse events pass, hides the close button, and toggles from the menu and Command-T")
+  @Test("Click-through lets mouse events pass, swaps the close button for a sign, and toggles from the menu and Command-T")
   func pinnedClickThrough() throws {
     let window = pinnedZoomWindow()
     defer { window.close() }
@@ -1149,9 +1149,11 @@ struct ScreenshotCaptureTests {
     let imageView = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
     let item = try #require(imageView.menu?.items.first { $0.action == #selector(PinnedScreenshotWindow.toggleClickThrough) })
     let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
-    #expect(!window.ignoresMouseEvents && item.state == .off && !controls.isHidden)
+    let sign = try #require(window.contentView?.subviews.compactMap { $0 as? PinnedClickThroughSignView }.first)
+    #expect(!window.ignoresMouseEvents && item.state == .off && !controls.isHidden && sign.isHidden)
     window.perform(item.action)
     #expect(window.isClickThrough && window.ignoresMouseEvents && item.state == .on && controls.isHidden)
+    #expect(!sign.isHidden && sign.frame == window.contentView?.bounds && sign.hitTest(NSPoint(x: 10, y: 10)) == nil)
     let event = try #require(NSEvent.keyEvent(
       with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
       windowNumber: window.windowNumber, context: nil, characters: "t", charactersIgnoringModifiers: "t",
@@ -1159,7 +1161,8 @@ struct ScreenshotCaptureTests {
     ))
     #expect(window.performKeyEquivalent(with: event))
     #expect(!window.isClickThrough && !window.ignoresMouseEvents && item.state == .off && !controls.isHidden)
-    #expect(changes == 2)
+    #expect(sign.isHidden && changes == 2)
+    #expect(imageView.acceptsFirstMouse(for: nil))
   }
 
   @Test("Trackpad pinch reaches the pinned panel through its image view")
