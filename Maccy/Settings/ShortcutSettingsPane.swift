@@ -18,7 +18,11 @@ struct ShortcutSettingsPane: View {
     .init("Screenshot", "ScreenshotMainHint", "display", .screenshot, .global),
     .init("ScreenshotSelection", "ScreenshotSelectionHint", "crop", .screenshotSelection, .global),
     .init("PinScreenshot", "ScreenshotPinHint", "pin", .pinScreenshot, .global),
-    .init("PinClipboardImage", "ScreenshotClipboardHint", "photo.on.rectangle", .pinClipboardImage, .global)
+    .init("PinClipboardImage", "ScreenshotClipboardHint", "photo.on.rectangle", .pinClipboardImage, .global),
+    .init(
+      "PinnedClickThroughShortcut", "PinnedClickThroughHint", "cursorarrow.motionlines",
+      .togglePinnedClickThrough, .global
+    )
   ]
 
   var body: some View {

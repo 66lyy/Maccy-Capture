@@ -29,8 +29,8 @@
 "ScreenshotSelection" = "區域截圖：";
 "PinScreenshot" = "截圖並貼在螢幕：";
 "PinClipboardImage" = "貼出剪貼簿圖片：";
-"ScreenshotHelp" = "按 Esc 取消選取。貼圖可拖曳，滾輪或觸控板雙指捏合可縮放；點擊關閉按鈕、連按兩下、按 Esc 或 ⌘W 可關閉，右鍵可複製、標註或關閉，⌘E 可開啟標註。請只執行一個版本的 Maccy，避免快捷鍵衝突。";
-"ScreenshotZoomHelp" = "滾輪向上放大、向下縮小，或使用觸控板雙指捏合縮放。拖曳可移動，連按兩下可關閉。";
+"ScreenshotHelp" = "按 Esc 取消選取。貼圖可拖曳，滾輪調整透明度，按住 Option 捲動或觸控板雙指捏合可縮放；點擊關閉按鈕、連按兩下、按 Esc 或 ⌘W 可關閉，右鍵可複製、標註、滑鼠穿透或關閉，⌘E 可開啟標註、⌘T 切換滑鼠穿透。請只執行一個版本的 Maccy，避免快捷鍵衝突。";
+"ScreenshotZoomHelp" = "滾輪調整透明度，按住 Option 捲動或使用觸控板雙指捏合可縮放。拖曳可移動，連按兩下可關閉。";
 "AnnotationEdit" = "標註…";
 "AnnotationTitle" = "截圖標註";
 "AnnotationArrow" = "箭頭";
@@ -115,3 +115,7 @@
 "ToolbarHistoryGroup" = "還原與重做";
 "ToolbarOutputGroup" = "操作";
 "ToolbarStyleGroup" = "顏色與粗細";
+"PinnedClickThrough" = "滑鼠穿透";
+"PinnedClickThroughShortcut" = "切換貼圖滑鼠穿透：";
+"PinnedClickThroughHint" = "讓點擊和捲動穿過所有貼圖，直接操作後面的視窗；再按一次恢復貼圖互動。";
+"PinnedClickThroughOff" = "關閉貼圖滑鼠穿透";

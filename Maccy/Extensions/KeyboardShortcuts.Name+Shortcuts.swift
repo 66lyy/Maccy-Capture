@@ -11,6 +11,7 @@ extension KeyboardShortcuts.Name {
   static let screenshotSelection = Self("screenshotSelection", initial: Shortcut(.f1))
   static let pinScreenshot = Self("pinScreenshot", initial: Shortcut(.f3))
   static let pinClipboardImage = Self("pinClipboardImage")
+  static let togglePinnedClickThrough = Self("togglePinnedClickThrough")
 }
 
 enum ShortcutScope: Hashable {
@@ -29,7 +30,7 @@ enum ScopedShortcut: String, CaseIterable {
   case copyCapture, copyCaptureWithCommand, pinCapture, closeCapture, closeCaptureWindow
   case annotateSelection, selectParent, selectChild
   case saveCapture, undoAnnotation, redoAnnotation
-  case copyPinnedImage, editPinnedImage, closePinnedImage
+  case copyPinnedImage, editPinnedImage, clickThroughPinnedImage, closePinnedImage
 
   var scope: ShortcutScope {
     switch self {
@@ -37,7 +38,7 @@ enum ScopedShortcut: String, CaseIterable {
     case .copyCapture, .copyCaptureWithCommand, .pinCapture, .closeCapture, .closeCaptureWindow, .saveCapture: .capture
     case .annotateSelection, .selectParent, .selectChild: .selection
     case .undoAnnotation, .redoAnnotation: .annotation
-    case .copyPinnedImage, .editPinnedImage, .closePinnedImage: .pinnedImage
+    case .copyPinnedImage, .editPinnedImage, .clickThroughPinnedImage, .closePinnedImage: .pinnedImage
     default: .history
     }
   }
@@ -66,6 +67,7 @@ enum ScopedShortcut: String, CaseIterable {
     case .undoAnnotation: .init(.z, modifiers: [.command])
     case .redoAnnotation: .init(.z, modifiers: [.command, .shift])
     case .editPinnedImage: .init(.e, modifiers: [.command])
+    case .clickThroughPinnedImage: .init(.t, modifiers: [.command])
     case .closePinnedImage, .closeCaptureWindow: .init(.w, modifiers: [.command])
     }
   }
@@ -105,6 +107,8 @@ enum ScopedShortcut: String, CaseIterable {
     case .redoAnnotation: String(localized: "AnnotationRedo", defaultValue: "Redo", table: "GeneralSettings")
     case .copyPinnedImage: String(localized: "ScreenshotCopy", defaultValue: "Copy image", table: "GeneralSettings")
     case .editPinnedImage: String(localized: "AnnotationEdit", defaultValue: "Annotate…", table: "GeneralSettings")
+    case .clickThroughPinnedImage:
+      String(localized: "PinnedClickThrough", defaultValue: "Click-Through", table: "GeneralSettings")
     case .closePinnedImage: String(localized: "ScreenshotClose", defaultValue: "Close pinned image", table: "GeneralSettings")
     }
   }

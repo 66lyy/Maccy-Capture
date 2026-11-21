@@ -1081,7 +1081,7 @@ struct ScreenshotCaptureTests {
     ) == frame)
   }
 
-  @Test("Wheel zoom reaches the panel through its image view without extra buttons",
+  @Test("Option-wheel zoom reaches the panel through its image view without extra buttons",
         arguments: [false, true], [false, true])
   func pinnedWheelZoom(precise: Bool, inverted: Bool) throws {
     let window = pinnedZoomWindow()
@@ -1091,6 +1091,7 @@ struct ScreenshotCaptureTests {
     let image = try #require(imageView.image)
     let originalSize = image.size
     let event = PinnedZoomEvent()
+    event.flags = .option
     event.precise = precise
     event.inverted = inverted
     event.scrollDelta = (precise ? 10 : 1) * (inverted ? -1 : 1)
@@ -1105,6 +1106,60 @@ struct ScreenshotCaptureTests {
     let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
     #expect(controls.controlsView.subviews.compactMap { $0 as? NSButton }.count == 1)
     #expect(window.contentView?.subviews.contains { $0 is NSButton } == false)
+    #expect(window.alphaValue == 1)
+  }
+
+  @Test("Plain wheel scrolling changes pinned opacity without resizing", arguments: [false, true], [false, true])
+  func pinnedWheelOpacity(precise: Bool, inverted: Bool) throws {
+    let window = pinnedZoomWindow()
+    defer { window.close() }
+    let originalFrame = window.frame
+    let imageView = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
+    let event = PinnedZoomEvent()
+    event.precise = precise
+    event.inverted = inverted
+    event.scrollDelta = -(precise ? 50 : 4) * (inverted ? -1 : 1)
+    imageView.scrollWheel(with: event)
+    #expect(abs(window.alphaValue - 0.8) < 0.01)
+    #expect(window.frame == originalFrame)
+    event.scrollDelta *= -1
+    imageView.scrollWheel(with: event)
+    #expect(abs(window.alphaValue - 1) < 0.01)
+    event.scrollDelta *= -1
+    for _ in 0..<20 { window.scrollWheel(with: event) }
+    #expect(abs(window.alphaValue - PinnedScreenshotWindow.minimumOpacity) < 0.01)
+    #expect(window.frame == originalFrame)
+  }
+
+  @Test("Pinned opacity steps are bounded and ignore invalid input")
+  func pinnedOpacitySteps() {
+    #expect(PinnedScreenshotWindow.adjustedOpacity(1, delta: 1, precise: false) == 1)
+    #expect(abs(PinnedScreenshotWindow.adjustedOpacity(1, delta: -1, precise: false) - 0.95) < 0.0001)
+    #expect(abs(PinnedScreenshotWindow.adjustedOpacity(1, delta: -100, precise: false) - 0.75) < 0.0001)
+    #expect(PinnedScreenshotWindow.adjustedOpacity(0.15, delta: -10, precise: false) == 0.1)
+    #expect(PinnedScreenshotWindow.adjustedOpacity(0.5, delta: .nan, precise: true) == 0.5)
+  }
+
+  @Test("Click-through lets mouse events pass, hides the close button, and toggles from the menu and Command-T")
+  func pinnedClickThrough() throws {
+    let window = pinnedZoomWindow()
+    defer { window.close() }
+    var changes = 0
+    window.onClickThroughChange = { changes += 1 }
+    let imageView = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
+    let item = try #require(imageView.menu?.items.first { $0.action == #selector(PinnedScreenshotWindow.toggleClickThrough) })
+    let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
+    #expect(!window.ignoresMouseEvents && item.state == .off && !controls.isHidden)
+    window.perform(item.action)
+    #expect(window.isClickThrough && window.ignoresMouseEvents && item.state == .on && controls.isHidden)
+    let event = try #require(NSEvent.keyEvent(
+      with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+      windowNumber: window.windowNumber, context: nil, characters: "t", charactersIgnoringModifiers: "t",
+      isARepeat: false, keyCode: 17
+    ))
+    #expect(window.performKeyEquivalent(with: event))
+    #expect(!window.isClickThrough && !window.ignoresMouseEvents && item.state == .off && !controls.isHidden)
+    #expect(changes == 2)
   }
 
   @Test("Trackpad pinch reaches the pinned panel through its image view")
@@ -1129,6 +1184,7 @@ struct ScreenshotCaptureTests {
     let originalWidth = window.frame.width
     let event = PinnedZoomEvent()
     event.precise = true
+    event.flags = .option
     event.scrollDelta = 0.02
     for _ in 0..<100 {
       window.scrollWheel(with: event)
@@ -1150,7 +1206,7 @@ struct ScreenshotCaptureTests {
     event.scrollDelta = 2
     event.simulatedMomentum = .changed
     window.scrollWheel(with: event)
-    #expect(window.frame == originalFrame)
+    #expect(window.frame == originalFrame && window.alphaValue == 1)
     event.simulatedMomentum = []
     event.simulatedPhase = .cancelled
     event.pinchDelta = 0.25
@@ -1163,7 +1219,7 @@ struct ScreenshotCaptureTests {
       event.pinchDelta = delta
       window.scrollWheel(with: event)
       window.magnify(with: event)
-      #expect(window.frame == originalFrame)
+      #expect(window.frame == originalFrame && window.alphaValue == 1)
     }
   }
 
@@ -1320,6 +1376,7 @@ private final class PinnedZoomEvent: NSEvent {
   var inverted = false
   var simulatedMomentum: NSEvent.Phase = []
   var simulatedPhase: NSEvent.Phase = []
+  var flags: NSEvent.ModifierFlags = []
 
   override var scrollingDeltaY: CGFloat { scrollDelta }
   override var magnification: CGFloat { pinchDelta }
@@ -1327,5 +1384,6 @@ private final class PinnedZoomEvent: NSEvent {
   override var isDirectionInvertedFromDevice: Bool { inverted }
   override var momentumPhase: NSEvent.Phase { simulatedMomentum }
   override var phase: NSEvent.Phase { simulatedPhase }
+  override var modifierFlags: NSEvent.ModifierFlags { flags }
   override var locationInWindow: NSPoint { NSPoint(x: 100, y: 50) }
 }

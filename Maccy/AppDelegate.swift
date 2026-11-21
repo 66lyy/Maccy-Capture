@@ -156,6 +156,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       KeyboardShortcuts.onKeyUp(for: .pinClipboardImage) {
         ScreenshotCapture.shared.pinClipboardImage()
       }
+      KeyboardShortcuts.onKeyUp(for: .togglePinnedClickThrough) {
+        ScreenshotCapture.shared.togglePinnedClickThrough()
+      }
     }
 
     panel = FloatingPanel(

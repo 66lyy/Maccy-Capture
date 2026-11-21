@@ -165,6 +165,16 @@ struct ToolbarView: View {
               Image(systemName: "photo.on.rectangle")
             }
           }
+          Button {
+            ScreenshotCapture.shared.turnOffPinnedClickThrough()
+          } label: {
+            Label {
+              Text("PinnedClickThroughOff", tableName: "GeneralSettings")
+            } icon: {
+              Image(systemName: "cursorarrow.rays")
+            }
+          }
+          .disabled(ScreenshotCapture.shared.pinnedImages.clickThroughCount == 0)
         } label: {
           Label {
             Text("ScreenshotMenu", tableName: "GeneralSettings")

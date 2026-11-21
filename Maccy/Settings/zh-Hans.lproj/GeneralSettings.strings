@@ -62,8 +62,8 @@
 "ScreenshotSelection" = "区域截图：";
 "PinScreenshot" = "截图并贴屏：";
 "PinClipboardImage" = "贴出剪贴板图片：";
-"ScreenshotHelp" = "按 Esc 取消截图。贴图可拖动，滚轮或触控板双指捏合可缩放，双击可关闭，右键查看更多操作。请只运行一个版本的 Maccy，避免快捷键冲突。";
-"ScreenshotZoomHelp" = "滚轮向上放大、向下缩小，或用触控板双指捏合缩放。拖动可移动，双击可关闭。";
+"ScreenshotHelp" = "按 Esc 取消截图。贴图可拖动，滚轮调节透明度，按住 Option 滚动或双指捏合可缩放，双击可关闭，右键查看更多操作（含鼠标穿透）。请只运行一个版本的 Maccy，避免快捷键冲突。";
+"ScreenshotZoomHelp" = "滚轮调节透明度，按住 Option 滚动或用触控板双指捏合可缩放。拖动可移动，双击可关闭。";
 "AnnotationEdit" = "标注…";
 "AnnotationTitle" = "截图标注";
 "AnnotationArrow" = "箭头";
@@ -197,3 +197,7 @@
 "ToolbarHistoryGroup" = "撤销与重做";
 "ToolbarOutputGroup" = "操作";
 "ToolbarStyleGroup" = "颜色与粗细";
+"PinnedClickThrough" = "鼠标穿透";
+"PinnedClickThroughShortcut" = "切换贴图鼠标穿透：";
+"PinnedClickThroughHint" = "让点击和滚动穿过所有贴图，直接操作后面的窗口；再按一次恢复贴图交互。";
+"PinnedClickThroughOff" = "关闭贴图鼠标穿透";

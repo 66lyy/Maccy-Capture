@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Defaults
+import Observation
 
 nonisolated enum ScreenshotImageLimits {
   static let maximumPixels = 100_000_000
@@ -51,9 +52,16 @@ nonisolated struct PinnedImageBudget {
   }
 }
 
+@MainActor @Observable
+final class PinnedImagesState {
+  fileprivate(set) var clickThroughCount = 0
+}
+
 @MainActor
 final class ScreenshotCapture {
   static let shared = ScreenshotCapture()
+
+  let pinnedImages = PinnedImagesState()
 
   private enum CaptureMode {
     case mainDisplay
@@ -91,6 +99,20 @@ final class ScreenshotCapture {
       return
     }
     pinImage(image)
+  }
+
+  func togglePinnedClickThrough() {
+    let windows = Array(pinnedWindows.values)
+    let enable = !windows.contains { $0.isClickThrough }
+    for window in windows { window.isClickThrough = enable }
+  }
+
+  func turnOffPinnedClickThrough() {
+    for window in pinnedWindows.values { window.isClickThrough = false }
+  }
+
+  private func updatePinnedClickThroughCount() {
+    pinnedImages.clickThroughCount = pinnedWindows.values.filter(\.isClickThrough).count
   }
 
   func cancelCapture() {
@@ -257,7 +279,9 @@ final class ScreenshotCapture {
       }
       self?.pinnedWindows.removeValue(forKey: identifier)
       self?.pinnedImageBudget.remove(identifier)
+      self?.updatePinnedClickThroughCount()
     }
+    window.onClickThroughChange = { [weak self] in self?.updatePinnedClickThroughCount() }
     window.onCloseAll = { [weak self] in self?.closeAllPinnedImages() }
     pinnedWindows[identifier] = window
     window.makeKeyAndOrderFront(nil)
@@ -267,6 +291,7 @@ final class ScreenshotCapture {
     for window in Array(pinnedWindows.values) { window.close() }
     pinnedWindows.removeAll()
     pinnedImageBudget = PinnedImageBudget()
+    updatePinnedClickThroughCount()
   }
 
   private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil) {

@@ -67,8 +67,8 @@
 "ScreenshotSelection" = "Capture region:";
 "PinScreenshot" = "Capture and pin:";
 "PinClipboardImage" = "Pin clipboard image:";
-"ScreenshotHelp" = "Press Esc to cancel capture. Drag a pinned image to move it, scroll or pinch to zoom, and double-click to close. Right-click for more actions. Run only one copy of Maccy to avoid shortcut conflicts.";
-"ScreenshotZoomHelp" = "Scroll up to enlarge, scroll down to shrink, or pinch with two fingers. Drag to move; double-click to close.";
+"ScreenshotHelp" = "Press Esc to cancel capture. Drag a pinned image to move it, scroll to change its opacity, Option-scroll or pinch to zoom, and double-click to close. Right-click for more actions, including click-through. Run only one copy of Maccy to avoid shortcut conflicts.";
+"ScreenshotZoomHelp" = "Scroll to change opacity. Hold Option and scroll, or pinch with two fingers, to zoom. Drag to move; double-click to close.";
 "AnnotationEdit" = "Annotate…";
 "AnnotationTitle" = "Annotate Screenshot";
 "AnnotationArrow" = "Arrow";
@@ -196,3 +196,7 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"PinnedClickThrough" = "Click-Through";
+"PinnedClickThroughShortcut" = "Toggle pinned image click-through:";
+"PinnedClickThroughHint" = "Let clicks and scrolling pass through all pinned images to the windows behind them; press again to make them interactive.";
+"PinnedClickThroughOff" = "Turn Off Pinned Image Click-Through";

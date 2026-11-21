@@ -5,9 +5,24 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   var onClose: (() -> Void)?
   var onCloseAll: (() -> Void)?
   var onAnnotate: ((NSImage) -> Void)?
+  var onClickThroughChange: (() -> Void)?
+
+  nonisolated static let minimumOpacity: CGFloat = 0.1
+
+  var isClickThrough = false {
+    didSet {
+      guard isClickThrough != oldValue else { return }
+      ignoresMouseEvents = isClickThrough
+      controls.isHidden = isClickThrough
+      clickThroughItem.state = isClickThrough ? .on : .off
+      onClickThroughChange?()
+    }
+  }
 
   private(set) var image: NSImage
   private let imageView = PinnedScreenshotImageView()
+  private let controls: GlassControlStrip
+  private let clickThroughItem = NSMenuItem()
   private let initialVisibleFrame: NSRect
   private var imageScale: CGFloat
   private var isApplyingZoom = false
@@ -19,6 +34,14 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     self.image = image
     initialVisibleFrame = visibleFrame
     imageScale = min(initialFrame.width / image.size.width, initialFrame.height / image.size.height)
+    let closeLabel = Self.localized("ScreenshotClose")
+    let closeButton = NSButton(
+      image: NSImage(systemSymbolName: "xmark", accessibilityDescription: closeLabel) ?? NSImage(),
+      target: nil, action: #selector(closeImage)
+    )
+    closeButton.setAccessibilityLabel(closeLabel)
+    closeButton.toolTip = closeLabel
+    controls = GlassControlStrip(buttons: [closeButton])
     super.init(
       contentRect: initialFrame,
       styleMask: [.borderless, .resizable, .nonactivatingPanel],
@@ -37,44 +60,41 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     contentAspectRatio = image.size
     let minimumScale = min(1, 40 / min(image.size.width, image.size.height), frame.width / image.size.width)
     contentMinSize = NSSize(width: image.size.width * minimumScale, height: image.size.height * minimumScale)
-    title = localized("PinScreenshot")
-    setAccessibilityLabel(localized("PinScreenshot"))
+    title = Self.localized("PinScreenshot")
+    setAccessibilityLabel(Self.localized("PinScreenshot"))
 
     let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
     imageView.frame = container.bounds
     imageView.image = image
     imageView.imageScaling = .scaleProportionallyUpOrDown
     imageView.autoresizingMask = [.width, .height]
-    imageView.setAccessibilityLabel(localized("ScreenshotTitle"))
-    imageView.toolTip = localized("ScreenshotZoomHelp")
+    imageView.setAccessibilityLabel(Self.localized("ScreenshotTitle"))
+    imageView.toolTip = Self.localized("ScreenshotZoomHelp")
     container.addSubview(imageView)
 
-    let closeLabel = localized("ScreenshotClose")
-    let closeButton = NSButton(
-      image: NSImage(systemSymbolName: "xmark", accessibilityDescription: closeLabel) ?? NSImage(),
-      target: self, action: #selector(closeImage)
-    )
-    closeButton.setAccessibilityLabel(closeLabel)
-    closeButton.toolTip = closeLabel
-    let controls = GlassControlStrip(buttons: [closeButton])
+    closeButton.target = self
     controls.frame.origin = NSPoint(x: container.bounds.maxX - controls.frame.width - 4,
                                     y: container.bounds.maxY - controls.frame.height - 4)
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     container.addSubview(controls)
 
     let menu = NSMenu()
-    let copyItem = NSMenuItem(title: localized("ScreenshotCopy"), action: #selector(copyImage), keyEquivalent: "")
+    let copyItem = NSMenuItem(title: Self.localized("ScreenshotCopy"), action: #selector(copyImage), keyEquivalent: "")
     copyItem.target = self
     menu.addItem(copyItem)
-    let annotateItem = NSMenuItem(title: localized("AnnotationEdit"), action: #selector(annotateImage), keyEquivalent: "")
+    let annotateItem = NSMenuItem(title: Self.localized("AnnotationEdit"), action: #selector(annotateImage), keyEquivalent: "")
     annotateItem.target = self
     menu.addItem(annotateItem)
+    clickThroughItem.title = Self.localized("PinnedClickThrough")
+    clickThroughItem.action = #selector(toggleClickThrough)
+    clickThroughItem.target = self
+    menu.addItem(clickThroughItem)
     menu.addItem(.separator())
-    let closeItem = NSMenuItem(title: localized("ScreenshotClose"), action: #selector(closeImage), keyEquivalent: "")
+    let closeItem = NSMenuItem(title: Self.localized("ScreenshotClose"), action: #selector(closeImage), keyEquivalent: "")
     closeItem.target = self
     menu.addItem(closeItem)
     let closeAllItem = NSMenuItem(
-      title: localized("ScreenshotCloseAllPinned"), action: #selector(closeAllImages), keyEquivalent: ""
+      title: Self.localized("ScreenshotCloseAllPinned"), action: #selector(closeAllImages), keyEquivalent: ""
     )
     closeAllItem.target = self
     menu.addItem(closeAllItem)
@@ -91,8 +111,18 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     let direction: CGFloat = event.isDirectionInvertedFromDevice ? -1 : 1
     let delta = event.scrollingDeltaY * direction
     guard delta.isFinite, delta != 0 else { return }
-    let sensitivity: CGFloat = event.hasPreciseScrollingDeltas ? 0.01 : 0.08
-    zoom(by: exp(max(-0.5, min(0.5, delta * sensitivity))), with: event)
+    if event.modifierFlags.contains(.option) {
+      let sensitivity: CGFloat = event.hasPreciseScrollingDeltas ? 0.01 : 0.08
+      zoom(by: exp(max(-0.5, min(0.5, delta * sensitivity))), with: event)
+    } else {
+      alphaValue = Self.adjustedOpacity(alphaValue, delta: delta, precise: event.hasPreciseScrollingDeltas)
+    }
+  }
+
+  nonisolated static func adjustedOpacity(_ opacity: CGFloat, delta: CGFloat, precise: Bool) -> CGFloat {
+    guard opacity.isFinite, delta.isFinite else { return opacity }
+    let step = max(-0.25, min(0.25, delta * (precise ? 0.004 : 0.05)))
+    return max(minimumOpacity, min(1, opacity + step))
   }
 
   override func magnify(with event: NSEvent) {
@@ -124,6 +154,8 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
       copyImage()
     } else if ScopedShortcut.editPinnedImage.matches(event) {
       annotateImage()
+    } else if ScopedShortcut.clickThroughPinnedImage.matches(event) {
+      toggleClickThrough()
     } else {
       return false
     }
@@ -133,6 +165,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   func windowWillClose(_ notification: Notification) {
     onAnnotate = nil
     onCloseAll = nil
+    onClickThroughChange = nil
     let handler = onClose
     onClose = nil
     handler?()
@@ -225,6 +258,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     close()
   }
 
+  @objc func toggleClickThrough() {
+    isClickThrough.toggle()
+  }
+
   @objc func closeAllImages() {
     onCloseAll?()
   }
@@ -234,7 +271,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     NSPasteboard.general.writeObjects([image])
   }
 
-  private func localized(_ key: String) -> String {
+  private static func localized(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
   }
 }
