@@ -133,8 +133,13 @@ final class ScrollingScreenshotPanel: NSPanel {
     self.image = image
     thumbnail.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     dimensions.stringValue = "\(width) × \(height) px"
-    hint.stringValue = text(capped ? "ScreenshotLongLimit" : "ScreenshotLongHint")
     outputButtons.forEach { $0.isEnabled = true }
+    updateHint(capped: capped, showSlowScrollHint: false)
+  }
+
+  func updateHint(capped: Bool, showSlowScrollHint: Bool) {
+    hint.stringValue = text(capped ? "ScreenshotLongLimit"
+      : showSlowScrollHint ? "ScreenshotLongSlowScroll" : "ScreenshotLongHint")
   }
 
   override func keyDown(with event: NSEvent) {

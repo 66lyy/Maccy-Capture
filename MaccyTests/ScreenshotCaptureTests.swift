@@ -53,6 +53,103 @@ struct ScreenshotCaptureTests {
       + Array(scrollingFrame(12).suffix(6 * 32)))
   }
 
+  @Test("Unmatched changed frames are distinct from unchanged, upward, invalid and capped frames")
+  func scrollingAppendClassification() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
+    #expect({ !stitcher.append(rgba: []) }())
+    #expect(stitcher.appendResult == .invalid)
+    #expect({ stitcher.append(rgba: scrollingFrame(12)) }())
+    #expect(stitcher.appendResult == .appended)
+    let pixels = stitcher.pixels
+    #expect({ !stitcher.append(rgba: scrollingFrame(12)) }())
+    #expect(stitcher.appendResult == .unchanged)
+    #expect({ !stitcher.append(rgba: scrollingFrame(6)) }())
+    #expect(stitcher.appendResult == .upward)
+    #expect({ !stitcher.append(rgba: scrollingFrame(29)) }())
+    #expect(stitcher.appendResult == .unmatched)
+    #expect({ !stitcher.append(rgba: scrollingFrame(29)) }())
+    #expect(stitcher.appendResult == .unchanged)
+    #expect({ !stitcher.append(rgba: scrollingFrame(12)) }())
+    #expect(stitcher.appendResult == .unchanged)
+    #expect(stitcher.pixels == pixels)
+    #expect({ stitcher.append(rgba: scrollingFrame(18)) }())
+    #expect(stitcher.appendResult == .appended)
+
+    var capped = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 24)
+    #expect({ capped.append(rgba: scrollingFrame(0)) }())
+    #expect({ !capped.append(rgba: scrollingFrame(17)) }())
+    #expect(capped.appendResult == .capped)
+  }
+
+  @Test("Slow-scroll hint counts changed failures, survives polling and clears on a successful stitch")
+  func scrollingSlowScrollHint() {
+    var state = ScrollingScreenshotHintState()
+    #expect(!state.shouldShowSlowScrollHint)
+    state.record(.unmatched)
+    #expect(!state.shouldShowSlowScrollHint)
+    state.record(.unchanged)
+    state.record(.invalid)
+    #expect(state.consecutiveFailures == 1)
+    state.record(.unmatched)
+    #expect(state.shouldShowSlowScrollHint)
+    state.record(.unchanged)
+    state.record(.unmatched)
+    #expect(state.shouldShowSlowScrollHint)
+    #expect(state.consecutiveFailures == 2)
+    state.record(.appended)
+    #expect(!state.shouldShowSlowScrollHint)
+    state.record(.unmatched)
+    state.record(.upward)
+    state.record(.unmatched)
+    #expect(!state.shouldShowSlowScrollHint)
+    state.record(.capped)
+    #expect(state.consecutiveFailures == 0)
+    #expect(!state.shouldShowSlowScrollHint)
+  }
+
+  @Test("Processor reports match failures and hint recovery even without a refreshed thumbnail")
+  func scrollingProcessorHint() async throws {
+    func frame(_ start: Int) throws -> CGImage {
+      var source = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
+      source.append(rgba: scrollingFrame(start))
+      return try #require(source.image)
+    }
+    let processor = ScrollingScreenshotProcessor()
+    let initial = try await processor.append(frame(12), refreshPreview: true, maximumPixels: 8 * 100)
+    #expect(initial.appendResult == .appended)
+    #expect(!initial.showSlowScrollHint)
+    let first = try await processor.append(frame(29), refreshPreview: false, maximumPixels: 8 * 100)
+    #expect(first.appendResult == .unmatched)
+    #expect(!first.showSlowScrollHint)
+    let repeated = try await processor.append(frame(29), refreshPreview: false, maximumPixels: 8 * 100)
+    #expect(repeated.appendResult == .unchanged)
+    #expect(!repeated.showSlowScrollHint)
+    let second = try await processor.append(frame(35), refreshPreview: false, maximumPixels: 8 * 100)
+    #expect(second.appendResult == .unmatched)
+    #expect(second.showSlowScrollHint)
+    #expect(second.thumbnail == nil)
+    #expect(second.height == 24)
+    let recovered = try await processor.append(frame(18), refreshPreview: false, maximumPixels: 8 * 100)
+    #expect(recovered.appendResult == .appended)
+    #expect(!recovered.showSlowScrollHint)
+    #expect(recovered.thumbnail == nil)
+    #expect(recovered.height == 30)
+  }
+
+  @Test("Changing the long screenshot hint does not resize the panel")
+  func scrollingHintPanelSize() {
+    let panel = ScrollingScreenshotPanel(beside: NSRect(x: 20, y: 20, width: 400, height: 400),
+      bounds: NSRect(x: 0, y: 0, width: 1200, height: 900), level: 0)
+    let size = panel.frame.size
+    panel.updateHint(capped: false, showSlowScrollHint: true)
+    panel.contentView?.layoutSubtreeIfNeeded()
+    #expect(panel.frame.size == size)
+    panel.updateHint(capped: false, showSlowScrollHint: false)
+    panel.contentView?.layoutSubtreeIfNeeded()
+    #expect(panel.frame.size == size)
+    panel.close()
+  }
+
   @Test("Sticky header and footer are retained exactly once")
   func scrollingStickyEdges() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)

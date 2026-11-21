@@ -262,6 +262,7 @@ final class ScreenshotSelectionController {
               panel.update(image, width: update.width, height: update.height, capped: update.capReached)
               lastThumbnailUpdate = now
             }
+            panel.updateHint(capped: update.capReached, showSlowScrollHint: update.showSlowScrollHint)
             if update.capReached { return }
             try await Task.sleep(for: .milliseconds(150))
           } catch {
