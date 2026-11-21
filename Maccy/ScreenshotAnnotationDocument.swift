@@ -367,8 +367,9 @@ final class ScreenshotAnnotationDocument {
             ) else { return nil }
       context.interpolationQuality = .high
       context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))
-      for mark in marks where mark.tool != .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, source: source, in: context) }
-      for mark in marks where mark.tool == .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, source: source, in: context) }
+      let lens = ScreenshotAnnotationDocument.lensSource(source, marks: marks)
+      for mark in marks where mark.tool != .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, source: lens, in: context) }
+      for mark in marks where mark.tool == .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, source: lens, in: context) }
       return context.makeImage()
     }
   }
@@ -403,19 +404,33 @@ final class ScreenshotAnnotationDocument {
       }
       visibleMarks.append(preview)
     }
-    for mark in visibleMarks where mark.tool != .redact {
-      draw(mark, in: context)
+    let rendered = visibleMarks.map(RenderMark.init)
+    let lens = Self.lensSource(sourceImage, marks: rendered)
+    for mark in rendered where mark.tool != .redact {
+      Self.drawRenderedMark(mark, source: lens, in: context)
     }
-    for mark in visibleMarks where mark.tool == .redact {
-      draw(mark, in: context)
+    for mark in rendered where mark.tool == .redact {
+      Self.drawRenderedMark(mark, source: lens, in: context)
     }
   }
 
-  private func draw(_ mark: Mark, in context: CGContext) {
-    Self.drawRenderedMark(RenderMark(mark), source: sourceImage, in: context)
+  // A magnifier enlarges the screenshot with every mosaic and solid cover applied, so it never reveals hidden content.
+  nonisolated static func lensSource(_ source: CGImage, marks: [RenderMark]) -> CGImage? {
+    guard marks.contains(where: { $0.tool == .magnifier }) else { return nil }
+    let covers = marks.filter { $0.tool == .mosaic } + marks.filter { $0.tool == .redact }
+    guard !covers.isEmpty else { return source }
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+          let context = CGContext(
+            data: nil, width: source.width, height: source.height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          ) else { return nil }
+    context.interpolationQuality = .high
+    context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))
+    for mark in covers { drawRenderedMark(mark, source: nil, in: context) }
+    return context.makeImage()
   }
 
-  nonisolated private static func drawRenderedMark(_ mark: RenderMark, source: CGImage, in context: CGContext) {
+  nonisolated private static func drawRenderedMark(_ mark: RenderMark, source: CGImage?, in context: CGContext) {
     guard let first = mark.points.first else { return }
     let last = mark.points.last ?? first
     context.saveGState()
@@ -478,10 +493,15 @@ final class ScreenshotAnnotationDocument {
       context.addEllipse(in: lens)
       context.clip()
       context.interpolationQuality = .high
-      context.draw(source, in: CGRect(
-        x: lens.midX * (1 - zoom), y: lens.midY * (1 - zoom),
-        width: CGFloat(source.width) * zoom, height: CGFloat(source.height) * zoom
-      ))
+      if let source {
+        context.draw(source, in: CGRect(
+          x: lens.midX * (1 - zoom), y: lens.midY * (1 - zoom),
+          width: CGFloat(source.width) * zoom, height: CGFloat(source.height) * zoom
+        ))
+      } else {
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.fill(lens)
+      }
       context.restoreGState()
       context.strokeEllipse(in: lens)
     case .redact:

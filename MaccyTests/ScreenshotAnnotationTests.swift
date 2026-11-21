@@ -499,6 +499,50 @@ struct ScreenshotAnnotationTests {
     #expect(document.marks.count == 1)
   }
 
+  @Test("The magnifier enlarges the mosaic, not the content it hides", arguments: [false, true])
+  func magnifierRespectsMosaic(mosaicAfterLens: Bool) throws {
+    let image = NSImage(size: NSSize(width: 240, height: 160), flipped: false) { rect in
+      NSColor.white.setFill()
+      rect.fill()
+      NSColor.black.setFill()
+      NSRect(x: 111, y: 87, width: 7, height: 7).fill()
+      return true
+    }
+    let magnifier = ScreenshotAnnotationDocument.Mark(
+      tool: .magnifier, points: [NSPoint(x: 60, y: 30), NSPoint(x: 160, y: 130)], lineWidth: 2, zoom: 3
+    )
+    let mosaic = ScreenshotAnnotationDocument.Mark(
+      tool: .mosaic, points: [NSPoint(x: 104, y: 80), NSPoint(x: 144, y: 100)], lineWidth: 20
+    )
+    func document(covered: Bool) throws -> ScreenshotAnnotationDocument {
+      let document = try #require(ScreenshotAnnotationDocument(image: image))
+      if covered && !mosaicAfterLens { #expect(document.append(mosaic)) }
+      #expect(document.append(magnifier))
+      if covered && mosaicAfterLens { #expect(document.append(mosaic)) }
+      return document
+    }
+    func magnifiedSample(_ bitmap: NSBitmapImageRep) throws -> CGFloat {
+      // The lens maps (114, 90) to (122, 110), outside the mosaic's unzoomed bounds.
+      try color(bitmap, x: 122, y: 159 - 110).redComponent
+    }
+    func canvasBitmap(_ document: ScreenshotAnnotationDocument) throws -> NSBitmapImageRep {
+      let bitmap = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 240, pixelsHigh: 160, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0
+      ))
+      let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext)
+      document.draw(in: context)
+      return bitmap
+    }
+    let uncovered = try document(covered: false)
+    #expect(try magnifiedSample(bitmap(uncovered)) < 0.1)
+    #expect(try magnifiedSample(canvasBitmap(uncovered)) < 0.1)
+    let covered = try document(covered: true)
+    #expect(try magnifiedSample(bitmap(covered)) > 0.6)
+    #expect(try magnifiedSample(canvasBitmap(covered)) > 0.6)
+  }
+
   @Test("A finished mark is selected and can be moved, resized and deleted with one undo step each")
   func moveAndResizeMarks() throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
