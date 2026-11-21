@@ -197,11 +197,12 @@ nonisolated struct ScrollingScreenshotStitcher {
             && rowsMatch(frameHeight - footer - 1, frameHeight - footer - 1, in: keys) {
       footer += 1
     }
-    let trimmed = max(footerHeight, footer)
+    var trimmed = max(footerHeight, footer)
     let band = frameHeight - header - trimmed
     let minimumOverlap = max(4, band / 3)
     guard band > minimumOverlap else { return false }
     var bestShift = 0
+    var bestTrimmed = trimmed
     var bestScore = 0.0
     var runnerUp = 0.0
     for shift in candidateShifts(in: keys, header: header, end: frameHeight - trimmed,
@@ -209,23 +210,38 @@ nonisolated struct ScrollingScreenshotStitcher {
       let overlap = band - shift
       var matched = 0
       var missed = 0
+      var trailingMissed = 0
       var distinctMatches: Set<UInt64> = []
       for row in header..<(frameHeight - trimmed - shift) {
         if rowsMatch(row + shift, row, in: keys) {
           matched += 1
+          trailingMissed = 0
           if keys.informative[row] { distinctMatches.insert(keys.hashes[0][row]) }
-        } else { missed += 1 }
-        if missed > overlap / 10 { break }
+        } else {
+          missed += 1
+          trailingMissed += 1
+        }
+        if missed > max(overlap / 10, frameHeight / 4) { break }
       }
-      guard distinctMatches.count >= min(4, overlap) else { continue }
-      let score = Double(matched) / Double(overlap)
+      var candidateTrimmed = trimmed
+      var compared = overlap
+      if missed > 0, trailingMissed == missed, missed <= frameHeight / 4 {
+        candidateTrimmed += missed
+        compared -= missed
+        let candidateBand = band - missed
+        guard compared >= max(4, candidateBand / 3) else { continue }
+      }
+      guard distinctMatches.count >= min(4, compared) else { continue }
+      let score = Double(matched) / Double(compared)
       if score > bestScore {
         runnerUp = bestScore
         bestScore = score
         bestShift = shift
+        bestTrimmed = candidateTrimmed
       } else { runnerUp = max(runnerUp, score) }
     }
     guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return false }
+    trimmed = bestTrimmed
     let start = max(header, frameHeight - trimmed - bestShift)
     let contentCount = frameHeight - footer - start
     let count = min(contentCount, maximumHeight - (height - trimmed + footer))

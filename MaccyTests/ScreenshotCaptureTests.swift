@@ -115,6 +115,65 @@ struct ScreenshotCaptureTests {
     }
   }
 
+  @Test("Cold shrinking footers are replaced at large shifts", arguments: [800, 1200])
+  func scrollingColdShrinkingFooter(frameHeight: Int) {
+    let width = 1031
+    let stride = width * 4
+    let headerHeight = 60
+    let band = frameHeight - headerHeight - 80
+    let limit = band - max(4, band / 3)
+    let strip = scrollingTextContent(width: width, height: frameHeight + limit)
+    let header = (0..<(width * headerHeight)).flatMap { _ -> [UInt8] in [120, 200, 220, 255] }
+    let removedRow = (0..<width).flatMap { _ -> [UInt8] in [176, 24, 112, 255] }
+    let top = (0..<40).flatMap { _ in removedRow }
+    let bottom = (0..<(width * 40)).flatMap { _ -> [UInt8] in [24, 112, 176, 255] }
+    for shift in [300, 400, limit, limit + 1] {
+      var stitcher = ScrollingScreenshotStitcher(
+        width: width, height: frameHeight, maximumPixels: width * 3000
+      )
+      let firstEnd = frameHeight - headerHeight - 80
+      let first = header + Array(strip.prefix(firstEnd * stride)) + top + bottom
+      let end = shift + frameHeight - headerHeight - 40
+      let next = header + Array(strip[(shift * stride)..<(end * stride)]) + bottom
+      #expect({ stitcher.append(rgba: first) }())
+      if shift > limit {
+        #expect({ !stitcher.append(rgba: next) }())
+        #expect({ stitcher.pixels == first }())
+      } else {
+        #expect({ stitcher.append(rgba: next) }())
+        #expect(stitcher.height == frameHeight + shift)
+        #expect({ stitcher.pixels == header + Array(strip.prefix(end * stride)) + bottom }())
+        let pixels = stitcher.pixels
+        let hasRemovedRow = (0..<stitcher.height).contains { row in
+          pixels[(row * stride)..<((row + 1) * stride)].elementsEqual(removedRow)
+        }
+        #expect(!hasRemovedRow)
+      }
+    }
+  }
+
+  @Test("Changed body rows are not inferred as a footer", arguments: [false, true])
+  func scrollingChangedBodyRows(atBottom: Bool) {
+    let width = 1031
+    let frameHeight = 800
+    let stride = width * 4
+    let shift = 300
+    let strip = scrollingTextContent(width: width, height: frameHeight + shift)
+    let first = Array(strip.prefix(frameHeight * stride))
+    var next = Array(strip[(shift * stride)..<((frameHeight + shift) * stride)])
+    let comparisonEnd = frameHeight - shift
+    let rows = atBottom ? (comparisonEnd - frameHeight / 4 - 1)..<comparisonEnd : 150..<250
+    let changedRow = (0..<width).flatMap { _ -> [UInt8] in [176, 24, 112, 255] }
+    for row in rows { next.replaceSubrange((row * stride)..<((row + 1) * stride), with: changedRow) }
+    var stitcher = ScrollingScreenshotStitcher(
+      width: width, height: frameHeight, maximumPixels: width * 3000
+    )
+    #expect({ stitcher.append(rgba: first) }())
+    #expect({ !stitcher.append(rgba: next) }())
+    #expect(stitcher.height == frameHeight)
+    #expect({ stitcher.pixels == first }())
+  }
+
   @Test("Shrinking footers respect the height cap while replacing the entire old bar")
   func scrollingShrinkingFooterCap() {
     let width = 1031
