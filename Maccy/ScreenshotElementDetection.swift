@@ -2,6 +2,8 @@ import ApplicationServices
 import Foundation
 
 enum ScreenshotElementDetection {
+  nonisolated static let applicationMessagingTimeout: Float = 0.06
+  nonisolated static let elementMessagingTimeout: Float = 0.04
   struct Window: Sendable, Equatable {
     let pid: pid_t
     let frame: NSRect
@@ -28,14 +30,15 @@ enum ScreenshotElementDetection {
       guard rectangle.contains(point) else { continue }
       guard AXIsProcessTrusted() else { return [rectangle] }
       let application = AXUIElementCreateApplication(pid)
-      AXUIElementSetMessagingTimeout(application, 0.06)
+      guard AXUIElementSetMessagingTimeout(application, applicationMessagingTimeout) == .success
+      else { return [rectangle] }
       var hit: AXUIElement?
       guard AXUIElementCopyElementAtPosition(application, Float(point.x), Float(point.y), &hit) == .success
       else { return [rectangle] }
       var rectangles: [NSRect] = []
       for _ in 0..<6 {
         guard let element = hit else { break }
-        AXUIElementSetMessagingTimeout(element, 0.04)
+        guard AXUIElementSetMessagingTimeout(element, elementMessagingTimeout) == .success else { break }
         if let position: CGPoint = value(kAXPositionAttribute, element: element, type: .cgPoint, zero: .zero),
            let size: CGSize = value(kAXSizeAttribute, element: element, type: .cgSize, zero: .zero) {
           let frame = NSRect(origin: position, size: size).intersection(rectangle)

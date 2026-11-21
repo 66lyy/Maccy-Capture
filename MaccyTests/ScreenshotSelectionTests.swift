@@ -5,6 +5,59 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("Overlay damage includes old and new borders, clips to bounds, and handles empty highlights")
+  func overlayDirtyRect() {
+    let bounds = NSRect(x: 0, y: 0, width: 800, height: 600)
+    let old = NSRect(x: 20, y: 30, width: 60, height: 40)
+    let new = NSRect(x: 100, y: 120, width: 80, height: 50)
+    #expect(ScreenshotSelectionView.dirtyRect(from: old, to: new, in: bounds) ==
+      NSRect(x: 12, y: 22, width: 176, height: 156))
+    #expect(ScreenshotSelectionView.dirtyRect(from: old, to: nil, in: bounds) == old.insetBy(dx: -8, dy: -8))
+    #expect(ScreenshotSelectionView.dirtyRect(from: nil, to: new, in: bounds) == new.insetBy(dx: -8, dy: -8))
+    #expect(ScreenshotSelectionView.dirtyRect(from: nil, to: nil, in: bounds) == nil)
+    #expect(ScreenshotSelectionView.dirtyRect(from: .zero, to: nil, in: bounds) == nil)
+    #expect(ScreenshotSelectionView.dirtyRect(from: bounds, to: new, in: bounds) == bounds)
+  }
+
+  @Test("Timed out hover probes release their slot and ignore late results")
+  func timedOutHoverProbe() async throws {
+    #expect(ScreenshotElementDetection.applicationMessagingTimeout > 0)
+    #expect(ScreenshotElementDetection.applicationMessagingTimeout <= 0.25)
+    #expect(ScreenshotElementDetection.elementMessagingTimeout > 0)
+    #expect(ScreenshotElementDetection.elementMessagingTimeout <= 0.25)
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    defer { view.finishInteraction() }
+    let child = NSRect(x: 20, y: 30, width: 60, height: 30)
+    view.findElements = { _ in
+      Thread.sleep(forTimeInterval: 1.5)
+      return [child]
+    }
+    let point = NSPoint(x: 50, y: 40)
+    let hover = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: point, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: hover)
+    try await Task.sleep(for: ScreenshotSelectionView.probeTimeout + .milliseconds(100))
+    view.findElements = { _ in [] }
+    view.mouseMoved(with: hover)
+    try await Task.sleep(for: .milliseconds(600))
+    #expect(view.snapRectangle(near: point) == nil)
+    view.findElements = { _ in [child] }
+    let next = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: NSPoint(x: 56, y: 40), modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: next)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: NSPoint(x: 56, y: 40)) != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: NSPoint(x: 56, y: 40)) == child)
+  }
+
   @Test("Selection constructs toolbar controls only for a valid selection and can close without them")
   func deferredSelectionToolbar() {
     let frame = NSRect(x: 0, y: 0, width: 800, height: 600)

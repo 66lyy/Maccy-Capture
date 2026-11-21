@@ -37,7 +37,11 @@ final class ScreenshotSelectionView: NSView {
   private var snapRects: [NSRect] = []
   private var snapIndex = 0
   private var lastProbe: NSPoint?
-  private var probing = false
+  private var probeID: UUID?
+  nonisolated static let probeTimeout: Duration = .seconds(1)
+  private var drawnBounds: NSRect?
+  private var drawnActiveRect: NSRect?
+  private var drawnHandles = false
   private var wantsSnapping = false
   private var elementTask: Task<Void, Never>?
   private let selectionHint = GlassSelectionLabel()
@@ -253,7 +257,7 @@ final class ScreenshotSelectionView: NSView {
   func finishInteraction() {
     elementTask?.cancel()
     elementTask = nil
-    probing = false
+    probeID = nil
     onBegin = nil
     onCapture = nil
     onChooseDrawingTool = nil
@@ -319,17 +323,28 @@ final class ScreenshotSelectionView: NSView {
       refreshOverlay()
       return
     }
-    guard let pointer, bounds.contains(pointer), let findElements, !probing,
+    guard let pointer, bounds.contains(pointer), let findElements, probeID == nil,
           lastProbe.map({ hypot($0.x - pointer.x, $0.y - pointer.y) >= 3 }) ?? true else { return }
-    probing = true
+    let id = UUID()
+    probeID = id
     lastProbe = pointer
     snapRects = []
+    refreshOverlay()
     elementTask = Task { [weak self] in
+      do { try await Task.sleep(for: Self.probeTimeout) } catch { return }
+      guard let self, probeID == id else { return }
+      probeID = nil
+      elementTask = nil
+      lastProbe = nil
+      refreshOverlay()
+    }
+    Task { [weak self] in
       let worker = Task.detached(priority: .userInitiated) { findElements(pointer) }
       let rectangles = await worker.value
       try? await Task.sleep(for: .milliseconds(50))
-      guard let self, !Task.isCancelled else { return }
-      probing = false
+      guard let self, probeID == id else { return }
+      elementTask?.cancel()
+      probeID = nil
       elementTask = nil
       if wantsSnapping, self.pointer.map({ hypot($0.x - pointer.x, $0.y - pointer.y) < 3 }) == true {
         snapRects = Self.snapCandidates(rectangles, containing: pointer, bounds: bounds)
@@ -398,12 +413,36 @@ final class ScreenshotSelectionView: NSView {
   }
 
   private func refreshOverlay() {
-    needsDisplay = true
     needsLayout = true
+    layoutSubtreeIfNeeded()
+  }
+
+  static func dirtyRect(from old: NSRect?, to new: NSRect?, in bounds: NSRect) -> NSRect? {
+    let rectangles = [old, new].compactMap { $0 }.filter { !$0.isEmpty }
+    guard let first = rectangles.first else { return nil }
+    return rectangles.dropFirst().reduce(first) { $0.union($1) }
+      .insetBy(dx: -8, dy: -8).integral.intersection(bounds)
   }
 
   override func layout() {
     super.layout()
+    let showsHandles = selectedRect != nil && drag == nil && !isScrolling
+    let oldLabels = [selectionHint, elementHint].filter { !$0.isHidden }.map(\.frame)
+    defer {
+      if drawnBounds != bounds {
+        needsDisplay = true
+      } else if drawnActiveRect != activeRect || drawnHandles != showsHandles,
+                let dirty = Self.dirtyRect(from: drawnActiveRect, to: activeRect, in: bounds) {
+        setNeedsDisplay(dirty)
+      }
+      let newLabels = [selectionHint, elementHint].filter { !$0.isHidden }.map(\.frame)
+      for rect in oldLabels + newLabels {
+        setNeedsDisplay(rect.insetBy(dx: -8, dy: -8).intersection(bounds))
+      }
+      drawnBounds = bounds
+      drawnActiveRect = activeRect
+      drawnHandles = showsHandles
+    }
     if isScrolling {
       selectionHint.isHidden = true
       elementHint.isHidden = true
