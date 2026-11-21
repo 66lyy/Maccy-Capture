@@ -16,6 +16,7 @@ nonisolated struct ScrollingScreenshotStitcher {
     return result
   }
   private var signatures = RowSignatures()
+  private var footerHeight = 0
   private(set) var capReached = false
   private(set) var height = 0
 
@@ -224,10 +225,16 @@ nonisolated struct ScrollingScreenshotStitcher {
       } else { runnerUp = max(runnerUp, score) }
     }
     guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return false }
-    let count = min(bestShift, maximumHeight - height)
+    let trimmed = max(footerHeight, footer)
+    let start = max(header, frameHeight - trimmed - bestShift)
+    let contentCount = frameHeight - footer - start
+    let count = min(contentCount, maximumHeight - (height - trimmed + footer))
+    guard count > 0 else {
+      capReached = true
+      return false
+    }
     let stride = width * 4
-    let start = (frameHeight - footer - bestShift) * stride
-    var removedBytes = footer * stride
+    var removedBytes = trimmed * stride
     while removedBytes > 0 {
       let last = chunks.count - 1
       let removed = min(removedBytes, chunks[last].count)
@@ -238,12 +245,13 @@ nonisolated struct ScrollingScreenshotStitcher {
       }
       removedBytes -= removed
     }
-    chunks.append(Array(rgba[start..<(start + count * stride)]))
+    chunks.append(Array(rgba[(start * stride)..<((start + count) * stride)]))
     if footer > 0 { chunks.append(Array(rgba[((frameHeight - footer) * stride)..<rgba.count])) }
-    height += count
+    height = height - trimmed + count + footer
+    footerHeight = footer
     signatures = keys
-    capReached = height == maximumHeight
-    return count > 0
+    capReached = count < contentCount || height == maximumHeight
+    return true
   }
 }
 

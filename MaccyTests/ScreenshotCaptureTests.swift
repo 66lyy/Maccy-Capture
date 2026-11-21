@@ -18,6 +18,29 @@ struct ScreenshotCaptureTests {
     }
   }
 
+  private func scrollingTextContent(width: Int, height: Int) -> [UInt8] {
+    let stride = width * 4
+    var strip = [UInt8](repeating: 255, count: height * stride)
+    for y in 0..<height where y % 19 < 12 {
+      let line = y / 19
+      var x = 11 + (line * 17) % 31
+      var glyph = 0
+      let lineEnd = width - 40 - (line * 73) % 420
+      while x < lineEnd {
+        let dashWidth = 2 + (line * 7 + glyph * 11 + y % 19 * 3) % 13
+        for column in x..<min(x + dashWidth, lineEnd) {
+          let index = y * stride + column * 4
+          strip[index] = 0
+          strip[index + 1] = 0
+          strip[index + 2] = 0
+        }
+        x += dashWidth + 3 + (glyph * 5 + line) % 9
+        glyph += 1
+      }
+    }
+    return strip
+  }
+
   @Test("Downward scrolling appends only new rows, including repeated captures")
   func scrollingDown() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
@@ -39,6 +62,62 @@ struct ScreenshotCaptureTests {
     #expect({ stitcher.append(rgba: next) }())
     #expect(stitcher.height == 30)
     #expect(stitcher.pixels == Array(first.prefix(22 * 32)) + Array(next.suffix(8 * 32)))
+  }
+
+  @Test("Changing footer heights do not leave old toolbar rows in the content", arguments: [false, true])
+  func scrollingChangingFooter(grows: Bool) {
+    let width = 1031
+    let frameHeight = 800
+    let stride = width * 4
+    let offsets = [0, 37, 90, 131]
+    let strip = scrollingTextContent(width: width, height: frameHeight + 131)
+    let topRow = (0..<width).flatMap { _ -> [UInt8] in [176, 24, 112, 255] }
+    let bottomRow = (0..<width).flatMap { _ -> [UInt8] in [24, 112, 176, 255] }
+    let top = (0..<20).flatMap { _ in topRow }
+    let bottom = (0..<20).flatMap { _ in bottomRow }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 1100)
+    for (index, offset) in offsets.enumerated() {
+      let footerHeight = (index < 2) == grows ? 20 : 40
+      let footer = footerHeight == 40 ? top + bottom : bottom
+      let end = offset + frameHeight - footerHeight
+      let frame = Array(strip[(offset * stride)..<(end * stride)]) + footer
+      #expect({ stitcher.append(rgba: frame) }())
+      let pixels = stitcher.pixels
+      #expect(pixels == Array(strip.prefix(end * stride)) + footer)
+      #expect(stitcher.height == offset + frameHeight)
+      if footerHeight == 20 {
+        let hasRemovedBarRow = (0..<stitcher.height).contains { row in
+          pixels[(row * stride)..<((row + 1) * stride)].elementsEqual(topRow)
+        }
+        #expect(!hasRemovedBarRow)
+      }
+    }
+  }
+
+  @Test("Shrinking footers respect the height cap while replacing the entire old bar")
+  func scrollingShrinkingFooterCap() {
+    let width = 1031
+    let frameHeight = 800
+    let maximumHeight = 850
+    let stride = width * 4
+    let strip = scrollingTextContent(width: width, height: 890)
+    let top = (0..<(width * 20)).flatMap { _ -> [UInt8] in [176, 24, 112, 255] }
+    let bottom = (0..<(width * 20)).flatMap { _ -> [UInt8] in [24, 112, 176, 255] }
+    var stitcher = ScrollingScreenshotStitcher(
+      width: width, height: frameHeight, maximumPixels: width * maximumHeight
+    )
+    for offset in [0, 37, 90] {
+      let footerHeight = offset < 90 ? 40 : 20
+      let footer = footerHeight == 40 ? top + bottom : bottom
+      let frame = Array(strip[(offset * stride)..<((offset + frameHeight - footerHeight) * stride)]) + footer
+      #expect({ stitcher.append(rgba: frame) }())
+    }
+    #expect(stitcher.capReached)
+    #expect(stitcher.height == maximumHeight)
+    let pixels = stitcher.pixels
+    #expect(pixels == Array(strip.prefix((maximumHeight - 20) * stride)) + bottom)
+    #expect({ !stitcher.append(rgba: Array(strip.prefix(760 * stride)) + top + bottom) }())
+    #expect(stitcher.pixels == pixels)
   }
 
   @Test("Unchanged, upward, jumped, blank and malformed frames do not extend a capture")
@@ -194,24 +273,7 @@ struct ScreenshotCaptureTests {
     let stride = width * 4
     let offsets = [0, 37, 90]
     let sourceHeight = bodyHeight + (offsets.last ?? 0)
-    var strip = [UInt8](repeating: 255, count: width * sourceHeight * 4)
-    for y in 0..<sourceHeight where y % 19 < 12 {
-      let line = y / 19
-      var x = 11 + (line * 17) % 31
-      var glyph = 0
-      let lineEnd = width - 40 - (line * 73) % 420
-      while x < lineEnd {
-        let dashWidth = 2 + (line * 7 + glyph * 11 + y % 19 * 3) % 13
-        for column in x..<min(x + dashWidth, lineEnd) {
-          let index = y * stride + column * 4
-          strip[index] = 0
-          strip[index + 1] = 0
-          strip[index + 2] = 0
-        }
-        x += dashWidth + 3 + (glyph * 5 + line) % 9
-        glyph += 1
-      }
-    }
+    let strip = scrollingTextContent(width: width, height: sourceHeight)
     let header = [UInt8](repeating: 192, count: headerHeight * stride)
       .enumerated().map { $0.offset % 4 == 3 ? UInt8(255) : $0.element }
     var stitcher = ScrollingScreenshotStitcher(
