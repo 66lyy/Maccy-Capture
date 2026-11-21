@@ -197,19 +197,20 @@ nonisolated struct ScrollingScreenshotStitcher {
             && rowsMatch(frameHeight - footer - 1, frameHeight - footer - 1, in: keys) {
       footer += 1
     }
-    let band = frameHeight - header - footer
+    let trimmed = max(footerHeight, footer)
+    let band = frameHeight - header - trimmed
     let minimumOverlap = max(4, band / 3)
     guard band > minimumOverlap else { return false }
     var bestShift = 0
     var bestScore = 0.0
     var runnerUp = 0.0
-    for shift in candidateShifts(in: keys, header: header, end: frameHeight - footer,
+    for shift in candidateShifts(in: keys, header: header, end: frameHeight - trimmed,
                                  maximumShift: band - minimumOverlap) {
       let overlap = band - shift
       var matched = 0
       var missed = 0
       var distinctMatches: Set<UInt64> = []
-      for row in header..<(frameHeight - footer - shift) {
+      for row in header..<(frameHeight - trimmed - shift) {
         if rowsMatch(row + shift, row, in: keys) {
           matched += 1
           if keys.informative[row] { distinctMatches.insert(keys.hashes[0][row]) }
@@ -225,7 +226,6 @@ nonisolated struct ScrollingScreenshotStitcher {
       } else { runnerUp = max(runnerUp, score) }
     }
     guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return false }
-    let trimmed = max(footerHeight, footer)
     let start = max(header, frameHeight - trimmed - bestShift)
     let contentCount = frameHeight - footer - start
     let count = min(contentCount, maximumHeight - (height - trimmed + footer))

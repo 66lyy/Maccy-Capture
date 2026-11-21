@@ -94,6 +94,27 @@ struct ScreenshotCaptureTests {
     }
   }
 
+  @Test("A shrinking footer does not invalidate a large scroll overlap")
+  func scrollingShrinkingFooterLargeShift() {
+    let width = 1031
+    let frameHeight = 500
+    let stride = width * 4
+    let offsets = [0, 128, 256, 384]
+    let strip = scrollingTextContent(width: width, height: frameHeight + 384)
+    let top = (0..<(width * 20)).flatMap { _ -> [UInt8] in [176, 24, 112, 255] }
+    let bottom = (0..<(width * 20)).flatMap { _ -> [UInt8] in [24, 112, 176, 255] }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 1000)
+    for offset in offsets {
+      let footerHeight = offset < 256 ? 40 : 20
+      let footer = footerHeight == 40 ? top + bottom : bottom
+      let end = offset + frameHeight - footerHeight
+      let frame = Array(strip[(offset * stride)..<(end * stride)]) + footer
+      #expect({ stitcher.append(rgba: frame) }())
+      #expect(stitcher.height == offset + frameHeight)
+      #expect({ stitcher.pixels == Array(strip.prefix(end * stride)) + footer }())
+    }
+  }
+
   @Test("Shrinking footers respect the height cap while replacing the entire old bar")
   func scrollingShrinkingFooterCap() {
     let width = 1031
