@@ -587,6 +587,65 @@ extension SharedStateTests {
       var completed = 0
     }
 
+    @Test("Vision indexes delivered screenshots without changing their title or clipboard contents",
+          arguments: ["Quartz Harbor", "截图历史"])
+    func screenshotOCRSearch(keyword: String) async throws {
+      defer { history.clearAll() }
+      let text = "Maccy Test\n\(keyword)"
+      let tiff = try #require(textImage(text).tiffRepresentation)
+      let bitmap = try #require(NSBitmapImageRep(data: tiff))
+      let data = try #require(bitmap.representation(using: .png, properties: [:]))
+      let clipboardBeforeOCR = NSPasteboard.general.changeCount
+      var presented = false
+      let result = try ScreenshotCapture.deliverScreenshot(
+        data, copy: { _ in true }, saveHistory: ScreenshotCapture.shared.saveInHistory,
+        present: { presented = true }
+      )
+      try result.get()
+      #expect(presented)
+      let row = try #require(history.firstUnpinnedItem)
+      try await waitForOCR { !history.ocrCoordinator.isRunning }
+
+      #expect(row.title == NSLocalizedString("ScreenshotTitle", tableName: "GeneralSettings", comment: ""))
+      #expect(row.item.recognizedText?.contains(keyword) == true)
+      #expect(row.item.imageData == data)
+      #expect(row.item.text == nil)
+      #expect(NSPasteboard.general.changeCount == clipboardBeforeOCR)
+      let saved = try #require(ModelContext(Storage.shared.container).fetch(FetchDescriptor<HistoryItem>()).first)
+      let reloaded = HistoryItemDecorator(saved)
+      let match = try #require(Search().search(string: keyword, within: [reloaded]).first)
+      #expect(match.object == reloaded)
+      #expect(match.ranges.isEmpty)
+
+      try ScreenshotCapture.shared.saveInHistory(data)
+      #expect(history.firstUnpinnedItem?.item.recognizedText == row.item.recognizedText)
+      #expect(!history.ocrCoordinator.isRunning)
+    }
+
+    @Test("A search already open gains the matching screenshot when OCR completes", arguments: [false, true])
+    func activeSearchUpdatesAfterOCR(pinned: Bool) async throws {
+      let recognizer = ControlledHistoryRecognizer()
+      let coordinator = HistoryOCRCoordinator(recognize: recognizer.recognize)
+      let history = History(ocrCoordinator: coordinator)
+      defer {
+        recognizer.release(4)
+        history.clearAll()
+      }
+      let item = ocrItem(0)
+      item.title = "Screenshot"
+      if pinned { item.pin = "b" }
+      history.searchQuery = "recognized"
+      let row = history.add(item, indexImage: true)
+      try await waitForOCR { recognizer.calls.count == 1 }
+      #expect(history.items.isEmpty)
+
+      recognizer.release()
+      try await waitForOCR { !coordinator.isRunning }
+      #expect(history.items.toArray() == [row])
+      #expect(row.title == "Screenshot")
+      #expect(item.recognizedText == "recognized")
+    }
+
     @Test("Preference title regeneration still schedules file-backed OCR")
     func preferenceTitleRegenerationSchedulesOCR() async throws {
       let recognizer = ControlledHistoryRecognizer()
@@ -666,6 +725,7 @@ extension SharedStateTests {
       try await waitForOCR { !coordinator.isRunning }
       #expect(recognizer.calls.count == 1)
       #expect(queued.item.title.isEmpty)
+      #expect(queued.item.recognizedText == nil)
     }
 
     @Test("Duplicate images share OCR and update only the live replacement")

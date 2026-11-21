@@ -206,6 +206,7 @@ struct ItemEditorView: View {
           let data = editableContent.text.data(using: .utf8) else { return }
 
     let historyItem = item.item
+    historyItem.recognizedText = nil
     let stringType = NSPasteboard.PasteboardType.string.rawValue
     historyItem.contents.removeAll { $0.type != stringType }
 

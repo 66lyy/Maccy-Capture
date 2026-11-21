@@ -101,6 +101,8 @@ Dock, menu bar and Space changes (for example another app launching or activatin
 Captures are temporarily stored locally in a directory with `0700` permissions.
 Temporary files are cleaned up on completion, cancellation, and failure.
 Successful capture output is copied to the clipboard and saved to local Maccy history.
+Screenshots and screen pins added to history are indexed by Apple Vision in the background.
+Search for text in the image to find the original screenshot; the image and its title are unchanged.
 If the history write fails after the clipboard succeeds, the preview or pinned image still appears,
 and the app warns about the history write error. Pinned windows keep their images only in memory.
 Images and recognized text are not sent to network services.

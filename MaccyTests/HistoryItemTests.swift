@@ -5,7 +5,7 @@ import Defaults
 
 private final class BundleToken {}
 
-private func textImage(_ text: String) -> NSImage {
+func textImage(_ text: String) -> NSImage {
   let string = NSAttributedString(string: text, attributes: [
     .font: NSFont.boldSystemFont(ofSize: 48),
     .foregroundColor: NSColor.black

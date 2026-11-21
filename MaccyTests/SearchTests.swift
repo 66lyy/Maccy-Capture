@@ -21,6 +21,19 @@ extension SharedStateTests {
       Defaults[.searchMode] = savedSearchMode
     }
 
+    @Test("Image text matches without producing highlight ranges for an unrelated title",
+          arguments: Search.Mode.allCases)
+    func imageTextSearch(mode: Search.Mode) throws {
+      Defaults[.searchMode] = mode
+      let item = Self.historyItemWithTitle("Screenshot")
+      item.recognizedText = "The second line reads:\nQuartz Harbor"
+      let screenshot = HistoryItemDecorator(item)
+      let query = mode == .regexp ? "Quartz Harb.r$" : "Quartz Harbor"
+      let result = try #require(Search().search(string: query, within: items + [screenshot]).first)
+      #expect(result.object == screenshot)
+      #expect(result.ranges.isEmpty)
+    }
+
     @Test("Simple search")
     func simpleSearch() { // swiftlint:disable:this function_body_length
       Defaults[.searchMode] = Search.Mode.exact

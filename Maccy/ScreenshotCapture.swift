@@ -98,6 +98,7 @@ final class ScreenshotCapture {
       showError("ScreenshotClipboardEmpty")
       return
     }
+    Clipboard.shared.checkForChangesInPasteboard()
     pinImage(image)
   }
 
@@ -246,7 +247,7 @@ final class ScreenshotCapture {
     item.application = Bundle.main.bundleIdentifier
     item.title = text("ScreenshotTitle")
 
-    History.shared.add(item, saveToStorage: false)
+    History.shared.add(item, saveToStorage: false, indexImage: true)
     try History.shared.insertIntoStorage(item)
   }
 

@@ -99,7 +99,7 @@ nonisolated enum TextRecognition {
   }
 
   static func performClipboardRecognition(imageData: Data?, fileURL: URL?) throws -> String? {
-    guard let data = imageData ?? fileURL.flatMap({ try? Data(contentsOf: $0) }) else { return nil }
+    guard let data = imageData ?? fileURL.flatMap({ $0.isFileURL ? try? Data(contentsOf: $0) : nil }) else { return nil }
     let request = accurateRequest()
     request.automaticallyDetectsLanguage = true
     return try recognize(using: VNImageRequestHandler(data: data), request: request)?.joined(separator: "\n")

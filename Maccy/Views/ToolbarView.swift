@@ -109,8 +109,8 @@ struct ToolbarView: View {
       return nil
     }
 
-    let text = item.title.trimmingCharacters(in: .whitespacesAndNewlines)
-    return text.isEmpty ? nil : item.title
+    let text = item.item.recognizedText ?? item.title
+    return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
   }
 
   private var editItemEnabled: Bool {

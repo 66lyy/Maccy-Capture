@@ -80,6 +80,7 @@ class HistoryItem {
   var numberOfCopies: Int = 1
   var pin: String?
   var title = ""
+  var recognizedText: String?
 
   @Relationship(deleteRule: .cascade, inverse: \HistoryItemContent.item)
   var contents: [HistoryItemContent] = []
@@ -108,7 +109,9 @@ class HistoryItem {
 
   @MainActor
   func generateTitle() -> String {
-    guard textRecognitionInput == nil else { return "" }
+    guard textRecognitionInput == nil else {
+      return recognizedText?.removingScalarsUnsafeForTitleLayout() ?? ""
+    }
 
     // 1k characters is trade-off for performance
     var title = previewableText
@@ -302,7 +305,7 @@ final class HistoryOCRCoordinator {
   }
 
   func enqueue(_ item: HistoryItem, in history: History) {
-    guard let input = item.textRecognitionInput else {
+    guard item.recognizedText == nil, let input = item.textRecognitionInput else {
       cancel(item)
       return
     }
@@ -368,9 +371,9 @@ final class HistoryOCRCoordinator {
     for (identity, target) in completed {
       guard targets[identity]?.generation == generation else { continue }
       targets.removeValue(forKey: identity)
-      if case .success(let title?) = result, !title.isEmpty,
+      if case .success(let text?) = result, !text.isEmpty,
          let item = target.item, let history = target.history {
-        history.applyRecognizedTitle(title, to: item)
+        history.applyRecognizedText(text, to: item)
       }
     }
     prunePending()

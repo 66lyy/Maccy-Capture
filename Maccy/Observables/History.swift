@@ -189,7 +189,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   @discardableResult
   @MainActor
-  func add(_ item: HistoryItem, saveToStorage: Bool = true) -> HistoryItemDecorator {
+  func add(_ item: HistoryItem, saveToStorage: Bool = true, indexImage: Bool = false) -> HistoryItemDecorator {
     if item.modelContext == nil {
       Storage.shared.context.insert(item)
     }
@@ -198,11 +198,14 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     if let existingHistoryItem = findSimilarItem(item) {
       if isModified(item) == nil {
         transferContents(from: existingHistoryItem, to: item)
+        item.recognizedText = existingHistoryItem.recognizedText
       }
       item.firstCopiedAt = existingHistoryItem.firstCopiedAt
       item.numberOfCopies += existingHistoryItem.numberOfCopies
       item.pin = existingHistoryItem.pin
-      item.title = existingHistoryItem.title
+      if !existingHistoryItem.title.isEmpty {
+        item.title = existingHistoryItem.title
+      }
       if !item.fromMaccy {
         item.application = existingHistoryItem.application
       }
@@ -254,7 +257,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
         logger.error("Failed to save history: \(String(reflecting: error))")
       }
     }
-    if item.title.isEmpty {
+    if indexImage || item.title.isEmpty {
       ocrCoordinator.enqueue(item, in: self)
     }
     return itemDecorator
@@ -725,10 +728,26 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     item.item.title = title
   }
 
-  func applyRecognizedTitle(_ title: String, to item: HistoryItem) {
-    guard !item.isDeleted, item.modelContext != nil,
+  func applyRecognizedText(_ text: String, to item: HistoryItem) {
+    guard !item.isDeleted, let context = item.modelContext, item.textRecognitionInput != nil,
           let decorator = firstStoredItem(where: { $0.item === item }) else { return }
-    updateTitle(item: decorator, title: title.removingScalarsUnsafeForTitleLayout())
+    item.recognizedText = text
+    if item.title.isEmpty {
+      updateTitle(item: decorator, title: text.removingScalarsUnsafeForTitleLayout())
+    }
+    if !searchQuery.isEmpty {
+      let hadResults = !items.isEmpty
+      updateSearchResults()
+      if !hadResults && !items.isEmpty && self === Self.shared {
+        AppState.shared.navigator.highlightFirst()
+      }
+      AppState.shared.popup.needsResize = true
+    }
+    do {
+      try context.save()
+    } catch {
+      logger.error("Failed to save recognized image text: \(String(reflecting: error))")
+    }
   }
 
   private func updateUnpinnedShortcuts() {

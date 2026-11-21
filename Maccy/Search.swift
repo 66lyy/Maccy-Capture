@@ -56,7 +56,11 @@ class Search {
   private func fuzzySearch(string: String, within: [Searchable]) -> [SearchResult] {
     let pattern = fuse.createPattern(from: string)
     let searchResults: [SearchResult] = within.compactMap { item in
-      fuzzySearch(for: pattern, in: item.title, of: item)
+      let titleMatch = fuzzySearch(for: pattern, in: item.title, of: item)
+      guard let text = item.item.recognizedText, text != item.title,
+            let imageMatch = fuzzySearch(for: pattern, in: text, of: item, highlight: false) else { return titleMatch }
+      guard let titleMatch else { return imageMatch }
+      return (imageMatch.score ?? 0) < (titleMatch.score ?? 0) ? imageMatch : titleMatch
     }
     let sortedResults = searchResults.sorted(by: { ($0.score ?? 0) < ($1.score ?? 0) })
     return sortedResults
@@ -65,7 +69,8 @@ class Search {
   private func fuzzySearch(
     for pattern: Fuse.Pattern?,
     in searchString: String,
-    of item: Searchable
+    of item: Searchable,
+    highlight: Bool = true
   ) -> SearchResult? {
     var searchString = searchString
     if searchString.count > fuzzySearchLimit {
@@ -78,13 +83,13 @@ class Search {
       return SearchResult(
         score: fuzzyResult.score,
         object: item,
-        ranges: fuzzyResult.ranges.map {
+        ranges: highlight ? fuzzyResult.ranges.map {
           let startIndex = searchString.startIndex
           let lowerBound = searchString.index(startIndex, offsetBy: $0.lowerBound)
           let upperBound = searchString.index(startIndex, offsetBy: $0.upperBound + 1)
 
           return lowerBound..<upperBound
-        }
+        } : []
       )
     } else {
       return nil
@@ -107,6 +112,9 @@ class Search {
   ) -> SearchResult? {
     if let range = searchString.range(of: string, options: options, range: nil, locale: nil) {
       return SearchResult(object: item, ranges: [range])
+    } else if let text = item.item.recognizedText, text != searchString,
+              text.range(of: string, options: options, range: nil, locale: nil) != nil {
+      return SearchResult(object: item)
     } else {
       return nil
     }
