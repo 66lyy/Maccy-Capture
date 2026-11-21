@@ -473,6 +473,34 @@ struct ScreenshotSelectionTests {
     #expect(view.snapRectangle(near: end) == nil)
   }
 
+  @Test("Finishing during a hover probe leaves the view free to probe again")
+  func probeAfterCancelledProbe() async throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    let child = NSRect(x: 20, y: 30, width: 60, height: 30)
+    view.findElements = { _ in [child] }
+    let first = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: NSPoint(x: 50, y: 40), modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: first)
+    view.finishInteraction()
+    view.findElements = { _ in [child] }
+    defer { view.finishInteraction() }
+    let point = NSPoint(x: 56, y: 40)
+    let second = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: point, modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: second)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: point) != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: point) == child)
+  }
+
   @Test("Hovering without accessible elements leaves a plain click empty")
   func automaticElementSelectionWithoutCandidates() async throws {
     let view = ScreenshotSelectionView(

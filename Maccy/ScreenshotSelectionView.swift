@@ -253,6 +253,7 @@ final class ScreenshotSelectionView: NSView {
   func finishInteraction() {
     elementTask?.cancel()
     elementTask = nil
+    probing = false
     onBegin = nil
     onCapture = nil
     onChooseDrawingTool = nil
