@@ -41,6 +41,84 @@ struct ScreenshotCaptureTests {
     return strip
   }
 
+  private func scrollingSolidAreaPage(width: Int, height: Int, band: Range<Int>, nearUniform: Bool = false)
+    -> [UInt8] {
+    var page = [UInt8](repeating: 255, count: width * height * 4)
+    for row in 0..<height {
+      var seed = UInt64(row + 12345)
+      for column in 0..<width {
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        let value = band.contains(row) ? UInt8(nearUniform ? 254 + row % 3 / 2 : 255)
+          : UInt8((seed >> 32) % 220)
+        let index = (row * width + column) * 4
+        for channel in 0..<3 { page[index + channel] = value }
+      }
+    }
+    return page
+  }
+
+  @Test("Solid areas preserve the exact page prefix at every scroll",
+        arguments: ["band150", "band400", "margin400", "nearUniform", "footerBand"], [64, 128])
+  func scrollingSolidAreas(mode: String, step: Int) {
+    let width = 32
+    let frameHeight = 800
+    let pageHeight = 2400
+    let stride = width * 4
+    let margin = mode == "margin400" || mode == "nearUniform"
+    let band = margin ? 2000..<2400 : 768..<(768 + (mode == "band150" ? 150 : 400))
+    let page = scrollingSolidAreaPage(width: width, height: pageHeight, band: band,
+      nearUniform: mode == "nearUniform")
+    let footerHeight = mode == "footerBand" ? 80 : 0
+    let footer = (0..<(width * footerHeight)).flatMap { _ -> [UInt8] in [35, 35, 35, 255] }
+    let bodyHeight = frameHeight - footerHeight
+    let lastOffset = pageHeight - bodyHeight
+    var offsets = Array(Swift.stride(from: 0, through: lastOffset, by: step))
+    if offsets.last != lastOffset { offsets.append(lastOffset) }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight,
+      maximumPixels: width * (pageHeight + footerHeight + 1))
+    for offset in offsets {
+      let end = offset + bodyHeight
+      let frame = Array(page[(offset * stride)..<(end * stride)]) + footer
+      let accepted = stitcher.append(rgba: frame)
+      #expect(accepted, "\(mode), step \(step), offset \(offset)")
+      if accepted {
+        let pixels = stitcher.pixels
+        let expected = Array(page.prefix(end * stride)) + footer
+        #expect({ pixels == expected }(), "\(mode), step \(step), offset \(offset)")
+        #expect(stitcher.height == offset + frameHeight)
+      }
+    }
+    #expect(stitcher.height == pageHeight + footerHeight)
+    #expect({ stitcher.pixels == page + footer }())
+  }
+
+  @Test("Featureless overlap stalls without removing accepted pixels")
+  func scrollingFeaturelessGap() {
+    let width = 32
+    let frameHeight = 800
+    let stride = width * 4
+    let page = scrollingSolidAreaPage(width: width, height: 2400, band: 768..<1468)
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 2401)
+    var rejected = 0
+    for offset in Swift.stride(from: 0, through: 1536, by: 128) {
+      let height = stitcher.height
+      let pixels = stitcher.pixels
+      let frame = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      let accepted = stitcher.append(rgba: frame)
+      #expect(accepted == (offset <= 640), "offset \(offset)")
+      if accepted {
+        #expect(stitcher.height == offset + frameHeight)
+        #expect({ stitcher.pixels == Array(page.prefix((offset + frameHeight) * stride)) }())
+      } else {
+        rejected += 1
+        #expect(stitcher.height == height)
+        #expect({ stitcher.pixels == pixels }(), "rejected offset \(offset)")
+      }
+    }
+    #expect(rejected == 7)
+    #expect(stitcher.height == 1440)
+  }
+
   @Test("Downward scrolling appends only new rows, including repeated captures")
   func scrollingDown() {
     var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
