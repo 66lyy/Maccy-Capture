@@ -11,7 +11,9 @@ final class ScreenshotSelectionView: NSView {
   var onCancel: (() -> Void)?
   var movePointer: ((NSPoint) -> Void)?
   var canPickColor: (() -> Bool)?
-  var findElements: (@Sendable (NSPoint) -> [NSRect])?
+  var findElementWindow: ((NSPoint) -> ScreenshotElementDetection.Window?)?
+  var findElements: (@Sendable (NSPoint, ScreenshotElementDetection.Window) -> ScreenshotElementDetection.Result)?
+  var elementProbe = ScreenshotElementProbe()
   private(set) var selectedRect: NSRect?
   var hasSelectionInteraction: Bool { selectedRect != nil || drag != nil || colorCopyTask != nil }
   private(set) var frozen: NSImage?
@@ -39,12 +41,11 @@ final class ScreenshotSelectionView: NSView {
   private var snapIndex = 0
   private var lastProbe: NSPoint?
   private var probeID: UUID?
-  nonisolated static let probeTimeout: Duration = .seconds(1)
+  private var probePID: pid_t?
   private var drawnBounds: NSRect?
   private var drawnActiveRect: NSRect?
   private var drawnHandles = false
   private var wantsSnapping = false
-  private var elementTask: Task<Void, Never>?
   private let selectionHint = GlassSelectionLabel()
   private let elementHint = GlassSelectionLabel()
   private let loupe = ScreenshotPixelLoupe()
@@ -302,9 +303,8 @@ final class ScreenshotSelectionView: NSView {
   func finishInteraction() {
     colorCopyTask?.cancel()
     colorCopyTask = nil
-    elementTask?.cancel()
-    elementTask = nil
     probeID = nil
+    probePID = nil
     onBegin = nil
     onCapture = nil
     onChooseDrawingTool = nil
@@ -314,6 +314,7 @@ final class ScreenshotSelectionView: NSView {
     movePointer = nil
     canPickColor = nil
     findElements = nil
+    findElementWindow = nil
   }
 
   func nudge(dx: CGFloat, dy: CGFloat) {
@@ -378,35 +379,40 @@ final class ScreenshotSelectionView: NSView {
       refreshOverlay()
       return
     }
-    guard let pointer, bounds.contains(pointer), let findElements, probeID == nil,
+    guard let pointer, bounds.contains(pointer), let findElements,
           lastProbe.map({ hypot($0.x - pointer.x, $0.y - pointer.y) >= 3 }) ?? true else { return }
+    guard let window = findElementWindow?(pointer) else {
+      probeID = nil
+      probePID = nil
+      snapRects = []
+      lastProbe = pointer
+      refreshOverlay()
+      return
+    }
+    guard probeID == nil || probePID != window.pid else { return }
     let id = UUID()
     probeID = id
+    probePID = window.pid
     lastProbe = pointer
     snapRects = []
     refreshOverlay()
-    elementTask = Task { [weak self] in
-      do { try await Task.sleep(for: Self.probeTimeout) } catch { return }
+    let started = elementProbe.start(at: pointer, in: window, detect: findElements) { [weak self] result in
       guard let self, probeID == id else { return }
       probeID = nil
-      elementTask = nil
-      lastProbe = nil
-      refreshOverlay()
-    }
-    Task { [weak self] in
-      let worker = Task.detached(priority: .userInitiated) { findElements(pointer) }
-      let rectangles = await worker.value
-      try? await Task.sleep(for: .milliseconds(50))
-      guard let self, probeID == id else { return }
-      elementTask?.cancel()
-      probeID = nil
-      elementTask = nil
+      probePID = nil
       if wantsSnapping, self.pointer.map({ hypot($0.x - pointer.x, $0.y - pointer.y) < 3 }) == true {
-        snapRects = Self.snapCandidates(rectangles, containing: pointer, bounds: bounds)
+        snapRects = Self.snapCandidates(result.rectangles, containing: pointer, bounds: bounds)
         snapIndex = 0
       }
       refreshOverlay()
       if wantsSnapping { updateProbe(enabled: true) }
+    }
+    if !started {
+      probeID = nil
+      probePID = nil
+      snapRects = Self.snapCandidates([window.frame], containing: pointer, bounds: bounds)
+      snapIndex = 0
+      refreshOverlay()
     }
   }
 

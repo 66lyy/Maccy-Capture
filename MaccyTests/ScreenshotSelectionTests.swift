@@ -19,7 +19,53 @@ struct ScreenshotSelectionTests {
     #expect(ScreenshotSelectionView.dirtyRect(from: bounds, to: new, in: bounds) == bounds)
   }
 
-  @Test("Timed out hover probes release their slot and ignore late results")
+  @Test("Hover failures back off exponentially to eight seconds", arguments: [false, true])
+  func probeBackoffGrowth(timeout: Bool) {
+    var backoff = ScreenshotProbeBackoff()
+    var now: TimeInterval = 100
+    for delay: TimeInterval in [0.5, 1, 2, 4, 8, 8, 8] {
+      expectProbe(backoff.begin(pid: 1, now: now))
+      if timeout { backoff.timeOut(pid: 1, now: now) }
+      backoff.complete(pid: 1, outcome: .cannotComplete, now: now)
+      expectProbe(!backoff.begin(pid: 1, now: now + delay - 0.001))
+      now += delay
+    }
+    expectProbe(backoff.begin(pid: 1, now: now))
+  }
+
+  @Test("Successful hover probes reset the app's failure history")
+  func probeBackoffReset() {
+    var backoff = ScreenshotProbeBackoff()
+    expectProbe(backoff.begin(pid: 1, now: 0))
+    backoff.complete(pid: 1, outcome: .cannotComplete, now: 0)
+    expectProbe(backoff.begin(pid: 1, now: 0.5))
+    backoff.complete(pid: 1, outcome: .success, now: 0.5)
+    expectProbe(backoff.begin(pid: 1, now: 0.5))
+    backoff.complete(pid: 1, outcome: .cannotComplete, now: 0.5)
+    expectProbe(!backoff.begin(pid: 1, now: 0.999))
+    expectProbe(backoff.begin(pid: 1, now: 1))
+  }
+
+  @Test("Native calls keep their per-app slot after timeout and other apps are independent")
+  func probeBackoffInFlight() {
+    var backoff = ScreenshotProbeBackoff()
+    expectProbe(backoff.begin(pid: 1, now: 0))
+    expectProbe(!backoff.begin(pid: 1, now: 0))
+    backoff.timeOut(pid: 1, now: 1)
+    backoff.timeOut(pid: 1, now: 2)
+    expectProbe(!backoff.begin(pid: 1, now: 100))
+    expectProbe(backoff.begin(pid: 2, now: 100))
+    backoff.complete(pid: 2, outcome: .success, now: 100)
+    expectProbe(!backoff.complete(pid: 1, outcome: .success, now: 100))
+    expectProbe(!backoff.begin(pid: 1, now: 100.499))
+    expectProbe(backoff.begin(pid: 1, now: 100.5))
+    backoff.complete(pid: 1, outcome: .cannotComplete, now: 100.5)
+    expectProbe(!backoff.begin(pid: 1, now: 101.499))
+    expectProbe(backoff.begin(pid: 2, now: 100.5))
+    expectProbe(backoff.begin(pid: 1, now: 101.5))
+  }
+
+  @Test("Timed out native calls keep their slot across pointer moves and fall back to window bounds")
   func timedOutHoverProbe() async throws {
     #expect(ScreenshotElementDetection.applicationMessagingTimeout > 0)
     #expect(ScreenshotElementDetection.applicationMessagingTimeout <= 0.25)
@@ -29,33 +75,47 @@ struct ScreenshotSelectionTests {
       frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
     )
     defer { view.finishInteraction() }
+    let left = NSRect(x: 0, y: 0, width: 200, height: 300)
+    let right = NSRect(x: 200, y: 0, width: 200, height: 300)
     let child = NSRect(x: 20, y: 30, width: 60, height: 30)
-    view.findElements = { _ in
-      Thread.sleep(forTimeInterval: 1.5)
-      return [child]
+    let otherChild = NSRect(x: 220, y: 30, width: 60, height: 30)
+    let worker = SelectionProbeWorker()
+    defer { worker.release.signal() }
+    view.findElementWindow = { point in .init(pid: point.x < 200 ? 1 : 2, frame: point.x < 200 ? left : right) }
+    view.findElements = { _, window in
+      if window.pid == 1 {
+        worker.run()
+        return .init(rectangles: [child])
+      }
+      return .init(rectangles: [otherChild])
     }
-    let point = NSPoint(x: 50, y: 40)
-    let hover = try #require(NSEvent.mouseEvent(
-      with: .mouseMoved, location: point, modifierFlags: [],
-      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
-    ))
-    view.mouseMoved(with: hover)
-    try await Task.sleep(for: ScreenshotSelectionView.probeTimeout + .milliseconds(100))
-    view.findElements = { _ in [] }
-    view.mouseMoved(with: hover)
-    try await Task.sleep(for: .milliseconds(600))
-    #expect(view.snapRectangle(near: point) == nil)
-    view.findElements = { _ in [child] }
-    let next = try #require(NSEvent.mouseEvent(
-      with: .mouseMoved, location: NSPoint(x: 56, y: 40), modifierFlags: [],
-      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
-    ))
-    view.mouseMoved(with: next)
+    try hover(view, x: 50)
+    try await Task.sleep(for: ScreenshotElementProbe.timeout + .milliseconds(100))
+    #expect(view.snapRectangle(near: NSPoint(x: 50, y: 40)) == left)
+    for x in stride(from: 60, through: 150, by: 10) {
+      try hover(view, x: CGFloat(x))
+      #expect(view.snapRectangle(near: NSPoint(x: x, y: 40)) == left)
+    }
+    #expect(worker.calls == 1)
+    try hover(view, x: 250)
     for _ in 0..<100 {
-      if view.snapRectangle(near: NSPoint(x: 56, y: 40)) != nil { break }
+      if view.snapRectangle(near: NSPoint(x: 250, y: 40)) == otherChild { break }
       try await Task.sleep(for: .milliseconds(5))
     }
-    #expect(view.snapRectangle(near: NSPoint(x: 56, y: 40)) == child)
+    #expect(view.snapRectangle(near: NSPoint(x: 250, y: 40)) == otherChild)
+    worker.release.signal()
+    try await Task.sleep(for: .milliseconds(100))
+    try hover(view, x: 60)
+    #expect(view.snapRectangle(near: NSPoint(x: 60, y: 40)) == left)
+    #expect(worker.calls == 1)
+    try await Task.sleep(for: .milliseconds(550))
+    try hover(view, x: 66)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: NSPoint(x: 66, y: 40)) == child { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: NSPoint(x: 66, y: 40)) == child)
+    #expect(worker.calls == 2)
   }
 
   @Test("Selection constructs toolbar controls only for a valid selection and can close without them")
@@ -501,7 +561,8 @@ struct ScreenshotSelectionTests {
     let child = NSRect(x: 20, y: 30, width: 60, height: 30)
     let parent = NSRect(x: 10, y: 15, width: 180, height: 160)
     let point = NSPoint(x: 50, y: 40)
-    view.findElements = { _ in [child, parent] }
+    view.findElementWindow = { _ in .init(pid: 1, frame: parent) }
+    view.findElements = { _, _ in .init(rectangles: [child, parent]) }
     defer { view.finishInteraction() }
     let hover = try #require(NSEvent.mouseEvent(
       with: .mouseMoved, location: point, modifierFlags: [],
@@ -555,7 +616,8 @@ struct ScreenshotSelectionTests {
     let child = NSRect(x: 20, y: 30, width: 60, height: 30)
     let parent = NSRect(x: 10, y: 15, width: 180, height: 160)
     let point = NSPoint(x: 50, y: 40)
-    view.findElements = { _ in [child, parent] }
+    view.findElementWindow = { _ in .init(pid: 1, frame: parent) }
+    view.findElements = { _, _ in .init(rectangles: [child, parent]) }
     defer { view.finishInteraction() }
     var captures: [NSRect] = []
     var begins = 0
@@ -600,20 +662,23 @@ struct ScreenshotSelectionTests {
     #expect(view.snapRectangle(near: end) == nil)
   }
 
-  @Test("Finishing during a hover probe leaves the view free to probe again")
+  @Test("Finishing during a hover probe leaves the view free to probe again after native completion")
   func probeAfterCancelledProbe() async throws {
     let view = ScreenshotSelectionView(
       frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
     )
     let child = NSRect(x: 20, y: 30, width: 60, height: 30)
-    view.findElements = { _ in [child] }
+    view.findElementWindow = { _ in .init(pid: 1, frame: child) }
+    view.findElements = { _, _ in .init(rectangles: [child]) }
     let first = try #require(NSEvent.mouseEvent(
       with: .mouseMoved, location: NSPoint(x: 50, y: 40), modifierFlags: [],
       timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
     ))
     view.mouseMoved(with: first)
     view.finishInteraction()
-    view.findElements = { _ in [child] }
+    try await Task.sleep(for: .milliseconds(100))
+    view.findElementWindow = { _ in .init(pid: 1, frame: child) }
+    view.findElements = { _, _ in .init(rectangles: [child]) }
     defer { view.finishInteraction() }
     let point = NSPoint(x: 56, y: 40)
     let second = try #require(NSEvent.mouseEvent(
@@ -633,7 +698,8 @@ struct ScreenshotSelectionTests {
     let view = ScreenshotSelectionView(
       frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: true
     )
-    view.findElements = { _ in [] }
+    view.findElementWindow = { _ in .init(pid: 1, frame: NSRect(x: 0, y: 0, width: 400, height: 300)) }
+    view.findElements = { _, _ in .init(rectangles: []) }
     defer { view.finishInteraction() }
     var captures = 0
     view.onCapture = { _, _ in captures += 1 }
@@ -853,5 +919,33 @@ struct ScreenshotSelectionTests {
     }
     Issue.record("Selection did not start")
     throw CancellationError()
+  }
+
+  private func hover(_ view: ScreenshotSelectionView, x: CGFloat) throws {
+    let event = try #require(NSEvent.mouseEvent(
+      with: .mouseMoved, location: NSPoint(x: x, y: 40), modifierFlags: [],
+      timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0
+    ))
+    view.mouseMoved(with: event)
+  }
+
+  private func expectProbe(_ condition: Bool, sourceLocation: SourceLocation = #_sourceLocation) {
+    #expect(condition, sourceLocation: sourceLocation)
+  }
+}
+
+nonisolated private final class SelectionProbeWorker: @unchecked Sendable {
+  let release = DispatchSemaphore(value: 0)
+  private let lock = NSLock()
+  private var count = 0
+
+  var calls: Int { lock.withLock { count } }
+
+  func run() {
+    let first = lock.withLock {
+      count += 1
+      return count == 1
+    }
+    if first { release.wait() }
   }
 }

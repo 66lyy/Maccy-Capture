@@ -182,11 +182,27 @@ final class ScreenshotSelectionController {
       ))
     }
     let elementWindows = frozen == nil ? nil : frozenWindows
-    window.selectionView.findElements = { point in
+    window.selectionView.elementProbe = .shared
+    window.selectionView.findElementWindow = { point in
       let global = NSPoint(x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y)
-      return ScreenshotElementDetection.rectangles(at: global, in: elementWindows).map {
+      guard let target = (elementWindows ?? ScreenshotElementDetection.windows()).first(where: {
+        $0.frame.contains(global)
+      }) else { return nil }
+      let local = Self.screenRectangle(target.frame, display: display)
+        .offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+      return ScreenshotElementDetection.Window(pid: target.pid, frame: local)
+    }
+    window.selectionView.findElements = { point, target in
+      let global = NSPoint(x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y)
+      let native = ScreenshotElementDetection.Window(pid: target.pid, frame: NSRect(
+        x: display.captureFrame.minX + target.frame.minX,
+        y: display.captureFrame.maxY - target.frame.maxY,
+        width: target.frame.width, height: target.frame.height
+      ))
+      let result = ScreenshotElementDetection.probe(at: global, in: native)
+      return ScreenshotElementDetection.Result(rectangles: result.rectangles.map {
         Self.screenRectangle($0, display: display).offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
-      }
+      }, outcome: result.outcome)
     }
     window.selectionView.onBegin = { [weak self, weak window] in
       guard let self, let window else { return }
