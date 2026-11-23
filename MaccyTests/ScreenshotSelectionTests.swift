@@ -384,6 +384,17 @@ struct ScreenshotSelectionTests {
     let image = try ScreenshotCaptureSession.ValidatedImage.validate(data).image
     let source = try #require(selection.image)
     #expect(source.width == image.width && source.height == image.height)
+    if pin {
+      #expect(selection.previewImage == nil)
+    } else {
+      let thumbnail = try #require(selection.previewImage)
+      #expect(thumbnail.width <= 440 && thumbnail.height <= 300)
+      let fullImage = NSImage(cgImage: source, size: .zero)
+      let displayedImage = ScreenshotCapture.previewImage(for: fullImage, thumbnail: thumbnail)
+      #expect(displayedImage !== fullImage)
+      #expect(displayedImage.size.width <= CGFloat(thumbnail.width))
+      #expect(displayedImage.size.height <= CGFloat(thumbnail.height))
+    }
     #expect(image.width > preview.width && image.height > preview.height)
     #expect(selection.renderedScale == 2)
     #expect(selection.pinToScreen == pin)

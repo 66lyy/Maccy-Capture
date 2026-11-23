@@ -39,6 +39,7 @@ final class ScreenshotSelectionController {
     let pinToScreen: Bool
     var renderedData: Data?
     var image: CGImage?
+    var previewImage: CGImage?
     var renderedScale: CGFloat?
 
     var screenRect: NSRect {
@@ -294,7 +295,7 @@ final class ScreenshotSelectionController {
         scrollingTask?.cancel()
         scrollingDelayTask?.cancel()
         scrollingTask = Task { [weak self, weak window] in
-          let output = try? await processor.export()
+          let output = try? await processor.export(includePreview: !pin)
           guard let self, let window, windows.contains(where: { $0 === window }) else { return }
           guard let output, !Task.isCancelled else {
             cancel()
@@ -302,6 +303,7 @@ final class ScreenshotSelectionController {
           }
           var result = selection(rectangle, pinToScreen: pin, data: output.data)
           result.image = output.image
+          result.previewImage = output.preview
           result.renderedScale = display.scale
           finish(result)
         }

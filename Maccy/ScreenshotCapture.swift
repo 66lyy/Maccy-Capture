@@ -163,6 +163,7 @@ final class ScreenshotCapture {
         var shouldPin = pinToScreen
         let shouldAnnotate: Bool
         var imageFrame: NSRect?
+        var preview: CGImage?
         switch mode {
         case .mainDisplay:
           imageFrame = NSScreen.screens.first?.frame
@@ -173,6 +174,7 @@ final class ScreenshotCapture {
           shouldPin = selection.pinToScreen
           shouldAnnotate = false
           imageFrame = selection.screenRect
+          preview = selection.previewImage
           if let rendered = selection.renderedData, let image = selection.image {
             result = ScreenshotCaptureSession.ValidatedImage(data: rendered, image: image)
           } else if let rendered = selection.renderedData {
@@ -206,7 +208,7 @@ final class ScreenshotCapture {
             if shouldPin {
               pinImage(image, imageFrame: imageFrame)
             } else {
-              showPreview(image, imageFrame: imageFrame)
+              showPreview(image, imageFrame: imageFrame, thumbnail: preview)
             }
           }
         }
@@ -297,12 +299,19 @@ final class ScreenshotCapture {
     updatePinnedClickThroughCount()
   }
 
-  private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil) {
+  static func previewImage(for image: NSImage, thumbnail: CGImage?) -> NSImage {
+    let size = image.size
+    guard let thumbnail, size.width > 0, size.height > 0 else { return image }
+    let scale = min(1, CGFloat(thumbnail.width) / size.width, CGFloat(thumbnail.height) / size.height)
+    return NSImage(cgImage: thumbnail, size: NSSize(width: size.width * scale, height: size.height * scale))
+  }
+
+  private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil, thumbnail: CGImage? = nil) {
     let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.maxY - min(1, $0.height / 2)) } ?? NSEvent.mouseLocation
     let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     guard let screen else { return }
     let window = ScreenshotPreviewWindow(
-      image: image, visibleFrame: screen.visibleFrame,
+      image: Self.previewImage(for: image, thumbnail: thumbnail), visibleFrame: screen.visibleFrame,
       onAnnotate: { [weak self] in self?.annotateImage(image, imageFrame: imageFrame) }
     ) {
       [weak self] in self?.pinImage(image, imageFrame: imageFrame)

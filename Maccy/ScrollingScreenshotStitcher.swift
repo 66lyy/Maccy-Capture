@@ -677,6 +677,12 @@ nonisolated struct ScrollingScreenshotCadence {
 }
 
 actor ScrollingScreenshotProcessor {
+  struct Output: Sendable {
+    let data: Data
+    let image: CGImage
+    let preview: CGImage?
+  }
+
   struct Update: Sendable {
     let thumbnail: CGImage?
     let width: Int
@@ -712,13 +718,14 @@ actor ScrollingScreenshotProcessor {
       appendResult: stitcher!.appendResult)
   }
 
-  func export() throws -> ScreenshotCaptureSession.ValidatedImage? {
+  func export(includePreview: Bool = false) throws -> Output? {
     try Task.checkCancellation()
     guard let image = stitcher?.image else { return nil }
+    let preview = includePreview ? stitcher?.thumbnail(maximumWidth: 440, maximumHeight: 300) : nil
     stitcher = nil
     guard let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return nil }
     try Task.checkCancellation()
-    return ScreenshotCaptureSession.ValidatedImage(data: data, image: image)
+    return Output(data: data, image: image, preview: preview)
   }
 }
 #endif
