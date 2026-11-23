@@ -1,9 +1,44 @@
 import AppKit
 import Testing
 import Defaults
+import SwiftData
 @testable import Maccy
 
 private final class BundleToken {}
+
+// Match the on-disk schema immediately before recognizedText was added.
+private enum HistoryBeforeOCRIndex {
+  @Model
+  final class HistoryItem {
+    var application: String?
+    var firstCopiedAt: Date = Date.now
+    var lastCopiedAt: Date = Date.now
+    var numberOfCopies: Int = 1
+    var pin: String?
+    var title = ""
+
+    @Relationship(deleteRule: .cascade, inverse: \HistoryItemContent.item)
+    var contents: [HistoryItemContent] = []
+
+    init(title: String, pin: String? = nil, contents: [HistoryItemContent]) {
+      self.title = title
+      self.pin = pin
+      self.contents = contents
+    }
+  }
+
+  @Model
+  final class HistoryItemContent {
+    var type: String = ""
+    var value: Data?
+    @Relationship var item: HistoryItem?
+
+    init(type: NSPasteboard.PasteboardType, value: Data) {
+      self.type = type.rawValue
+      self.value = value
+    }
+  }
+}
 
 func textImage(_ text: String) -> NSImage {
   let string = NSAttributedString(string: text, attributes: [
@@ -34,6 +69,50 @@ private let objectReplacementTitleCases: [(input: String, title: String)] = [
 extension SharedStateTests {
   @MainActor
   struct HistoryItemTests {
+    @Test("Pre-index history migrates and remains searchable by title")
+    func preIndexHistoryMigration() throws {
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let configuration = ModelConfiguration(url: directory.appendingPathComponent("History.sqlite"))
+      let imageData = try #require(textImage("Image Content").tiffRepresentation)
+      let textData = Data("Clipboard note".utf8)
+      try writePreIndexHistory(to: configuration, imageData: imageData, textData: textData)
+
+      let migrated = try ModelContainer(for: HistoryItem.self, configurations: configuration)
+      let context = ModelContext(migrated)
+      let entries = try context.fetch(FetchDescriptor<HistoryItem>())
+      try #require(entries.count == 2)
+      #expect(entries.allSatisfy { $0.recognizedText == nil })
+
+      let rows = entries.map { HistoryItemDecorator($0) }
+      let originalSearchMode = Defaults[.searchMode]
+      defer { Defaults[.searchMode] = originalSearchMode }
+      let search = Search()
+      for mode in Search.Mode.allCases {
+        Defaults[.searchMode] = mode
+        let screenshot = try #require(search.search(string: "Screenshot", within: rows).first?.object)
+        #expect(screenshot.item.imageData == imageData)
+        #expect(screenshot.item.pin == "b")
+        let note = try #require(search.search(string: "Clipboard note", within: rows).first?.object)
+        #expect(note.item.text == "Clipboard note")
+      }
+      Defaults[.searchMode] = .exact
+      #expect(search.search(string: "Image Content", within: rows).isEmpty)
+    }
+
+    private func writePreIndexHistory(to configuration: ModelConfiguration, imageData: Data, textData: Data) throws {
+      let legacy = try ModelContainer(for: HistoryBeforeOCRIndex.HistoryItem.self, configurations: configuration)
+      let context = ModelContext(legacy)
+      context.insert(HistoryBeforeOCRIndex.HistoryItem(
+        title: "Screenshot", pin: "b", contents: [.init(type: .tiff, value: imageData)]
+      ))
+      context.insert(HistoryBeforeOCRIndex.HistoryItem(
+        title: "Clipboard note", contents: [.init(type: .string, value: textData)]
+      ))
+      try context.save()
+    }
+
     @Test("Sorted pins place letters before symbols")
     func sortedPinsPlacesLettersBeforeSymbols() {
       #expect(
@@ -99,6 +178,22 @@ extension SharedStateTests {
       let fileResult = await TextRecognition.recognizeClipboardImage(imageData: nil, fileURL: url)
       #expect(dataResult == "Hello Maccy")
       #expect(fileResult == dataResult)
+    }
+
+    @Test("Concurrent screenshot and clipboard OCR return only their own text")
+    func concurrentScreenshotAndClipboardRecognition() async throws {
+      let screenshotImage = textImage("Quartz Harbor")
+      let screenshot = try #require(screenshotImage.cgImage(forProposedRect: nil, context: nil, hints: nil))
+      let clipboard = try #require(textImage("Copper Lantern").tiffRepresentation)
+
+      async let screenshotResult = TextRecognition.recognizeScreenshot(
+        render: { screenshot }, operation: TextRecognition.recognizeScreenshot
+      )
+      async let clipboardResult = TextRecognition.recognizeClipboardImage(imageData: clipboard, fileURL: nil)
+      let (screenshotText, clipboardText) = try await (screenshotResult, clipboardResult)
+
+      #expect(screenshotText == "Quartz Harbor")
+      #expect(clipboardText == "Copper Lantern")
     }
 
     @Test("Title for file", arguments: ["/tmp/foo.bar", "/tmp/产品培训/产品培训.txt"])
