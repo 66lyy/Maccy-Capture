@@ -78,7 +78,7 @@ struct PreferencesWindowTests {
 
       if page == .shortcuts {
         let recorders = recorders(in: contentView)
-        #expect(recorders.count == 8)
+        #expect(recorders.count == 9)
         for recorder in recorders {
           let frame = recorder.convert(recorder.bounds, to: contentView)
           #expect(frame.width > 0)
