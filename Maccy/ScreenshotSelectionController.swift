@@ -56,6 +56,7 @@ final class ScreenshotSelectionController {
   private let presentWindow: @MainActor (ScreenshotSelectionWindow, Bool) -> Void
   private let captureRegion: @MainActor (Display, NSRect, Set<CGWindowID>) async throws -> NSImage
   private let freezeDisplays: @MainActor ([Display]) async -> [CGImage?]
+  private let listWindows: @Sendable () -> [ScreenshotElementDetection.Window]
   private var isFreezing = false
   private var continuation: CheckedContinuation<Selection?, any Error>?
   private var timeoutTask: Task<Void, Never>?
@@ -76,6 +77,9 @@ final class ScreenshotSelectionController {
     },
     freezeDisplays: @escaping @MainActor ([Display]) async -> [CGImage?] = {
       await ScreenshotCaptureSession.captureDisplays($0)
+    },
+    listWindows: @escaping @Sendable () -> [ScreenshotElementDetection.Window] = {
+      ScreenshotElementDetection.windows()
     }
   ) {
     self.displays = displays
@@ -83,6 +87,7 @@ final class ScreenshotSelectionController {
     self.presentWindow = presentWindow
     self.captureRegion = captureRegion
     self.freezeDisplays = freezeDisplays
+    self.listWindows = listWindows
   }
 
   func select(pinImmediately: Bool, timeout: Duration = .seconds(120)) async throws -> Selection? {
@@ -91,7 +96,9 @@ final class ScreenshotSelectionController {
     let availableDisplays = displays()
     guard !availableDisplays.isEmpty else { throw ScreenshotCaptureSession.Failure.captureFailed }
     isFreezing = true
-    let frozenWindows = ScreenshotElementDetection.windows()
+    let frozenWindows = await Task.detached(priority: .userInitiated) { [listWindows] in
+      listWindows()
+    }.value
     let frozen = await freezeDisplays(availableDisplays)
     isFreezing = false
     try Task.checkCancellation()
@@ -183,11 +190,10 @@ final class ScreenshotSelectionController {
         x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y
       ))
     }
-    let elementWindows = frozen == nil ? nil : frozenWindows
     window.selectionView.elementProbe = .shared
     window.selectionView.findElementWindow = { point in
       let global = NSPoint(x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y)
-      guard let target = (elementWindows ?? ScreenshotElementDetection.windows()).first(where: {
+      guard let target = frozenWindows.first(where: {
         $0.frame.contains(global)
       }) else { return nil }
       let local = Self.screenRectangle(target.frame, display: display)

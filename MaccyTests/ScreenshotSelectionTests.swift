@@ -192,6 +192,95 @@ struct ScreenshotSelectionTests {
     #expect(worker.calls == 2)
   }
 
+  @Test("Window snapshots load off-main once per selection, including empty and live overlays",
+        arguments: [false, true], [false, true])
+  func selectionWindowSnapshot(frozen: Bool, empty: Bool) async throws {
+    let source = SelectionProbeWorker()
+    defer { source.release.signal() }
+    let nativeFrame = NSRect(x: 10, y: 20, width: 200, height: 100)
+    let localFrame = NSRect(x: 10, y: 480, width: 200, height: 100)
+    let snapshot: [ScreenshotElementDetection.Window] = empty ? [] : [.init(pid: 1, frame: nativeFrame)]
+    let image = frozen ? try colorPickerImage() : nil
+    let controller = controller(frozen: [image, nil], listWindows: {
+      #expect(!Thread.isMainThread)
+      source.run()
+      return snapshot
+    })
+    defer { controller.cancel() }
+    let selection = Task { try await controller.select(pinImmediately: false) }
+    for _ in 0..<100 {
+      if source.calls > 0 { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(source.calls == 1)
+    #expect(!controller.isSelecting)
+    source.release.signal()
+    try await waitForSelection(controller)
+    let view = try #require(controller.windows.first?.selectionView)
+    view.elementProbe = ScreenshotElementProbe()
+    let probes = SelectionProbeWorker()
+    probes.release.signal()
+    view.findElements = { _, window in
+      probes.run()
+      return .init(rectangles: [window.frame], outcome: .cannotComplete)
+    }
+    view.moveHover(to: NSPoint(x: 50, y: 500))
+    for _ in 0..<100 {
+      if empty || view.snapRectangle(near: NSPoint(x: 50, y: 500)) != nil { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    for x in stride(from: 60, through: 150, by: 5) {
+      let point = NSPoint(x: x, y: 500)
+      #expect(view.findElementWindow?(point)?.frame == (empty ? nil : localFrame))
+      view.moveHover(to: point)
+      #expect(view.snapRectangle(near: point) == (empty ? nil : localFrame))
+    }
+    #expect(source.calls == 1)
+    #expect(probes.calls == (empty ? 0 : 1))
+    controller.cancel()
+    #expect(try await selection.value == nil)
+    let nextSelection = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    #expect(source.calls == 2)
+    controller.cancel()
+    #expect(try await nextSelection.value == nil)
+  }
+
+  @Test("Late probe results cannot replace a newer hover generation", arguments: [false, true])
+  func hoverProbeGeneration(returnToFirstApp: Bool) async throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    defer { view.finishInteraction() }
+    let left = NSRect(x: 0, y: 0, width: 200, height: 300)
+    let right = NSRect(x: 200, y: 0, width: 200, height: 300)
+    let child = NSRect(x: 20, y: 30, width: 60, height: 30)
+    let otherChild = NSRect(x: 220, y: 30, width: 60, height: 30)
+    let worker = SelectionProbeWorker()
+    defer { worker.release.signal() }
+    view.findElementWindow = { point in .init(pid: point.x < 200 ? 1 : 2, frame: point.x < 200 ? left : right) }
+    view.findElements = { _, window in
+      if window.pid == 1 {
+        worker.run()
+        return .init(rectangles: [child])
+      }
+      return .init(rectangles: [otherChild])
+    }
+    try hover(view, x: 50)
+    try hover(view, x: 250)
+    for _ in 0..<100 {
+      if view.snapRectangle(near: NSPoint(x: 250, y: 40)) == otherChild { break }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(view.snapRectangle(near: NSPoint(x: 250, y: 40)) == otherChild)
+    if returnToFirstApp { try hover(view, x: 50) }
+    worker.release.signal()
+    try await Task.sleep(for: .milliseconds(100))
+    let point = NSPoint(x: returnToFirstApp ? 50 : 250, y: 40)
+    #expect(view.snapRectangle(near: point) == (returnToFirstApp ? left : otherChild))
+    #expect(worker.calls == 1)
+  }
+
   @Test("Selection constructs toolbar controls only for a valid selection and can close without them")
   func deferredSelectionToolbar() {
     let frame = NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -968,6 +1057,9 @@ struct ScreenshotSelectionTests {
     pointer: NSPoint = .zero,
     displays: @escaping @MainActor () -> [ScreenshotSelectionController.Display] = { Self.displays },
     frozen: [CGImage?] = [],
+    listWindows: @escaping @Sendable () -> [ScreenshotElementDetection.Window] = {
+      ScreenshotElementDetection.windows()
+    },
     presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { _, _ in }
   ) -> ScreenshotSelectionController {
     ScreenshotSelectionController(
@@ -982,7 +1074,7 @@ struct ScreenshotSelectionTests {
         ])
         return true
       }
-    }, freezeDisplays: { _ in frozen })
+    }, freezeDisplays: { _ in frozen }, listWindows: listWindows)
   }
 
   private func waitForSelection(_ controller: ScreenshotSelectionController) async throws {
