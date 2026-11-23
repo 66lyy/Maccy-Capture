@@ -291,7 +291,9 @@ final class ScreenshotCapture {
     window.onClickThroughChange = { [weak self] in self?.updatePinnedClickThroughCount() }
     window.onCloseAll = { [weak self] in self?.closeAllPinnedImages() }
     pinnedWindows[identifier] = window
-    window.makeKeyAndOrderFront(nil)
+    let popup = AppState.shared.popup
+    if !popup.isClosed() { popup.close() }
+    window.present()
   }
 
   private func closeAllPinnedImages() {

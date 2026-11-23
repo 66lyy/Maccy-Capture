@@ -1390,6 +1390,38 @@ struct ScreenshotCaptureTests {
     ) == .zero)
   }
 
+  @Test("Presenting a pinned image keeps the current key window")
+  func presentingPinnedImageKeepsKeyWindow() throws {
+    let visibleFrame = try #require(NSScreen.main?.visibleFrame)
+    let current = NSPanel(
+      contentRect: NSRect(x: visibleFrame.midX, y: visibleFrame.midY, width: 120, height: 120),
+      styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false
+    )
+    let pin = PinnedScreenshotWindow(
+      image: try #require(NSImage(data: generatedPNG())),
+      visibleFrame: visibleFrame,
+      anchor: NSPoint(x: visibleFrame.midX, y: visibleFrame.midY)
+    )
+    defer {
+      pin.close()
+      current.close()
+    }
+    current.makeKeyAndOrderFront(nil)
+    try #require(current.isKeyWindow)
+
+    pin.present()
+
+    #expect(pin.isVisible)
+    #expect(!pin.isKeyWindow)
+    #expect(!pin.canBecomeKey)
+    #expect(current.isKeyWindow)
+
+    pin.focusForInteraction()
+    #expect(pin.isKeyWindow)
+    current.makeKey()
+    #expect(!pin.canBecomeKey)
+  }
+
   @Test("A pinned image has an exit path and close cleanup runs only once")
   func pinnedWindowCloses() throws {
     let image = try #require(NSImage(data: generatedPNG()))
@@ -1401,7 +1433,7 @@ struct ScreenshotCaptureTests {
     var closes = 0
     window.onClose = { closes += 1 }
     #expect(window.level == .floating)
-    #expect(window.canBecomeKey)
+    #expect(!window.canBecomeKey)
     #expect(!window.isReleasedWhenClosed)
     window.cancelOperation(nil)
     window.close()

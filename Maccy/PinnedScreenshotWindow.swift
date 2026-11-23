@@ -28,6 +28,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   private let initialVisibleFrame: NSRect
   private var imageScale: CGFloat
   private var isApplyingZoom = false
+  private var isRequestingKeyboardFocus = false
 
   init(image: NSImage, visibleFrame: NSRect, anchor: NSPoint, captureFrame: NSRect? = nil) {
     let initialFrame = Self.initialFrame(
@@ -111,8 +112,18 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     initialFirstResponder = imageView
   }
 
-  override var canBecomeKey: Bool { true }
+  override var canBecomeKey: Bool { isRequestingKeyboardFocus || isKeyWindow }
   override var canBecomeMain: Bool { false }
+
+  func present() {
+    orderFrontRegardless()
+  }
+
+  func focusForInteraction() {
+    isRequestingKeyboardFocus = true
+    defer { isRequestingKeyboardFocus = false }
+    makeKey()
+  }
 
   override func scrollWheel(with event: NSEvent) {
     guard event.momentumPhase.isEmpty, event.phase != .cancelled else { return }
@@ -296,11 +307,12 @@ private final class PinnedScreenshotImageView: NSImageView {
   }
 
   override func mouseDown(with event: NSEvent) {
+    guard let window = window as? PinnedScreenshotWindow else { return }
     if event.clickCount == 2 {
-      window?.close()
+      window.close()
     } else {
-      window?.makeKey()
-      window?.performDrag(with: event)
+      window.focusForInteraction()
+      window.performDrag(with: event)
     }
   }
 }
