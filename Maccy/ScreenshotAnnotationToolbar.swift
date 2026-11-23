@@ -142,6 +142,12 @@ extension ScreenshotAnnotationWindow {
     styleSlider.controlSize = .small
     styleSlider.widthAnchor.constraint(equalToConstant: 95).isActive = true
     styleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+    let labelWidth = ["AnnotationFontSize", "AnnotationMosaicSize", "AnnotationMagnification", "AnnotationWidth"]
+      .map { key -> CGFloat in
+        styleLabel.stringValue = text(key)
+        return ceil(styleLabel.intrinsicContentSize.width)
+      }.max() ?? 0
+    styleLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: labelWidth).isActive = true
     styleValue.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
     styleValue.alignment = .right
     styleValue.widthAnchor.constraint(equalToConstant: 34).isActive = true
@@ -156,6 +162,8 @@ extension ScreenshotAnnotationWindow {
     statusLabel.font = .systemFont(ofSize: 11)
     statusLabel.textColor = .secondaryLabelColor
     statusLabel.isHidden = true
+    statusLabel.lineBreakMode = .byTruncatingTail
+    statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     let grip = ScreenshotToolbarGrip(image: NSImage(
       systemSymbolName: "line.3.horizontal", accessibilityDescription: text("AnnotationMoveToolbar")
     ) ?? NSImage())
@@ -194,7 +202,8 @@ extension ScreenshotAnnotationWindow {
     stack.alignment = .leading
     stack.spacing = 3
     stack.translatesAutoresizingMaskIntoConstraints = false
-    toolbarSize.height = stack.fittingSize.height + 19
+    let fitting = stack.fittingSize
+    toolbarSize = NSSize(width: ceil(fitting.width) + 20, height: fitting.height + 19)
     let controlsView = annotationToolbar.controlsView
     let group = GlassContainerView(frame: controlsView.bounds)
     group.translatesAutoresizingMaskIntoConstraints = false

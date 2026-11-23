@@ -1083,10 +1083,42 @@ struct ScreenshotAnnotationTests {
       reduced.contentView?.layoutSubtreeIfNeeded()
       if displayWidth < 626 {
         #expect(reduced.annotationToolbar.frame.height < full.annotationToolbar.frame.height)
+      } else {
+        #expect(reduced.annotationToolbar.frame.width < full.annotationToolbar.frame.width)
       }
       #expect(reduced.copyButton.window == nil && reduced.undoButton.window == nil)
       #expect(reduced.annotationToolbar.bounds.contains(reduced.annotationToolbar.convert(reduced.colorWell.bounds, from: reduced.colorWell)))
     }
+  }
+
+  @Test("Switching off annotation tools narrows the toolbar to its buttons")
+  func disabledToolsNarrowToolbar() throws {
+    let original = Defaults[.disabledAnnotationTools]
+    defer { Defaults[.disabledAnnotationTools] = original }
+    let display = NSRect(x: 0, y: 0, width: 1200, height: 800)
+    Defaults[.disabledAnnotationTools] = []
+    let full = try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
+    defer { full.close() }
+    let off: [ScreenshotAnnotationDocument.Tool] = [.ellipse, .pen, .number, .magnifier, .mosaic]
+    Defaults[.disabledAnnotationTools] = off.map(\.rawValue)
+    let reduced = try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
+    defer { reduced.close() }
+    for window in [full, reduced] {
+      window.showToolbar(beside: display.insetBy(dx: 100, dy: 200))
+      window.contentView?.layoutSubtreeIfNeeded()
+    }
+    let saved = full.annotationToolbar.frame.width - reduced.annotationToolbar.frame.width
+    #expect(saved >= 2 * 28)
+    #expect(reduced.annotationToolbar.frame.width == reduced.toolbarSize.width)
+    let textTool = try #require(reduced.toolButtons.first { $0.tag == ScreenshotAnnotationDocument.Tool.text.rawValue })
+    textTool.performClick(nil)
+    reduced.contentView?.layoutSubtreeIfNeeded()
+    let controls: [NSControl] = reduced.toolButtons
+      + [reduced.copyButton, reduced.colorWell, reduced.styleSlider, reduced.styleLabel, reduced.styleValue]
+    for control in controls {
+      #expect(reduced.annotationToolbar.bounds.contains(reduced.annotationToolbar.convert(control.bounds, from: control)))
+    }
+    #expect(reduced.styleLabel.frame.width >= ceil(reduced.styleLabel.intrinsicContentSize.width))
   }
 
   @Test("OCR results remain attached to the selection and are selectable without changing the image")
