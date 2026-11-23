@@ -315,7 +315,14 @@ struct ScreenshotAnnotationTests {
     let corner = NSPoint(x: box.maxX * 2, y: box.maxY * 2)
     canvas.beginMark(at: corner)
     #expect(canvas.isMovingMark)
+    let revision = document.revision
+    for step in 1..<32 {
+      let fraction = CGFloat(step) / 32
+      canvas.updateMark(to: NSPoint(x: corner.x + box.width * fraction * 2, y: corner.y + box.height * fraction * 2))
+    }
+    #expect(document.revision == revision)
     canvas.endMark(at: NSPoint(x: corner.x + box.width * 2, y: corner.y + box.height * 2))
+    #expect(document.revision == revision + 1)
     let grown = try #require(document.marks.first)
     #expect(abs(grown.fontSize - 36) < 0.01)
     #expect(grown.bounds.origin == box.origin)
@@ -846,6 +853,83 @@ struct ScreenshotAnnotationTests {
     canvas.beginMark(at: NSPoint(x: 30, y: 20))
     canvas.endMark(at: NSPoint(x: 35, y: 50))
     #expect(document.marks.last?.points == [NSPoint(x: 10, y: 10), NSPoint(x: 35, y: 50)])
+  }
+
+  @Test("A handle drag records one edit, and returning to the start records none",
+        arguments: [ScreenshotAnnotationDocument.Tool.arrow, .rectangle])
+  func resizeGestureHistory(tool: ScreenshotAnnotationDocument.Tool) throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 240, height: 160)
+    canvas.imageInset = 0
+    let start = NSPoint(x: 100.25, y: 100.25)
+    let original = [NSPoint(x: 40.25, y: 40.25), start]
+    #expect(document.append(.init(tool: tool, points: original)))
+    canvas.beginMark(at: start)
+    canvas.endMark(at: start)
+    #expect(canvas.selectedMarkIndex == 0)
+
+    let revision = document.revision
+    canvas.beginMark(at: start)
+    for step in 1...20 {
+      canvas.updateMark(to: NSPoint(x: start.x + CGFloat(step), y: start.y + CGFloat(step) / 2))
+    }
+    #expect(document.revision == revision && document.marks.first?.points == original)
+    canvas.endMark(at: NSPoint(x: 120.25, y: 110.25))
+    let resized = [original[0], NSPoint(x: 120, y: 110)]
+    #expect(document.revision == revision + 1 && document.marks.first?.points == resized)
+
+    canvas.beginMark(at: resized[1])
+    canvas.updateMark(to: NSPoint(x: 140, y: 120))
+    canvas.endMark(at: resized[1])
+    #expect(document.revision == revision + 1)
+    #expect(document.marks.first?.points == resized)
+    document.undo()
+    #expect(document.marks.first?.points == original)
+    document.undo()
+    #expect(document.marks.isEmpty && !document.canUndo)
+  }
+
+  @Test("Fine moves and resizes stay on source pixels at Retina and fractional canvas scales")
+  func markGesturePixelAlignment() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.imageInset = 0
+    let original = [NSPoint(x: 40, y: 40), NSPoint(x: 100, y: 100)]
+    #expect(document.append(.init(tool: .rectangle, points: original)))
+    var expected = original
+    let scales: [CGFloat] = [0.5, 0.7, 2, 0.5]
+    for scale in scales {
+      canvas.frame = NSRect(x: 0, y: 0, width: 240 * scale, height: 160 * scale)
+      func viewPoint(_ point: NSPoint) -> NSPoint {
+        NSPoint(x: canvas.imageRect.minX + point.x * scale, y: canvas.imageRect.minY + point.y * scale)
+      }
+
+      let grab = NSPoint(x: expected[0].x, y: (expected[0].y + expected[1].y) / 2)
+      canvas.beginMark(at: viewPoint(grab))
+      for step in 1..<64 {
+        let fraction = CGFloat(step) / 64
+        canvas.updateMark(to: viewPoint(NSPoint(x: grab.x + 7.3 * fraction, y: grab.y - 4.2 * fraction)))
+      }
+      canvas.endMark(at: viewPoint(NSPoint(x: grab.x + 7.3, y: grab.y - 4.2)))
+      expected = expected.map { NSPoint(x: $0.x + 7, y: $0.y - 4) }
+      #expect(document.marks.first?.points == expected)
+
+      let corner = expected[1]
+      canvas.beginMark(at: viewPoint(corner))
+      for step in 1..<64 {
+        let fraction = CGFloat(step) / 64
+        canvas.updateMark(to: viewPoint(NSPoint(x: corner.x + 13.2 * fraction, y: corner.y + 9.3 * fraction)))
+      }
+      canvas.endMark(at: viewPoint(NSPoint(x: corner.x + 13.2, y: corner.y + 9.3)))
+      expected[1] = NSPoint(x: corner.x + 13, y: corner.y + 9)
+      #expect(document.marks.first?.points == expected)
+
+      let revision = document.revision
+      canvas.beginMark(at: viewPoint(expected[1]))
+      canvas.endMark(at: viewPoint(NSPoint(x: expected[1].x + 0.25, y: expected[1].y - 0.25)))
+      #expect(document.revision == revision && document.marks.first?.points == expected)
+    }
   }
 
   @Test("Moving a mosaic re-pixelates the screenshot at its new position")
