@@ -203,11 +203,19 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
       } else if let handle = drag.handle {
         let start = drag.original.handlePoints[handle]
         let size = document.imageSize
-        markDrag?.current = drag.original.resized(handle: handle, to: NSPoint(
-          x: max(0, min(size.width, start.x + dx)), y: max(0, min(size.height, start.y + dy))
-        ))
+        let snapsHandle = drag.original.tool.styleKind != .font
+        func coordinate(_ origin: CGFloat, by delta: CGFloat, limit: CGFloat) -> CGFloat {
+          if snapsHandle && delta.rounded() == 0 { return origin }
+          let target = origin + delta
+          return max(0, min(limit, snapsHandle ? target.rounded() : target))
+        }
+        let target = NSPoint(x: coordinate(start.x, by: dx, limit: size.width),
+                             y: coordinate(start.y, by: dy, limit: size.height))
+        markDrag?.current = target == start ? drag.original : drag.original.resized(handle: handle, to: target)
       } else {
-        markDrag?.current = drag.original.moved(by: dx, dy, within: document.imageSize)
+        let x = dx.rounded(), y = dy.rounded()
+        markDrag?.current = x == 0 && y == 0 ? drag.original
+          : drag.original.moved(by: x, y, within: document.imageSize)
       }
       needsDisplay = true
       return
