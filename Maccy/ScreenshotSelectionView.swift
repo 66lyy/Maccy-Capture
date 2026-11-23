@@ -33,6 +33,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   private let scale: CGFloat
+  private let pixelSize: CGSize?
   private let pinImmediately: Bool
   private var drag: Drag?
   private var clickSnap: NSRect?
@@ -51,8 +52,9 @@ final class ScreenshotSelectionView: NSView {
   private let loupe = ScreenshotPixelLoupe()
   private var colorCopyTask: Task<Void, Never>?
 
-  init(frame: NSRect, scale: CGFloat, pinImmediately: Bool) {
+  init(frame: NSRect, scale: CGFloat, pinImmediately: Bool, pixelSize: CGSize? = nil) {
     self.scale = scale
+    self.pixelSize = pixelSize
     self.pinImmediately = pinImmediately
     super.init(frame: frame)
     setAccessibilityLabel(localized("ScreenshotSelectionHint"))
@@ -463,10 +465,10 @@ final class ScreenshotSelectionView: NSView {
     )
   }
 
-  static func pixelPositionText(of point: NSPoint, in bounds: NSRect, scale: CGFloat) -> String {
+  static func pixelPositionText(of point: NSPoint, in bounds: NSRect, scale: CGFloat, verticalScale: CGFloat? = nil) -> String {
     let x = min(max(point.x, bounds.minX), bounds.maxX) - bounds.minX
     let y = bounds.maxY - min(max(point.y, bounds.minY), bounds.maxY)
-    return "X \(Int(x * scale))  Y \(Int(y * scale))"
+    return "X \(Int(x * scale))  Y \(Int(y * (verticalScale ?? scale)))"
   }
 
   private var activeRect: NSRect? {
@@ -534,9 +536,20 @@ final class ScreenshotSelectionView: NSView {
       return
     }
     if let activeRect {
-      var dimensions = "\(Int(activeRect.width * scale)) × \(Int(activeRect.height * scale)) px"
-      if drag != nil, let pointer {
-        dimensions += "  ·  " + Self.pixelPositionText(of: pointer, in: bounds, scale: scale)
+      let rasterSize = loupe.source.map { CGSize(width: $0.width, height: $0.height) } ?? pixelSize
+        ?? CGSize(width: bounds.width * scale, height: bounds.height * scale)
+      let topLeftRect = CGRect(
+        x: activeRect.minX - bounds.minX, y: bounds.maxY - activeRect.maxY,
+        width: activeRect.width, height: activeRect.height
+      ).integral
+      let pixels = ScreenshotSelectionController.Display.pixelBounds(
+        for: topLeftRect, canvasSize: bounds.size, rasterSize: rasterSize
+      )
+      var dimensions = "\(Int(pixels.width)) × \(Int(pixels.height)) px"
+      if drag != nil, let pointer, !bounds.isEmpty {
+        dimensions += "  ·  " + Self.pixelPositionText(
+          of: pointer, in: bounds, scale: rasterSize.width / bounds.width, verticalScale: rasterSize.height / bounds.height
+        )
       }
       selectionHint.update(dimensions, near: NSPoint(x: activeRect.minX, y: activeRect.maxY + 8), in: bounds)
     } else {
@@ -640,9 +653,9 @@ final class ScreenshotPixelLoupe: NSView {
 
   static func sample(_ image: CGImage, at pixel: CGPoint) -> Color? {
     guard let crop = image.cropping(to: CGRect(origin: pixel, size: CGSize(width: 1, height: 1))),
-          let space = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(
-            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: space,
+            data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: ScreenshotColorSpace.rgb(image.colorSpace),
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
           ), let rgba = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
     context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))

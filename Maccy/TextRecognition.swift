@@ -131,8 +131,8 @@ nonisolated enum TextRecognition {
     let margin = 36
     let maxContentSize = 3840 - 2 * margin
     let longestSide = max(image.width, image.height)
-    guard min(image.width, image.height) < 48, longestSide <= maxContentSize,
-          let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+    guard min(image.width, image.height) < 48, longestSide <= maxContentSize else { return nil }
+    let space = ScreenshotColorSpace.rgb(image.colorSpace)
     let scale = min(3, Double(maxContentSize) / Double(longestSide))
     let width = Int(Double(image.width) * scale)
     let height = Int(Double(image.height) * scale)
@@ -151,7 +151,7 @@ nonisolated enum TextRecognition {
     let fallback = CGColor(gray: 1, alpha: 1)
     guard let context = CGContext(
       data: nil, width: 4, height: 1, bitsPerComponent: 8, bytesPerRow: 16,
-      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+      space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     ), let data = context.data else { return fallback }
     let corners = [(0, 0), (image.width - 1, 0), (0, image.height - 1), (image.width - 1, image.height - 1)]
     for (index, corner) in corners.enumerated() {
@@ -169,10 +169,11 @@ nonisolated enum TextRecognition {
 
   private static func enlargedImage(_ image: CGImage) -> CGImage? {
     let scale = min(3, 3840.0 / Double(max(image.width, image.height)))
-    guard scale > 1, let space = CGColorSpace(name: CGColorSpace.sRGB),
+    guard scale > 1,
           let context = CGContext(
             data: nil, width: Int(Double(image.width) * scale), height: Int(Double(image.height) * scale),
-            bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            bitsPerComponent: 8, bytesPerRow: 0, space: ScreenshotColorSpace.rgb(image.colorSpace),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
           ) else { return nil }
     let bounds = CGRect(x: 0, y: 0, width: context.width, height: context.height)
     context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)

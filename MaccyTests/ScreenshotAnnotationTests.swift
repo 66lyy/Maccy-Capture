@@ -15,7 +15,7 @@ struct ScreenshotAnnotationTests {
     document.append(mark)
     let snapshot = document.renderSnapshot()
     let actual = try #require(await Task.detached { snapshot.render() }.value)
-    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let space = try #require(document.sourceImage.colorSpace)
     let context = try #require(CGContext(
       data: nil, width: 240, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
       space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
@@ -105,6 +105,40 @@ struct ScreenshotAnnotationTests {
     #expect(try color(bitmap, x: 10, y: 10).blueComponent > 0.9)
     #expect(try color(bitmap, x: 10, y: 150).redComponent > 0.9)
     #expect(image.size == NSSize(width: 120, height: 80))
+  }
+
+  @Test("Annotation, mosaic, magnification and PNG export retain the Display P3 source profile and pixels")
+  func wideGamutAnnotationExport() throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+    let context = try #require(CGContext(
+      data: nil, width: 64, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    let green = try #require(CGColor(colorSpace: space, components: [0.2, 0.8, 0.4, 1]))
+    context.setFillColor(green)
+    context.fill(CGRect(x: 0, y: 0, width: 64, height: 32))
+    let source = try #require(context.makeImage())
+    let document = try #require(ScreenshotAnnotationDocument(image: NSImage(cgImage: source, size: .zero)))
+    #expect(document.append(.init(tool: .mosaic, points: [CGPoint(x: 4, y: 4), CGPoint(x: 20, y: 20)])))
+    #expect(document.append(.init(tool: .magnifier, points: [CGPoint(x: 6, y: 6), CGPoint(x: 18, y: 18)])))
+    let snapshot = document.renderSnapshot()
+    let mosaic = try #require(snapshot.marks.first?.mosaic)
+    let lens = try #require(ScreenshotAnnotationDocument.lensSource(snapshot.source, marks: snapshot.marks))
+    let rendered = try #require(snapshot.render())
+    let data = try #require(document.pngData())
+    let decoded = try ScreenshotCaptureSession.ValidatedImage.validate(data).image
+    let padded = try #require(TextRecognition.paddedNarrowImage(source))
+    let point = CGPoint(x: 50, y: 25)
+    for image in [mosaic, lens, rendered, decoded, padded] {
+      let profile = try #require(image.colorSpace)
+      #expect(profile.isWideGamutRGB)
+      #expect(profile.copyICCData() != nil)
+    }
+    let original = try #require(ScreenshotPixelLoupe.sample(source, at: point))
+    #expect(original.hex == "#33CC66")
+    #expect(ScreenshotPixelLoupe.sample(decoded, at: point) == original)
+    #expect(ScreenshotPixelLoupe.sample(mosaic, at: .zero) == original)
+    #expect(ScreenshotPixelLoupe.sample(padded, at: CGPoint(x: 10, y: 10)) == original)
   }
 
   @Test("Every annotation tool is rasterized into PNG", arguments: ScreenshotAnnotationDocument.Tool.allCases.filter(\.drawsMark))

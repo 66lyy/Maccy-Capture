@@ -396,7 +396,7 @@ struct ScreenshotSelectionTests {
       #expect(displayedImage.size.height <= CGFloat(thumbnail.height))
     }
     #expect(image.width > preview.width && image.height > preview.height)
-    #expect(selection.renderedScale == 2)
+    #expect(selection.renderedScale == CGSize(width: 2, height: 2))
     #expect(selection.pinToScreen == pin)
     #expect(controller.windows.isEmpty && !panel.isVisible)
   }
@@ -496,6 +496,26 @@ struct ScreenshotSelectionTests {
     #expect(ScreenshotCaptureSession.sourceRectangle(
       capture, displayFrame: above.captureFrame
     ) == NSRect(x: 10, y: 689, width: 101, height: 81))
+  }
+
+  @Test("Adjacent selections share raster edges in a scaled display mode, including a frozen crop")
+  func scaledDisplayPixels() throws {
+    let frame = CGRect(x: -1200, y: 300, width: 3, height: 4)
+    let display = ScreenshotSelectionController.Display(
+      frame: frame, captureFrame: frame, scale: 2, modePixelSize: CGSize(width: 8, height: 10)
+    )
+    let left = CGRect(x: frame.minX, y: frame.minY, width: 1, height: 4)
+    let right = CGRect(x: frame.minX + 1, y: frame.minY, width: 2, height: 4)
+    let leftPixels = display.pixelBounds(for: left)
+    let rightPixels = display.pixelBounds(for: right)
+    #expect(leftPixels == CGRect(x: 0, y: 0, width: 3, height: 10))
+    #expect(rightPixels == CGRect(x: 3, y: 0, width: 5, height: 10))
+    #expect(leftPixels.union(rightPixels).size == display.pixelSize)
+
+    let frozen = try colorPickerImage()
+    let crop = try #require(ScreenshotSelectionController.crop(frozen, to: right, display: display))
+    #expect(crop.width == 1 && crop.height == 2)
+    #expect(ScreenshotPixelLoupe.sample(crop, at: .zero)?.hex == "#04A0FF")
   }
 
   @Test("Copy and dedicated pinning close every overlay without capturing for edit",

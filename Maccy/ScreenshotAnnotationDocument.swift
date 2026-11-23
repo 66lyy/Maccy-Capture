@@ -307,11 +307,10 @@ final class ScreenshotAnnotationDocument {
     let block = max(2, blockSize.rounded())
     let flipped = CGRect(x: rect.minX, y: CGFloat(source.height) - rect.maxY, width: rect.width, height: rect.height)
     guard let region = source.cropping(to: flipped),
-          let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
           let context = CGContext(
             data: nil, width: max(1, Int((rect.width / block).rounded(.up))),
             height: max(1, Int((rect.height / block).rounded(.up))), bitsPerComponent: 8, bytesPerRow: 0,
-            space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            space: ScreenshotColorSpace.rgb(source.colorSpace), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
           ) else { return nil }
     context.interpolationQuality = .high
     context.draw(region, in: CGRect(x: 0, y: 0, width: context.width, height: context.height))
@@ -401,7 +400,7 @@ final class ScreenshotAnnotationDocument {
     @MainActor init(_ mark: Mark) {
       tool = mark.tool
       points = mark.points
-      color = (mark.color.usingColorSpace(.sRGB) ?? .red).withAlphaComponent(1).cgColor
+      color = (mark.color.usingType(.componentBased) ?? .red).withAlphaComponent(1).cgColor
       lineWidth = mark.lineWidth
       text = mark.text
       fontName = mark.textFont.fontName
@@ -427,10 +426,10 @@ final class ScreenshotAnnotationDocument {
 
     nonisolated func render() -> CGImage? {
       guard !marks.isEmpty else { return source }
-      guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-            let context = CGContext(
+      guard let context = CGContext(
               data: nil, width: source.width, height: source.height, bitsPerComponent: 8,
-              bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              bytesPerRow: 0, space: ScreenshotColorSpace.rgb(source.colorSpace),
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return nil }
       context.interpolationQuality = .high
       context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))
@@ -522,10 +521,10 @@ final class ScreenshotAnnotationDocument {
     guard marks.contains(where: { $0.tool == .magnifier }) else { return nil }
     let covers = covers(marks)
     guard !covers.isEmpty else { return source }
-    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
-          let context = CGContext(
+    guard let context = CGContext(
             data: nil, width: source.width, height: source.height, bitsPerComponent: 8,
-            bytesPerRow: 0, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            bytesPerRow: 0, space: ScreenshotColorSpace.rgb(source.colorSpace),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
           ) else { return nil }
     context.interpolationQuality = .high
     context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))

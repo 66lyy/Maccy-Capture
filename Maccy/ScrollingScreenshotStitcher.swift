@@ -13,6 +13,9 @@ nonisolated struct ScrollingScreenshotStitcher {
   let frameHeight: Int
   let maximumHeight: Int
   private(set) var chunks: [[UInt8]] = []
+  #if canImport(CoreGraphics)
+  private var sourceColorSpace: CGColorSpace?
+  #endif
   private var signatures = RowSignatures()
   private var lastFrame: RowSignatures?
   private(set) var appendResult = AppendResult.invalid
@@ -552,19 +555,24 @@ extension ScrollingScreenshotStitcher {
     appendResult = .invalid
     guard image.width == width, image.height == frameHeight, width > 0, frameHeight > 0,
           width <= Int.max / 4 / frameHeight else { return false }
+    let colorSpace = chunks.isEmpty ? ScreenshotColorSpace.rgb(image.colorSpace) : outputColorSpace
     var bytes = [UInt8](repeating: 0, count: width * frameHeight * 4)
     let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
       let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
       guard let context = CGContext(data: buffer.baseAddress, width: width, height: frameHeight,
-        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace,
         bitmapInfo: format) else { return false }
       context.setBlendMode(.copy)
       context.interpolationQuality = .none
       context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: frameHeight))
       return true
     }
-    return drawn && append(rgba: bytes)
+    guard drawn, append(rgba: bytes) else { return false }
+    sourceColorSpace = colorSpace
+    return true
   }
+
+  private nonisolated var outputColorSpace: CGColorSpace { sourceColorSpace ?? CGColorSpaceCreateDeviceRGB() }
 
   nonisolated var image: CGImage? {
     guard !chunks.isEmpty else { return nil }
@@ -586,7 +594,7 @@ extension ScrollingScreenshotStitcher {
     }
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
-      bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+      bytesPerRow: width * 4, space: outputColorSpace,
       bitmapInfo: CGBitmapInfo(rawValue: format),
       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     if imageWidth == width { return image }
@@ -636,9 +644,10 @@ extension ScrollingScreenshotStitcher {
     let scale = min(1, Double(maximumWidth) / Double(imageWidth), Double(maximumHeight) / Double(height))
     let thumbnailWidth = max(1, Int(Double(imageWidth) * scale))
     let thumbnailHeight = max(1, Int(Double(height) * scale))
+    let colorSpace = outputColorSpace
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     guard let context = CGContext(data: nil, width: thumbnailWidth, height: thumbnailHeight,
-      bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: format)
+      bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace, bitmapInfo: format)
     else { return nil }
     context.interpolationQuality = .low
     var row = 0
@@ -648,7 +657,7 @@ extension ScrollingScreenshotStitcher {
         guard let provider = CGDataProvider(dataInfo: nil, data: buffer.baseAddress!, size: buffer.count,
           releaseData: { _, _, _ in }),
           let source = CGImage(width: width, height: rows, bitsPerComponent: 8, bitsPerPixel: 32,
-            bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bytesPerRow: width * 4, space: colorSpace,
             bitmapInfo: CGBitmapInfo(rawValue: format), provider: provider, decode: nil,
             shouldInterpolate: false, intent: .defaultIntent) else { return false }
         let top = Double(row) * Double(thumbnailHeight) / Double(height)

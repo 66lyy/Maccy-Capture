@@ -11,6 +11,28 @@ private extension ScrollingScreenshotStitcher {
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("The scrolling thumbnail and PNG retain the first frame's Display P3 profile")
+  func scrollingWideGamutExport() async throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+    let context = try #require(CGContext(
+      data: nil, width: 8, height: 24, bitsPerComponent: 8, bytesPerRow: 0,
+      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    let green = try #require(CGColor(colorSpace: space, components: [0.2, 0.8, 0.4, 1]))
+    context.setFillColor(green)
+    context.fill(CGRect(x: 0, y: 0, width: 8, height: 24))
+    let frame = try #require(context.makeImage())
+    let processor = ScrollingScreenshotProcessor()
+    let result = try await processor.append(frame, refreshPreview: true, maximumPixels: 8 * 48)
+    let thumbnail = try #require(result.thumbnail)
+    let data = try #require(await processor.pngData())
+    let decoded = try ScreenshotCaptureSession.ValidatedImage.validate(data).image
+    for image in [thumbnail, decoded] {
+      #expect(image.colorSpace?.isWideGamutRGB == true)
+      #expect(ScreenshotPixelLoupe.sample(image, at: .zero)?.hex == "#33CC66")
+    }
+  }
+
   @Test("Recorded sparse content rejects aliased jumps without losing rows and recovers nearby frames",
         arguments: ["chat", "table", "safari-table"])
   func scrollingSolidContentAliases(name: String) throws {
@@ -160,7 +182,7 @@ struct ScreenshotCaptureTests {
       var bytes = [UInt8](repeating: 0, count: width * frameHeight * 4)
       try bytes.withUnsafeMutableBytes { buffer in
         let context = try #require(CGContext(data: buffer.baseAddress, width: width, height: frameHeight,
-          bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitsPerComponent: 8, bytesPerRow: width * 4, space: first.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
           bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
         context.setBlendMode(.copy)
         context.interpolationQuality = .none
@@ -190,7 +212,7 @@ struct ScreenshotCaptureTests {
     var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
     try bytes.withUnsafeMutableBytes { buffer in
       let context = try #require(CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
-        bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitsPerComponent: 8, bytesPerRow: image.width * 4, space: image.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
       context.setBlendMode(.copy)
       context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
@@ -1091,6 +1113,17 @@ struct ScreenshotCaptureTests {
     #expect(result === image)
   }
 
+  @Test("Captures are color-converted to the source display profile rather than relabeled")
+  func captureProfileConversion() throws {
+    let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let profile = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+    let converted = ScreenshotColorSpace.matchDisplay(image, profile: profile)
+    #expect(converted.colorSpace?.isWideGamutRGB == true)
+    #expect(converted !== image)
+    #expect(ScreenshotColorSpace.matchDisplay(converted, profile: profile) === converted)
+    #expect(converted.width == image.width && converted.height == image.height)
+  }
+
   @Test("Display captures require native pixel resolution with one-pixel rounding tolerance")
   func displayCaptureResolution() throws {
     let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
@@ -1108,6 +1141,16 @@ struct ScreenshotCaptureTests {
     #expect(!accepts(width: 8, height: 8, scale: 2))
     #expect(accepts(width: 4.7, height: 4.7, scale: 2))
     #expect(!accepts(width: 4.8, height: 4.8, scale: 2))
+  }
+
+  @Test("Display capture resolution uses the current mode's pixel dimensions, not the AppKit backing factor")
+  func scaledDisplayCaptureResolution() throws {
+    let image = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let frame = CGRect(x: 0, y: 0, width: 4, height: 4)
+    var display = ScreenshotSelectionController.Display(frame: frame, captureFrame: frame, scale: 2)
+    #expect(ScreenshotCaptureSession.hasSufficientResolution(image, for: display))
+    display.modePixelSize = CGSize(width: 10, height: 8)
+    #expect(!ScreenshotCaptureSession.hasSufficientResolution(image, for: display))
   }
 
   @Test("Display freezing falls back when rectangle capture is unavailable or fails", arguments: [false, true])

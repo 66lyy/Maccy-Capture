@@ -15,10 +15,13 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     onLongScreenshot?()
   }
 
-  init(frame: NSRect, visibleFrame: NSRect, scale: CGFloat, pinImmediately: Bool, frozen: CGImage? = nil) {
+  init(
+    frame: NSRect, visibleFrame: NSRect, scale: CGFloat, pinImmediately: Bool,
+    frozen: CGImage? = nil, pixelSize: CGSize? = nil
+  ) {
     allowsLongScreenshot = !pinImmediately
     selectionView = ScreenshotSelectionView(
-      frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately
+      frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately, pixelSize: pixelSize
     )
     selectionView.setFrozenImage(frozen)
     super.init(display: frame, visibleFrame: visibleFrame, deferToolbar: true)

@@ -10,10 +10,34 @@ final class ScreenshotSelectionController {
     let scale: CGFloat
     var displayID: CGDirectDisplayID = 0
     var visibleFrame: NSRect?
+    var colorSpace: CGColorSpace?
+    var modePixelSize: CGSize?
+
+    var pixelSize: CGSize {
+      modePixelSize ?? CGSize(
+        width: (captureFrame.width * scale).rounded(), height: (captureFrame.height * scale).rounded()
+      )
+    }
+
+    func pixelBounds(for rectangle: NSRect, in rasterSize: CGSize? = nil) -> CGRect {
+      let source = rectangle.intersection(captureFrame).offsetBy(dx: -captureFrame.minX, dy: -captureFrame.minY)
+      return Self.pixelBounds(for: source, canvasSize: captureFrame.size, rasterSize: rasterSize ?? pixelSize)
+    }
+
+    nonisolated static func pixelBounds(for rectangle: CGRect, canvasSize: CGSize, rasterSize: CGSize) -> CGRect {
+      guard !rectangle.isEmpty, canvasSize.width > 0, canvasSize.height > 0 else { return .zero }
+      let scaleX = rasterSize.width / canvasSize.width
+      let scaleY = rasterSize.height / canvasSize.height
+      let x = (rectangle.minX * scaleX).rounded(), y = (rectangle.minY * scaleY).rounded()
+      return CGRect(
+        x: x, y: y, width: (rectangle.maxX * scaleX).rounded() - x,
+        height: (rectangle.maxY * scaleY).rounded() - y
+      )
+    }
 
     func hasSameLayout(as other: Display) -> Bool {
       displayID == other.displayID && frame == other.frame && captureFrame == other.captureFrame
-        && scale == other.scale
+        && scale == other.scale && pixelSize == other.pixelSize
     }
 
     static func sameLayout(_ lhs: [Display], _ rhs: [Display]) -> Bool {
@@ -25,9 +49,20 @@ final class ScreenshotSelectionController {
         guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
           return nil
         }
+        let id = number.uint32Value
+        let captureFrame = CGDisplayBounds(id)
+        let pixelSize = CGDisplayCopyDisplayMode(id).flatMap { mode -> CGSize? in
+          guard mode.pixelWidth > 0, mode.pixelHeight > 0 else { return nil }
+          let transposed = (mode.pixelWidth > mode.pixelHeight) != (captureFrame.width > captureFrame.height)
+          return CGSize(
+            width: transposed ? mode.pixelHeight : mode.pixelWidth,
+            height: transposed ? mode.pixelWidth : mode.pixelHeight
+          )
+        }
         return Display(
-          frame: screen.frame, captureFrame: CGDisplayBounds(number.uint32Value), scale: screen.backingScaleFactor,
-          displayID: number.uint32Value, visibleFrame: screen.visibleFrame
+          frame: screen.frame, captureFrame: captureFrame, scale: screen.backingScaleFactor,
+          displayID: id, visibleFrame: screen.visibleFrame, colorSpace: screen.colorSpace?.cgColorSpace,
+          modePixelSize: pixelSize
         )
       }
     }
@@ -40,7 +75,7 @@ final class ScreenshotSelectionController {
     var renderedData: Data?
     var image: CGImage?
     var previewImage: CGImage?
-    var renderedScale: CGFloat?
+    var renderedScale: CGSize?
 
     var screenRect: NSRect {
       NSRect(
@@ -194,13 +229,8 @@ final class ScreenshotSelectionController {
   }
 
   static func crop(_ frozen: CGImage, to captureRect: NSRect, display: Display) -> CGImage? {
-    let source = ScreenshotCaptureSession.sourceRectangle(captureRect, displayFrame: display.captureFrame)
-    guard display.captureFrame.width > 0, display.captureFrame.height > 0 else { return nil }
-    let scaleX = CGFloat(frozen.width) / display.captureFrame.width
-    let scaleY = CGFloat(frozen.height) / display.captureFrame.height
-    let pixels = NSRect(
-      x: source.minX * scaleX, y: source.minY * scaleY, width: source.width * scaleX, height: source.height * scaleY
-    ).integral
+    let pixels = display.pixelBounds(for: captureRect, in: CGSize(width: frozen.width, height: frozen.height))
+    guard !pixels.isEmpty else { return nil }
     return frozen.cropping(to: pixels)
   }
 
@@ -209,7 +239,7 @@ final class ScreenshotSelectionController {
   ) -> ScreenshotSelectionWindow {
     let window = ScreenshotSelectionWindow(
       frame: display.frame, visibleFrame: display.visibleFrame ?? display.frame,
-      scale: display.scale, pinImmediately: pinImmediately, frozen: frozen
+      scale: display.scale, pinImmediately: pinImmediately, frozen: frozen, pixelSize: display.pixelSize
     )
     window.onCancel = { [weak self, weak window] in self?.finish(nil, closingWindow: window) }
     window.selectionView.movePointer = { point in
@@ -284,6 +314,7 @@ final class ScreenshotSelectionController {
       )
       window.scrollingPanel = panel
       let processor = ScrollingScreenshotProcessor()
+      let captureRect = Self.captureRectangle(rectangle, display: display)
       panel.onCancel = { [weak self] in self?.cancel() }
       panel.onScrollActivity = { [weak self] in
         guard let self, scrollingDelayIsIdle else { return }
@@ -304,13 +335,15 @@ final class ScreenshotSelectionController {
           var result = selection(rectangle, pinToScreen: pin, data: output.data)
           result.image = output.image
           result.previewImage = output.preview
-          result.renderedScale = display.scale
+          let pixels = display.pixelBounds(for: captureRect)
+          result.renderedScale = CGSize(
+            width: pixels.width / captureRect.width, height: pixels.height / captureRect.height
+          )
           finish(result)
         }
       }
       panel.orderFrontRegardless()
       panel.makeKey()
-      let captureRect = Self.captureRectangle(rectangle, display: display)
       scrollingTask = Task { [weak self, weak panel] in
         var lastThumbnailUpdate: ContinuousClock.Instant?
         var cadence = ScrollingScreenshotCadence()

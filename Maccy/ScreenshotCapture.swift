@@ -192,8 +192,10 @@ final class ScreenshotCapture {
             try await Task.sleep(for: .milliseconds(120))
             result = try await session.capture(mode: .region(selection.captureRect))
           }
-          if let scale = selection.renderedScale, scale > 0 {
-            let size = NSSize(width: CGFloat(result.image.width) / scale, height: CGFloat(result.image.height) / scale)
+          if let scale = selection.renderedScale, scale.width > 0, scale.height > 0 {
+            let size = NSSize(
+              width: CGFloat(result.image.width) / scale.width, height: CGFloat(result.image.height) / scale.height
+            )
             imageFrame = NSRect(x: selection.screenRect.minX, y: selection.screenRect.maxY - size.height,
                                 width: size.width, height: size.height)
           }

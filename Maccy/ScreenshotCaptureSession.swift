@@ -107,12 +107,14 @@ final class ScreenshotCaptureSession {
     let filter = SCContentFilter(display: screen, excludingWindows: overlays)
     let configuration = SCStreamConfiguration()
     configuration.sourceRect = source
-    configuration.width = Int((source.width * display.scale).rounded())
-    configuration.height = Int((source.height * display.scale).rounded())
+    let pixels = display.pixelBounds(for: rectangle)
+    configuration.width = Int(pixels.width)
+    configuration.height = Int(pixels.height)
+    guard configuration.width > 0, configuration.height > 0 else { throw Failure.captureFailed }
     configuration.showsCursor = false
     let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     try Task.checkCancellation()
-    return NSImage(cgImage: image, size: source.size)
+    return NSImage(cgImage: ScreenshotColorSpace.matchDisplay(image, profile: display.colorSpace), size: source.size)
   }
 
   static func captureDisplays(_ displays: [ScreenshotSelectionController.Display]) async -> [CGImage?] {
@@ -137,10 +139,14 @@ final class ScreenshotCaptureSession {
   }
 
   private static func captureDisplay(_ display: ScreenshotSelectionController.Display) async -> CGImage? {
-    await captureDisplayImage(rectangleCapture: {
+    let image = await captureDisplayImage(rectangleCapture: {
       if #available(macOS 15.2, *) {
         let image = try await SCScreenshotManager.captureImage(in: display.captureFrame)
-        return hasSufficientResolution(image, for: display) ? image : nil
+        guard hasSufficientResolution(image, for: display),
+              display.colorSpace?.isWideGamutRGB != true || image.colorSpace?.isWideGamutRGB == true else {
+          return nil
+        }
+        return image
       }
       return nil
     }, filteredCapture: {
@@ -149,13 +155,14 @@ final class ScreenshotCaptureSession {
         throw Failure.captureFailed
       }
       let configuration = SCStreamConfiguration()
-      configuration.width = Int((display.captureFrame.width * display.scale).rounded())
-      configuration.height = Int((display.captureFrame.height * display.scale).rounded())
+      configuration.width = Int(display.pixelSize.width)
+      configuration.height = Int(display.pixelSize.height)
       configuration.showsCursor = false
       return try await SCScreenshotManager.captureImage(
         contentFilter: SCContentFilter(display: screen, excludingWindows: []), configuration: configuration
       )
     })
+    return image.map { ScreenshotColorSpace.matchDisplay($0, profile: display.colorSpace) }
   }
 
   static func captureDisplayImage(
@@ -167,8 +174,8 @@ final class ScreenshotCaptureSession {
   }
 
   static func hasSufficientResolution(_ image: CGImage, for display: ScreenshotSelectionController.Display) -> Bool {
-    let width = Int((display.captureFrame.width * display.scale).rounded())
-    let height = Int((display.captureFrame.height * display.scale).rounded())
+    let width = Int(display.pixelSize.width)
+    let height = Int(display.pixelSize.height)
     return image.width >= width - 1 && image.height >= height - 1
   }
 
@@ -256,5 +263,24 @@ final class ScreenshotCaptureSession {
         kill(process.processIdentifier, SIGKILL)
       }
     }
+  }
+}
+
+nonisolated enum ScreenshotColorSpace {
+  static func rgb(_ profile: CGColorSpace?) -> CGColorSpace {
+    if let profile, profile.model == .rgb { return profile }
+    return CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+  }
+
+  static func matchDisplay(_ image: CGImage, profile: CGColorSpace?) -> CGImage {
+    guard let profile, profile.model == .rgb,
+          let source = image.colorSpace, !CFEqual(source, profile),
+          let context = CGContext(
+            data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+            bytesPerRow: 0, space: profile, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+          ) else { return image }
+    context.setBlendMode(.copy)
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    return context.makeImage() ?? image
   }
 }
