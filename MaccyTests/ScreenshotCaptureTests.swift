@@ -1672,6 +1672,93 @@ struct ScreenshotCaptureTests {
     #expect(imageView.acceptsFirstMouse(for: nil))
   }
 
+  @Test("Only the click-through border and close badge receive mouse input", arguments: [false, true])
+  func pinnedClickThroughTargets(tiny: Bool) throws {
+    let window = tiny ? pinnedZoomWindow(size: NSSize(width: 8, height: 8)) : pinnedZoomWindow()
+    window.present()
+    defer { window.close() }
+    window.isClickThrough = true
+
+    let children = try #require(window.childWindows)
+    #expect(children.count == 5)
+    #expect(window.ignoresMouseEvents)
+    #expect(children.allSatisfy { !$0.ignoresMouseEvents && !$0.canBecomeKey })
+    let bounds = try #require(window.contentView?.bounds)
+    let rect = window.convertToScreen(bounds)
+    let interior = NSPoint(x: rect.midX, y: rect.midY)
+    let edges = [
+      NSPoint(x: rect.minX + 1, y: rect.midY), NSPoint(x: rect.maxX - 1, y: rect.midY),
+      NSPoint(x: rect.midX, y: rect.minY + 1), NSPoint(x: rect.midX, y: rect.maxY - 1)
+    ]
+    #expect(children.allSatisfy { !$0.frame.contains(interior) })
+    for (edge, panel) in zip(edges, children) {
+      #expect(panel.frame.contains(edge))
+    }
+    let badge = try #require(children.last)
+    let badgeButton = try #require(badge.contentView as? NSButton)
+    #expect(badgeButton.image != nil && !badgeButton.isTransparent)
+    if tiny {
+      #expect(!badge.frame.intersects(rect))
+    } else {
+      #expect(badge.frame == NSRect(x: rect.maxX - 28, y: rect.maxY - 28, width: 22, height: 22))
+    }
+    let borderButton = try #require(children.first?.contentView as? NSButton)
+    #expect(borderButton.hitTest(NSPoint(x: 1, y: 1)) === borderButton)
+    borderButton.performClick(nil)
+    #expect(!window.isClickThrough)
+    #expect(window.isVisible)
+    #expect(window.childWindows?.isEmpty != false)
+    #expect(children.allSatisfy { !$0.isVisible })
+  }
+
+  enum PinnedClosePath: CaseIterable {
+    case button, badge, commandW, escape, programmatic
+  }
+
+  @Test("Every pin dismissal releases the tracked window", arguments: PinnedClosePath.allCases)
+  func pinnedWindowIsReleased(path: PinnedClosePath) async throws {
+    let controller = ScreenshotCapture()
+    let image = try #require(NSImage(data: generatedPNG()))
+    weak var releasedWindow: PinnedScreenshotWindow?
+    try autoreleasepool {
+      let knownWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+      controller.pinImage(image)
+      let window = try #require(NSApp.windows.compactMap { $0 as? PinnedScreenshotWindow }.first {
+        !knownWindows.contains(ObjectIdentifier($0)) && $0.isVisible
+      })
+      releasedWindow = window
+      switch path {
+      case .button:
+        let controls = try #require(window.contentView?.subviews.compactMap { $0 as? GlassControlStrip }.first)
+        let button = try #require(controls.controlsView.subviews.compactMap { $0 as? NSButton }.first)
+        button.performClick(nil)
+      case .badge:
+        window.isClickThrough = true
+        #expect(controller.pinnedImages.clickThroughCount == 1)
+        let badge = try #require(window.childWindows?.last?.contentView as? NSButton)
+        badge.performClick(nil)
+      case .commandW, .escape:
+        let command = path == .commandW
+        let event = try #require(NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: command ? .command : [],
+          timestamp: 0, windowNumber: window.windowNumber, context: nil,
+          characters: command ? "w" : "\u{1B}", charactersIgnoringModifiers: command ? "w" : "\u{1B}",
+          isARepeat: false, keyCode: command ? 13 : 53
+        ))
+        window.keyDown(with: event)
+      case .programmatic:
+        window.close()
+      }
+      #expect(!window.isVisible)
+      #expect(window.childWindows?.isEmpty != false)
+    }
+    for _ in 0..<100 where releasedWindow != nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(releasedWindow == nil)
+    #expect(controller.pinnedImages.clickThroughCount == 0)
+  }
+
   @Test("Trackpad pinch reaches the pinned panel through its image view")
   func pinnedPinchZoom() throws {
     let window = pinnedZoomWindow()
@@ -1834,10 +1921,10 @@ struct ScreenshotCaptureTests {
     Issue.record("Preview did not dismiss")
   }
 
-  private func pinnedZoomWindow() -> PinnedScreenshotWindow {
+  private func pinnedZoomWindow(size: NSSize = NSSize(width: 200, height: 100)) -> PinnedScreenshotWindow {
     let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
     return PinnedScreenshotWindow(
-      image: NSImage(size: NSSize(width: 200, height: 100)), visibleFrame: visibleFrame,
+      image: NSImage(size: size), visibleFrame: visibleFrame,
       anchor: NSPoint(x: visibleFrame.midX, y: visibleFrame.midY)
     )
   }

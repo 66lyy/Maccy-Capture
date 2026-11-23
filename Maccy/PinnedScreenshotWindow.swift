@@ -16,6 +16,11 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
       controls.isHidden = isClickThrough
       clickThroughSign.isHidden = !isClickThrough
       clickThroughItem.state = isClickThrough ? .on : .off
+      if isClickThrough {
+        showClickThroughControls()
+      } else {
+        closeClickThroughControls()
+      }
       onClickThroughChange?()
     }
   }
@@ -24,6 +29,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   private let imageView = PinnedScreenshotImageView()
   private let controls: GlassControlStrip
   private let clickThroughSign = PinnedClickThroughSignView()
+  private var clickThroughControls: [PinnedClickThroughControlPanel] = []
   private let clickThroughItem = NSMenuItem()
   private let initialVisibleFrame: NSRect
   private var imageScale: CGFloat
@@ -182,6 +188,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    closeClickThroughControls()
     onAnnotate = nil
     onCloseAll = nil
     onClickThroughChange = nil
@@ -204,6 +211,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   func windowDidResize(_ notification: Notification) {
+    positionClickThroughControls()
     guard !isApplyingZoom else { return }
     imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
   }
@@ -277,6 +285,61 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     close()
   }
 
+  private func showClickThroughControls() {
+    clickThroughControls = ClickThroughTarget.allCases.map { target in
+      let closesPin = target == .badge
+      return PinnedClickThroughControlPanel(
+        label: Self.localized(closesPin ? "ScreenshotClose" : "PinnedClickThroughOff"),
+        showsCloseIcon: closesPin, target: self, action: closesPin ? #selector(closeImage) : #selector(toggleClickThrough)
+      )
+    }
+    positionClickThroughControls()
+    for panel in clickThroughControls { addChildWindow(panel, ordered: .above) }
+  }
+
+  private func positionClickThroughControls() {
+    guard !clickThroughControls.isEmpty, let contentView else { return }
+    let contentFrame = convertToScreen(contentView.convert(contentView.bounds, to: nil))
+    let visibleFrame = screen?.visibleFrame ?? initialVisibleFrame
+    for (target, panel) in zip(ClickThroughTarget.allCases, clickThroughControls) {
+      panel.setFrame(target.frame(in: contentFrame, visibleFrame: visibleFrame), display: true)
+    }
+  }
+
+  private func closeClickThroughControls() {
+    for panel in clickThroughControls {
+      removeChildWindow(panel)
+      panel.close()
+    }
+    clickThroughControls.removeAll()
+  }
+
+  private enum ClickThroughTarget: CaseIterable {
+    case left, right, bottom, top, badge
+
+    func frame(in bounds: NSRect, visibleFrame: NSRect) -> NSRect {
+      let inset = max(1, min(4, min(bounds.width, bounds.height) / 3))
+      switch self {
+      case .left: return NSRect(x: bounds.minX, y: bounds.minY, width: inset, height: bounds.height)
+      case .right: return NSRect(x: bounds.maxX - inset, y: bounds.minY, width: inset, height: bounds.height)
+      case .bottom: return NSRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: inset)
+      case .top: return NSRect(x: bounds.minX, y: bounds.maxY - inset, width: bounds.width, height: inset)
+      case .badge:
+        let size = PinnedClickThroughControlPanel.badgeSize
+        let margin: CGFloat = 6
+        var x = bounds.maxX - size - margin
+        var y = bounds.maxY - size - margin
+        if bounds.height < size + 2 * margin {
+          y = bounds.maxY + size <= visibleFrame.maxY ? bounds.maxY : bounds.minY - size
+        } else if bounds.width < size + 2 * margin {
+          x = bounds.maxX + size <= visibleFrame.maxX ? bounds.maxX : bounds.minX - size
+        }
+        return NSRect(x: max(visibleFrame.minX, min(x, visibleFrame.maxX - size)),
+                      y: max(visibleFrame.minY, min(y, visibleFrame.maxY - size)), width: size, height: size)
+      }
+    }
+  }
+
   @objc func toggleClickThrough() {
     isClickThrough.toggle()
   }
@@ -317,11 +380,44 @@ private final class PinnedScreenshotImageView: NSImageView {
   }
 }
 
-// Marks a click-through pin with a dashed edge and a corner badge, leaving the image itself untinted.
-final class PinnedClickThroughSignView: NSView {
+private final class PinnedClickThroughControlPanel: NSPanel {
   static let badgeSize: CGFloat = 22
+
+  init(label: String, showsCloseIcon: Bool, target: PinnedScreenshotWindow, action: Selector) {
+    super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    isReleasedWhenClosed = false
+    isOpaque = false
+    backgroundColor = showsCloseIcon ? .clear : NSColor.black.withAlphaComponent(0.02)
+    hasShadow = false
+    hidesOnDeactivate = false
+    let button = PinnedClickThroughButton(title: "", target: target, action: action)
+    button.isTransparent = !showsCloseIcon
+    if showsCloseIcon {
+      button.isBordered = false
+      button.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
+      button.imagePosition = .imageOnly
+      button.contentTintColor = .white
+      button.wantsLayer = true
+      button.layer?.cornerRadius = Self.badgeSize / 2
+      button.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+    }
+    button.toolTip = label
+    button.setAccessibilityLabel(label)
+    contentView = button
+  }
+
+  override var canBecomeKey: Bool { false }
+  override var canBecomeMain: Bool { false }
+}
+
+private final class PinnedClickThroughButton: NSButton {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+// Marks a click-through pin with a dashed edge, leaving the image itself untinted.
+final class PinnedClickThroughSignView: NSView {
   private let border = CAShapeLayer()
-  private let badge = NSView()
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -330,18 +426,6 @@ final class PinnedClickThroughSignView: NSView {
     border.lineWidth = 2
     border.lineDashPattern = [6, 4]
     layer?.addSublayer(border)
-
-    let size = Self.badgeSize
-    badge.frame = NSRect(x: bounds.maxX - size - 6, y: bounds.maxY - size - 6, width: size, height: size)
-    badge.autoresizingMask = [.minXMargin, .minYMargin]
-    badge.wantsLayer = true
-    badge.layer?.cornerRadius = size / 2
-    let icon = NSImageView(frame: badge.bounds.insetBy(dx: 4, dy: 4))
-    icon.image = NSImage(systemSymbolName: "cursorarrow.motionlines", accessibilityDescription: nil)
-    icon.contentTintColor = .white
-    icon.imageScaling = .scaleProportionallyUpOrDown
-    badge.addSubview(icon)
-    addSubview(badge)
   }
 
   required init?(coder: NSCoder) { nil }
@@ -363,7 +447,6 @@ final class PinnedClickThroughSignView: NSView {
   private func updateColors() {
     effectiveAppearance.performAsCurrentDrawingAppearance {
       border.strokeColor = NSColor.controlAccentColor.cgColor
-      badge.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
     }
   }
 }

@@ -257,7 +257,7 @@ final class ScreenshotCapture {
     try History.shared.insertIntoStorage(item)
   }
 
-  private func pinImage(_ image: NSImage, imageFrame: NSRect? = nil) {
+  func pinImage(_ image: NSImage, imageFrame: NSRect? = nil) {
     guard let bytes = PinnedImageBudget.estimatedBytes(for: image) else {
       showError("PinnedImageTooLarge")
       return
