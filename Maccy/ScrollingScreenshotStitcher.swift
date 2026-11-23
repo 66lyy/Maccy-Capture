@@ -12,13 +12,7 @@ nonisolated struct ScrollingScreenshotStitcher {
   let width: Int
   let frameHeight: Int
   let maximumHeight: Int
-  private var chunks: [[UInt8]] = []
-  var pixels: [UInt8] {
-    var result: [UInt8] = []
-    result.reserveCapacity(width * height * 4)
-    for chunk in chunks { result.append(contentsOf: chunk) }
-    return result
-  }
+  private(set) var chunks: [[UInt8]] = []
   private var signatures = RowSignatures()
   private var lastFrame: RowSignatures?
   private(set) var appendResult = AppendResult.invalid
@@ -574,15 +568,67 @@ extension ScrollingScreenshotStitcher {
 
   nonisolated var image: CGImage? {
     guard !chunks.isEmpty else { return nil }
-    var data = Data(capacity: width * height * 4)
-    for chunk in chunks { data.append(contentsOf: chunk) }
-    guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+    let storage = Unmanaged.passRetained(ImageBytes(chunks))
+    var callbacks = CGDataProviderDirectCallbacks(
+      version: 0, getBytePointer: nil, releaseBytePointer: nil,
+      getBytesAtPosition: { info, buffer, position, count in
+        guard let info, let offset = Int(exactly: position) else { return 0 }
+        return Unmanaged<ImageBytes>.fromOpaque(info).takeUnretainedValue().read(buffer, offset: offset, count: count)
+      },
+      releaseInfo: { info in
+        if let info { Unmanaged<ImageBytes>.fromOpaque(info).release() }
+      }
+    )
+    guard let provider = CGDataProvider(directInfo: storage.toOpaque(), size: Int64(width * height * 4),
+      callbacks: &callbacks) else {
+      storage.release()
+      return nil
+    }
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGBitmapInfo(rawValue: format),
       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    if imageWidth == width { return image }
     return image?.cropping(to: CGRect(x: outputPixelColumns.lowerBound, y: 0, width: imageWidth, height: height))
+  }
+
+  nonisolated private final class ImageBytes {
+    let chunks: [[UInt8]]
+    let ends: [Int]
+
+    init(_ chunks: [[UInt8]]) {
+      self.chunks = chunks
+      var end = 0
+      ends = chunks.map {
+        end += $0.count
+        return end
+      }
+    }
+
+    func read(_ buffer: UnsafeMutableRawPointer, offset: Int, count: Int) -> Int {
+      guard offset >= 0, count > 0 else { return 0 }
+      var low = 0
+      var high = ends.count
+      while low < high {
+        let middle = low + (high - low) / 2
+        if ends[middle] <= offset { low = middle + 1 }
+        else { high = middle }
+      }
+      var copied = 0
+      for index in low..<ends.count {
+        let position = offset + copied
+        let start = index == 0 ? 0 : ends[index - 1]
+        let size = min(count - copied, ends[index] - position)
+        guard size > 0 else { continue }
+        chunks[index].withUnsafeBytes { bytes in
+          buffer.advanced(by: copied).copyMemory(from: bytes.baseAddress! + (position - start), byteCount: size)
+        }
+        copied += size
+        if copied == count { break }
+      }
+      return copied
+    }
   }
 
   nonisolated func thumbnail(maximumWidth: Int = 264, maximumHeight: Int = 120) -> CGImage? {
@@ -666,12 +712,13 @@ actor ScrollingScreenshotProcessor {
       appendResult: stitcher!.appendResult)
   }
 
-  func pngData() throws -> Data? {
+  func export() throws -> ScreenshotCaptureSession.ValidatedImage? {
     try Task.checkCancellation()
     guard let image = stitcher?.image else { return nil }
-    let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image)
+    stitcher = nil
+    guard let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return nil }
     try Task.checkCancellation()
-    return data
+    return ScreenshotCaptureSession.ValidatedImage(data: data, image: image)
   }
 }
 #endif

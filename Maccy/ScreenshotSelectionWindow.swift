@@ -82,13 +82,13 @@ final class ScrollingScreenshotPanel: NSPanel {
   private let dimensions = NSTextField(labelWithString: "")
   private let hint = NSTextField(wrappingLabelWithString: "")
   private var outputButtons: [NSButton] = []
+  var isMonitoringScrollEvents: Bool { localScrollMonitor != nil || globalScrollMonitor != nil }
 
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
   isolated deinit {
-    if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
-    if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
+    stopMonitoringScrollEvents()
   }
 
   nonisolated static func placement(beside rectangle: NSRect, bounds: NSRect, size: NSSize) -> NSRect {
@@ -163,6 +163,15 @@ final class ScrollingScreenshotPanel: NSPanel {
       stack.centerYAnchor.constraint(equalTo: group.controlsView.centerYAnchor),
       stack.widthAnchor.constraint(lessThanOrEqualTo: group.controlsView.widthAnchor, constant: -24)
     ])
+    let notifications = NotificationCenter.default
+    notifications.addObserver(self, selector: #selector(pauseScrollMonitoring(_:)),
+                              name: NSApplication.didHideNotification, object: nil)
+    notifications.addObserver(self, selector: #selector(resumeScrollMonitoring(_:)),
+                              name: NSApplication.didUnhideNotification, object: nil)
+  }
+
+  private func startMonitoringScrollEvents() {
+    guard isVisible, !isMonitoringScrollEvents else { return }
     let events: NSEvent.EventTypeMask = [.scrollWheel, .mouseMoved, .leftMouseDragged]
     localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
       if event.type == .scrollWheel { self?.onScrollActivity?() }
@@ -173,9 +182,19 @@ final class ScrollingScreenshotPanel: NSPanel {
       if event.type == .scrollWheel { self?.onScrollActivity?() }
       else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
     }
-    surface.layoutSubtreeIfNeeded()
+    contentView?.layoutSubtreeIfNeeded()
     updateMousePassthrough(at: NSEvent.mouseLocation)
   }
+
+  private func stopMonitoringScrollEvents() {
+    if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
+    if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
+    localScrollMonitor = nil
+    globalScrollMonitor = nil
+  }
+
+  @objc private func pauseScrollMonitoring(_ notification: Notification) { stopMonitoringScrollEvents() }
+  @objc private func resumeScrollMonitoring(_ notification: Notification) { startMonitoringScrollEvents() }
 
   nonisolated static func ignoresMouse(at point: NSPoint, controls: [NSRect]) -> Bool {
     !controls.contains { $0.contains(point) }
@@ -186,11 +205,34 @@ final class ScrollingScreenshotPanel: NSPanel {
     ignoresMouseEvents = Self.ignoresMouse(at: point, controls: frames)
   }
 
+  override func orderFrontRegardless() {
+    super.orderFrontRegardless()
+    startMonitoringScrollEvents()
+  }
+
+  override func orderFront(_ sender: Any?) {
+    super.orderFront(sender)
+    startMonitoringScrollEvents()
+  }
+
+  override func makeKeyAndOrderFront(_ sender: Any?) {
+    super.makeKeyAndOrderFront(sender)
+    startMonitoringScrollEvents()
+  }
+
+  override func order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) {
+    if place == .out { stopMonitoringScrollEvents() }
+    super.order(place, relativeTo: otherWin)
+    if place != .out { startMonitoringScrollEvents() }
+  }
+
+  override func orderOut(_ sender: Any?) {
+    stopMonitoringScrollEvents()
+    super.orderOut(sender)
+  }
+
   override func close() {
-    if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
-    if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
-    localScrollMonitor = nil
-    globalScrollMonitor = nil
+    stopMonitoringScrollEvents()
     onScrollActivity = nil
     ignoresMouseEvents = false
     super.close()

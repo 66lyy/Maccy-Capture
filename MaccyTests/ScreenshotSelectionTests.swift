@@ -79,6 +79,26 @@ struct ScreenshotSelectionTests {
     panel.close()
   }
 
+  @Test("Long capture panel monitors follow visibility across direct ordering and close")
+  func scrollingPanelMonitorLifecycle() {
+    let panel = ScrollingScreenshotPanel(beside: .zero,
+      bounds: NSRect(x: 0, y: 0, width: 1000, height: 800), level: 10)
+    defer { panel.close() }
+    #expect(!panel.isMonitoringScrollEvents)
+    panel.orderFrontRegardless()
+    #expect(panel.isMonitoringScrollEvents)
+    panel.orderOut(nil)
+    #expect(!panel.isMonitoringScrollEvents)
+    panel.orderFrontRegardless()
+    #expect(panel.isMonitoringScrollEvents)
+    panel.order(.out, relativeTo: 0)
+    #expect(!panel.isMonitoringScrollEvents)
+    panel.orderFrontRegardless()
+    #expect(panel.isMonitoringScrollEvents)
+    panel.close()
+    #expect(!panel.isMonitoringScrollEvents)
+  }
+
   @Test("Overlay damage includes old and new borders, clips to bounds, and handles empty highlights")
   func overlayDirtyRect() {
     let bounds = NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -362,9 +382,31 @@ struct ScreenshotSelectionTests {
     let selection = try #require(try await task.value)
     let data = try #require(selection.renderedData)
     let image = try ScreenshotCaptureSession.ValidatedImage.validate(data).image
+    let source = try #require(selection.image)
+    #expect(source.width == image.width && source.height == image.height)
     #expect(image.width > preview.width && image.height > preview.height)
     #expect(selection.renderedScale == 2)
     #expect(selection.pinToScreen == pin)
+    #expect(controller.windows.isEmpty && !panel.isVisible)
+  }
+
+  @Test("Finishing a long capture without an image closes every overlay")
+  func scrollingEmptyOutput() async throws {
+    let controller = controller()
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 30))
+    window.selectionView.endSelection(at: NSPoint(x: 220, y: 180))
+    window.beginLongScreenshot()
+    let panel = try #require(window.scrollingPanel)
+    panel.onFinish?(false)
+    for _ in 0..<100 where controller.isSelecting {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    try #require(!controller.isSelecting)
+    #expect(try await task.value == nil)
     #expect(controller.windows.isEmpty && !panel.isVisible)
   }
 
@@ -928,6 +970,25 @@ struct ScreenshotSelectionTests {
     }
     #expect(try await task.value == nil)
     #expect(controller.windows.isEmpty)
+  }
+
+  @Test("The Escape fallback cancels selection when the event is not routed to a capture window")
+  func fallbackEscapeCancellation() async throws {
+    let controller = controller()
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    let event = try #require(NSEvent.keyEvent(
+      with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+      characters: "\u{1B}", charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53
+    ))
+    #expect(!controller.handleFallbackEscape(event, target: window))
+    #expect(controller.isSelecting)
+    try #require(controller.handleFallbackEscape(event, target: nil))
+    #expect(try await task.value == nil)
+    #expect(controller.windows.isEmpty)
+    #expect(!controller.handleFallbackEscape(event, target: nil))
   }
 
   @Test("Enter copies and P pins the selected rectangle", arguments: [false, true])

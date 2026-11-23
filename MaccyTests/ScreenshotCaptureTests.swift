@@ -5,6 +5,10 @@ import KeyboardShortcuts
 import Testing
 @testable import Maccy
 
+private extension ScrollingScreenshotStitcher {
+  var pixels: [UInt8] { chunks.flatMap { $0 } }
+}
+
 @MainActor
 struct ScreenshotCaptureTests {
   @Test("Recorded sparse content rejects aliased jumps without losing rows and recovers nearby frames",
@@ -831,7 +835,7 @@ struct ScreenshotCaptureTests {
   @Test("The background processor defers previews, flushes at the cap and exports the full PNG")
   func scrollingProcessorOutput() async throws {
     let processor = ScrollingScreenshotProcessor()
-    #expect(try await processor.pngData() == nil)
+    #expect(try await processor.export() == nil)
     var first = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
     first.append(rgba: scrollingFrame(0))
     let firstImage = try #require(first.image)
@@ -846,9 +850,13 @@ struct ScreenshotCaptureTests {
     let nextImage = try #require(next.image)
     let capped = try await processor.append(nextImage, refreshPreview: false, maximumPixels: 8 * 30)
     #expect(capped.thumbnail != nil && capped.capReached && capped.height == 30)
-    let data = try #require(try await processor.pngData())
-    let result = try ScreenshotCaptureSession.ValidatedImage.validate(data)
+    let output = try #require(try await processor.export())
+    let result = try ScreenshotCaptureSession.ValidatedImage.validate(output.data)
     #expect(result.image.width == 8 && result.image.height == 30)
+    #expect(output.image.width == result.image.width && output.image.height == result.image.height)
+    let pixelData = try #require(output.image.dataProvider?.data)
+    #expect(pixelData as Data == Data(scrollingFrame(0) + scrollingFrame(6).suffix(6 * 32)))
+    #expect(try await processor.export() == nil)
   }
 
   @Test("The background processor rejects invalid budgets and cancelled work")
@@ -863,7 +871,7 @@ struct ScreenshotCaptureTests {
     let task = Task { try await processor.append(image, refreshPreview: true, maximumPixels: 800) }
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
-    #expect(try await processor.pngData() == nil)
+    #expect(try await processor.export() == nil)
   }
 
   @Test("Text-like glyph rows stitch exactly after uneven scrolls under a sticky header")

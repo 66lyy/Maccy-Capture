@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 
 @MainActor
@@ -61,6 +62,8 @@ final class ScreenshotSelectionController {
   private var continuation: CheckedContinuation<Selection?, any Error>?
   private var timeoutTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
+  private var localEscapeMonitor: Any?
+  private var globalEscapeMonitor: Any?
   private var scrollingTask: Task<Void, Never>?
   private var scrollingDelayTask: Task<Void, Error>?
   private var scrollingDelayIsIdle = false
@@ -113,6 +116,7 @@ final class ScreenshotSelectionController {
             pinImmediately: pinImmediately
           )
         }
+        monitorEscape()
         screenObserver = NotificationCenter.default.addObserver(
           forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -147,6 +151,28 @@ final class ScreenshotSelectionController {
 
   func cancel() {
     finish(nil)
+  }
+
+  private func monitorEscape() {
+    localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      self?.handleFallbackEscape(event, target: event.window ?? NSApp?.keyWindow) == true ? nil : event
+    }
+    if AXIsProcessTrusted() {
+      globalEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        _ = self?.handleFallbackEscape(event, target: nil)
+      }
+    }
+  }
+
+  func handleFallbackEscape(_ event: NSEvent, target: NSWindow?) -> Bool {
+    let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+      .subtracting([.capsLock, .numericPad, .function])
+    guard isSelecting, event.keyCode == 53, modifiers.isEmpty else { return false }
+    if let target, windows.contains(where: { $0 === target || $0.scrollingPanel === target }) {
+      return false
+    }
+    cancel()
+    return true
   }
 
   static func captureRectangle(_ localRect: NSRect, display: Display) -> NSRect {
@@ -262,20 +288,22 @@ final class ScreenshotSelectionController {
         guard let self, scrollingDelayIsIdle else { return }
         scrollingDelayTask?.cancel()
       }
-      panel.onFinish = { [weak self] pin in
-        guard let self, isSelecting else { return }
+      panel.onFinish = { [weak self, weak window, weak panel] pin in
+        guard let self, isSelecting, let panel, panel.onFinish != nil else { return }
+        panel.onFinish = nil
         scrollingTask?.cancel()
         scrollingDelayTask?.cancel()
-        scrollingTask = Task { [weak self] in
-          do {
-            guard let data = try await processor.pngData(), !Task.isCancelled,
-                  let self, isSelecting else { return }
-            var result = selection(rectangle, pinToScreen: pin, data: data)
-            result.renderedScale = display.scale
-            finish(result)
-          } catch {
-            if !Task.isCancelled { self?.cancel() }
+        scrollingTask = Task { [weak self, weak window] in
+          let output = try? await processor.export()
+          guard let self, let window, windows.contains(where: { $0 === window }) else { return }
+          guard let output, !Task.isCancelled else {
+            cancel()
+            return
           }
+          var result = selection(rectangle, pinToScreen: pin, data: output.data)
+          result.image = output.image
+          result.renderedScale = display.scale
+          finish(result)
         }
       }
       panel.orderFrontRegardless()
@@ -366,6 +394,10 @@ final class ScreenshotSelectionController {
     scrollingTask = nil
     timeoutTask?.cancel()
     timeoutTask = nil
+    if let localEscapeMonitor { NSEvent.removeMonitor(localEscapeMonitor) }
+    if let globalEscapeMonitor { NSEvent.removeMonitor(globalEscapeMonitor) }
+    localEscapeMonitor = nil
+    globalEscapeMonitor = nil
     if let screenObserver {
       NotificationCenter.default.removeObserver(screenObserver)
       self.screenObserver = nil

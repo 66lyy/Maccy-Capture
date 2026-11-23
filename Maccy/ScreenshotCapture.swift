@@ -173,7 +173,9 @@ final class ScreenshotCapture {
           shouldPin = selection.pinToScreen
           shouldAnnotate = false
           imageFrame = selection.screenRect
-          if let rendered = selection.renderedData {
+          if let rendered = selection.renderedData, let image = selection.image {
+            result = ScreenshotCaptureSession.ValidatedImage(data: rendered, image: image)
+          } else if let rendered = selection.renderedData {
             result = try await Task.detached(priority: .userInitiated) {
               try ScreenshotCaptureSession.ValidatedImage.validate(rendered)
             }.value
