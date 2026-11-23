@@ -23,6 +23,8 @@ nonisolated struct ScrollingScreenshotStitcher {
   private var lastFrame: RowSignatures?
   private(set) var appendResult = AppendResult.invalid
   private var footerHeight = 0
+  private var replacementTailHeight = 0
+  private var outputColumns: Range<Int>?
   private(set) var capReached = false
   private(set) var height = 0
 
@@ -32,7 +34,46 @@ nonisolated struct ScrollingScreenshotStitcher {
     var informative: [Bool] = []
   }
 
+  private struct RowInformation {
+    var hashes: [UInt64]
+    var informative: [Bool]
+  }
+
   private var binCount: Int { min(width, 256) }
+
+  private var scrollbarBinCap: Int {
+    guard width > 0 else { return 0 }
+    return max(1, max(16, width / 50) * binCount / width)
+  }
+
+  private var outputPixelColumns: Range<Int> {
+    guard binCount > 0 else { return 0..<0 }
+    let columns = outputColumns ?? 0..<binCount
+    return (columns.lowerBound * width / binCount)..<(columns.upperBound * width / binCount)
+  }
+
+  var imageWidth: Int { outputPixelColumns.count }
+
+  private func cornerFooter(in next: RowSignatures, shift: Int, footer: Int) -> Int {
+    guard binCount >= 8, frameHeight / 16 >= 3, footer + 3 < frameHeight else { return 0 }
+    let edge = max(1, binCount / 16)
+    let edges = [0..<edge, (binCount - edge)..<binCount]
+    for depth in 0..<3 {
+      let row = frameHeight - footer - depth - 1
+      let middle = (binCount / 4)..<(binCount * 3 / 4)
+      let oldBackground = middle.map { signatures.values[row * binCount + $0] }.sorted()[middle.count / 2]
+      let newBackground = middle.map { next.values[row * binCount + $0] }.sorted()[middle.count / 2]
+      guard row >= shift, edges.allSatisfy({ columns in
+        columns.contains { column in
+          abs(Int(signatures.values[row * binCount + column]) - Int(oldBackground)) >= 8
+            && abs(Int(next.values[row * binCount + column]) - Int(newBackground)) >= 8
+            && rowsMatch(row, row, in: next, columns: column..<(column + 1))
+            && !rowsMatch(row, row - shift, in: next, columns: column..<(column + 1))
+        }
+      }) else { return 0 }
+    }
+    return min(frameHeight, footer + frameHeight / 16)
+  }
 
   private struct SignatureBuffers: @unchecked Sendable {
     let bytes: UnsafePointer<UInt8>
@@ -150,84 +191,135 @@ nonisolated struct ScrollingScreenshotStitcher {
     }
   }
 
-  private func matchingColumns(in next: RowSignatures, rows: Range<Int>, shift: Int) -> [Range<Int>] {
+  private func rowDifferences(in next: RowSignatures, rows: Range<Int>, shift: Int) -> [Int] {
     let bins = binCount
-    let cap = max(1, bins / 8)
-    guard bins > cap else { return [] }
-    var left = 0
-    var right = bins
-    let edgeColumns = Array(0..<cap) + Array((bins - cap)..<bins)
+    var differences = [Int](repeating: bins, count: rows.count)
     signatures.values.withUnsafeBufferPointer { old in
       next.values.withUnsafeBufferPointer { new in
-        for row in rows {
-          guard rowsMatch(row + shift, row, in: next, columns: cap..<(bins - cap)) else { continue }
-          var first = bins
-          var last = -1
-          for column in edgeColumns {
-            let difference = Int(old[(row + shift) * bins + column]) - Int(new[row * bins + column])
-            if abs(difference) > 2 { first = min(first, column); last = column }
+        differences.withUnsafeMutableBufferPointer { result in
+          for row in rows {
+            let a = (row + shift) * bins
+            let b = row * bins
+            var column = 0
+            while column < bins {
+              let difference = Int(old[a + column]) - Int(new[b + column])
+              if difference > 2 || difference < -2 { break }
+              column += 1
+            }
+            result[row - rows.lowerBound] = column
           }
-          if last >= 0, last < cap { left = max(left, last + 1) }
-          if first < bins, first >= bins - cap { right = min(right, first) }
         }
       }
     }
-    var result: [Range<Int>] = []
-    if left > 0 { result.append(left..<bins) }
-    if right < bins { result.append(0..<right) }
+    return differences
+  }
+
+  private func matchingColumns(_ differences: [Int]) -> [Range<Int>] {
+    let bins = binCount
+    let cap = scrollbarBinCap
+    guard bins > cap else { return [] }
+    var right = bins
+    for column in differences where column >= bins - cap { right = min(right, column) }
+    return right < bins ? [0..<right] : []
+  }
+
+  private func rowInformation(in next: RowSignatures, columns: Range<Int>) -> RowInformation {
+    let bins = binCount
+    if columns == 0..<bins { return RowInformation(hashes: next.hashes[0], informative: next.informative) }
+    var result = RowInformation(hashes: [UInt64](repeating: 0, count: frameHeight),
+      informative: [Bool](repeating: false, count: frameHeight))
+    next.values.withUnsafeBufferPointer { values in
+      result.hashes.withUnsafeMutableBufferPointer { hashes in
+        result.informative.withUnsafeMutableBufferPointer { informative in
+          for row in 0..<frameHeight {
+            var minimum = 255
+            var maximum = 0
+            var hash: UInt64 = 14_695_981_039_346_656_037
+            var index = row * bins + columns.lowerBound
+            let end = row * bins + columns.upperBound
+            while index < end {
+              let value = values[index]
+              minimum = min(minimum, Int(value))
+              maximum = max(maximum, Int(value))
+              hash = (hash ^ UInt64(value)) &* 1_099_511_628_211
+              index += 1
+            }
+            hashes[row] = hash
+            informative[row] = maximum - minimum >= 8
+          }
+        }
+      }
+    }
     return result
   }
 
-  private func informativeHash(_ row: Int, in next: RowSignatures, columns: Range<Int>) -> UInt64? {
-    if columns == 0..<binCount { return next.informative[row] ? next.hashes[0][row] : nil }
-    var minimum = 255
-    var maximum = 0
-    var hash: UInt64 = 14_695_981_039_346_656_037
-    for column in columns {
-      let value = next.values[row * binCount + column]
-      minimum = min(minimum, Int(value))
-      maximum = max(maximum, Int(value))
-      hash = (hash ^ UInt64(value)) &* 1_099_511_628_211
-    }
-    return maximum - minimum >= 8 ? hash : nil
-  }
-
   private func score(shift: Int, in next: RowSignatures, header: Int, trimmed: Int,
-                     columns: Range<Int>) -> (value: Double, header: Int, trimmed: Int)? {
+                     differences: [Int], columns: Range<Int>,
+                     information: (old: RowInformation, new: RowInformation)) -> (value: Double, header: Int, trimmed: Int)? {
     let end = frameHeight - trimmed - shift
-    let matches = (header..<end).map { rowsMatch($0 + shift, $0, in: next, columns: columns) }
+    guard end > header else { return nil }
+    let matches = differences.map { $0 >= columns.upperBound }
     var candidateHeader = header
-    var leadingMissed = false
-    while candidateHeader < end {
-      let matched = matches[candidateHeader - header]
-      if matched, informativeHash(candidateHeader, in: next, columns: columns) != nil { break }
-      if !matched { leadingMissed = true }
-      candidateHeader += 1
+    var cursor = header
+    while cursor < end {
+      let matched = matches[cursor - header]
+      if matched, information.new.informative[cursor] { break }
+      if !matched { candidateHeader = cursor + 1 }
+      cursor += 1
     }
-    if !leadingMissed || candidateHeader > frameHeight / 4 { candidateHeader = header }
-    var matched = 0
+    if candidateHeader - header > frameHeight / 8 { candidateHeader = header }
     var missed = 0
     var trailingMissed = 0
-    var distinctMatches: Set<UInt64> = []
     for row in candidateHeader..<end {
       if matches[row - header] {
-        matched += 1
         trailingMissed = 0
-        if let hash = informativeHash(row, in: next, columns: columns) { distinctMatches.insert(hash) }
       } else {
         missed += 1
         trailingMissed += 1
       }
     }
-    var candidateTrimmed = trimmed
-    var compared = end - candidateHeader
-    if missed > 0, trailingMissed == missed, missed <= frameHeight / 4 {
-      candidateTrimmed += missed
-      compared -= missed
-    }
+    let trailing = missed > 0 && trailingMissed == missed && missed <= frameHeight / 4 ? missed : 0
+    let candidateTrimmed = trimmed + trailing
+    let compared = end - trailing - candidateHeader
     let band = frameHeight - candidateHeader - candidateTrimmed
-    guard compared >= max(4, band / 3), distinctMatches.count >= min(4, compared) else { return nil }
-    return (Double(matched) / Double(compared), candidateHeader, candidateTrimmed)
+    let leading = candidateHeader - header
+    let overlapHeader = leading > 0 && cursor - header <= frameHeight / 8 ? cursor : candidateHeader
+    let overlapBand = frameHeight - overlapHeader - candidateTrimmed
+    guard leading + trailing <= frameHeight / 4, leading == 0 || trailing == 0,
+          compared >= max(4, band / 3),
+          end - trailing - overlapHeader >= max(4, overlapBand / 3) else { return nil }
+    var informativeOverlap = 0
+    var informativeMasked = 0
+    var informativeCompared = 0
+    var informativeMatched = 0
+    var unmaskedMatches = 0
+    var distinctMatches: Set<UInt64> = []
+    for row in header..<end {
+      let newInformative = information.new.informative[row]
+      let informative = newInformative || information.old.informative[row + shift]
+      if informative { informativeOverlap += 1 }
+      guard row >= candidateHeader, row < end - trailing else {
+        if informative { informativeMasked += 1 }
+        continue
+      }
+      if informative {
+        informativeCompared += 1
+        if matches[row - header] {
+          informativeMatched += 1
+          if newInformative { distinctMatches.insert(information.new.hashes[row]) }
+        }
+      }
+      if next.informative[row], differences[row - header] == binCount {
+        unmaskedMatches += 1
+      }
+    }
+    let changingHeaderBudget = leading > 0 && columns != 0..<binCount
+      && informativeMasked * 100 <= informativeOverlap * 43
+    guard informativeMasked * 4 <= informativeOverlap || changingHeaderBudget,
+          informativeCompared >= max(min(8, end - header), informativeOverlap / 3),
+          unmaskedMatches >= min(4, compared),
+          distinctMatches.count >= min(4, compared) else { return nil }
+    return (Double(informativeMatched) / Double(informativeCompared), candidateHeader, candidateTrimmed)
   }
 
   private func candidateShifts(in next: RowSignatures, header: Int, end: Int, maximumShift: Int,
@@ -339,24 +431,56 @@ nonisolated struct ScrollingScreenshotStitcher {
             && rowsMatch(frameHeight - footer - 1, frameHeight - footer - 1, in: keys) {
       footer += 1
     }
-    var trimmed = max(footerHeight, footer)
+    if footer > 0, footer < frameHeight {
+      var boundary = frameHeight - footer
+      while boundary < frameHeight,
+            rowsMatch(boundary, boundary - 1, in: signatures, previous: signatures)
+              || rowsMatch(boundary, boundary - 1, in: keys, previous: keys) {
+        boundary += 1
+      }
+      footer = frameHeight - boundary
+    }
+    var trimmed = max(footerHeight, footer, replacementTailHeight)
     let band = frameHeight - header - trimmed
     let minimumOverlap = max(4, band / 3)
     guard band > minimumOverlap else { return false }
     var bestShift = 0
     var bestHeader = header
     var bestTrimmed = trimmed
+    var bestColumns = 0..<binCount
+    var bestCorner = 0
     var bestScore = 0.0
     var runnerUp = 0.0
+    let fullInformation = (old: rowInformation(in: signatures, columns: 0..<binCount),
+      new: rowInformation(in: keys, columns: 0..<binCount))
+    var maskedInformation: [Int: (old: RowInformation, new: RowInformation)] = [:]
     for shift in candidateShifts(in: keys, header: header, end: frameHeight - trimmed,
                                  maximumShift: band - minimumOverlap) {
-      var candidate = score(shift: shift, in: keys, header: header, trimmed: trimmed, columns: 0..<binCount)
-      if candidate?.value != 1 || candidate?.header != header {
-        for columns in matchingColumns(in: keys, rows: header..<(frameHeight - trimmed - shift), shift: shift) {
-          if let masked = score(shift: shift, in: keys, header: header, trimmed: trimmed, columns: columns),
+      let corner = cornerFooter(in: keys, shift: shift, footer: footer)
+      let candidateTrimmed = max(trimmed, corner)
+      guard frameHeight - candidateTrimmed - shift > header else { continue }
+      let differences = rowDifferences(in: keys, rows: header..<(frameHeight - candidateTrimmed - shift), shift: shift)
+      var candidate = score(shift: shift, in: keys, header: header,
+                            trimmed: candidateTrimmed, differences: differences,
+                            columns: 0..<binCount, information: fullInformation)
+      var candidateColumns = 0..<binCount
+      if candidate?.value != 1 || candidate?.header != header || candidate?.trimmed != candidateTrimmed {
+        for columns in matchingColumns(differences) {
+          let information: (old: RowInformation, new: RowInformation)
+          if let cached = maskedInformation[columns.upperBound] { information = cached }
+          else {
+            information = (old: rowInformation(in: signatures, columns: columns),
+              new: rowInformation(in: keys, columns: columns))
+            maskedInformation[columns.upperBound] = information
+          }
+          if let masked = score(shift: shift, in: keys, header: header,
+                                trimmed: candidateTrimmed, differences: differences,
+                                columns: columns, information: information),
              masked.value > (candidate?.value ?? 0)
-              || (masked.value == candidate?.value && masked.header < (candidate?.header ?? header)) {
+              || (masked.value == candidate?.value && (masked.header < (candidate?.header ?? header)
+                || (masked.header == candidate?.header && masked.trimmed < (candidate?.trimmed ?? trimmed)))) {
             candidate = masked
+            candidateColumns = columns
           }
         }
       }
@@ -367,11 +491,23 @@ nonisolated struct ScrollingScreenshotStitcher {
         bestShift = shift
         bestHeader = candidate.header
         bestTrimmed = candidate.trimmed
+        bestColumns = candidateColumns
+        bestCorner = corner
       } else { runnerUp = max(runnerUp, candidate.value) }
     }
     guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return false }
-    trimmed = bestTrimmed
+    let previousColumns = outputColumns ?? 0..<binCount
+    let columns = max(previousColumns.lowerBound, bestColumns.lowerBound)..<min(
+      previousColumns.upperBound, bestColumns.upperBound)
+    guard columns.lowerBound == 0, binCount - columns.count <= scrollbarBinCap else { return false }
+    trimmed = max(bestTrimmed, footer)
     let start = max(bestHeader, frameHeight - trimmed - bestShift)
+    if footer > 0, height - trimmed + frameHeight - start > maximumHeight {
+      let movesWithBody = ((frameHeight - footer)..<frameHeight).allSatisfy {
+        rowsMatch($0, $0 - bestShift, in: keys, previous: keys)
+      }
+      if movesWithBody { footer = 0 }
+    }
     let contentCount = frameHeight - footer - start
     let count = min(contentCount, maximumHeight - (height - trimmed + footer))
     guard count > 0 else {
@@ -391,6 +527,8 @@ nonisolated struct ScrollingScreenshotStitcher {
       removedBytes -= removed
     }
     chunks.append(Array(rgba[(start * stride)..<((start + count) * stride)]))
+    outputColumns = columns
+    replacementTailHeight = max(replacementTailHeight, bestCorner)
     if footer > 0 { chunks.append(Array(rgba[((frameHeight - footer) * stride)..<rgba.count])) }
     height = height - trimmed + count + footer
     footerHeight = footer
@@ -440,16 +578,17 @@ extension ScrollingScreenshotStitcher {
     for chunk in chunks { data.append(contentsOf: chunk) }
     guard let provider = CGDataProvider(data: data as CFData) else { return nil }
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-    return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+    let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
       bitmapInfo: CGBitmapInfo(rawValue: format),
       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+    return image?.cropping(to: CGRect(x: outputPixelColumns.lowerBound, y: 0, width: imageWidth, height: height))
   }
 
   nonisolated func thumbnail(maximumWidth: Int = 264, maximumHeight: Int = 120) -> CGImage? {
     guard !chunks.isEmpty, maximumWidth > 0, maximumHeight > 0 else { return nil }
-    let scale = min(1, Double(maximumWidth) / Double(width), Double(maximumHeight) / Double(height))
-    let thumbnailWidth = max(1, Int(Double(width) * scale))
+    let scale = min(1, Double(maximumWidth) / Double(imageWidth), Double(maximumHeight) / Double(height))
+    let thumbnailWidth = max(1, Int(Double(imageWidth) * scale))
     let thumbnailHeight = max(1, Int(Double(height) * scale))
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     guard let context = CGContext(data: nil, width: thumbnailWidth, height: thumbnailHeight,
@@ -468,7 +607,9 @@ extension ScrollingScreenshotStitcher {
             shouldInterpolate: false, intent: .defaultIntent) else { return false }
         let top = Double(row) * Double(thumbnailHeight) / Double(height)
         let bottom = Double(row + rows) * Double(thumbnailHeight) / Double(height)
-        context.draw(source, in: CGRect(x: 0, y: Double(thumbnailHeight) - bottom,
+        guard let cropped = source.cropping(to: CGRect(x: outputPixelColumns.lowerBound, y: 0,
+          width: imageWidth, height: rows)) else { return false }
+        context.draw(cropped, in: CGRect(x: 0, y: Double(thumbnailHeight) - bottom,
           width: Double(thumbnailWidth), height: bottom - top))
         return true
       }
@@ -520,7 +661,7 @@ actor ScrollingScreenshotProcessor {
     let capped = stitcher!.capReached
     let thumbnail = needsPreview && (refreshPreview || capped) ? stitcher!.thumbnail() : nil
     if thumbnail != nil { needsPreview = false }
-    return Update(thumbnail: thumbnail, width: stitcher!.width, height: stitcher!.height,
+    return Update(thumbnail: thumbnail, width: stitcher!.imageWidth, height: stitcher!.height,
       capReached: capped, showSlowScrollHint: hintState.shouldShowSlowScrollHint,
       appendResult: stitcher!.appendResult)
   }

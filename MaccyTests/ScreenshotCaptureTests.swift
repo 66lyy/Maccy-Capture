@@ -7,6 +7,136 @@ import Testing
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Recorded sparse content rejects aliased jumps without losing rows and recovers nearby frames",
+        arguments: ["chat", "table", "safari-table"])
+  func scrollingSolidContentAliases(name: String) throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/Scrolling")
+    func image(_ suffix: String) throws -> CGImage {
+      let data = try Data(contentsOf: directory.appendingPathComponent("solid-\(name)-\(suffix).png"))
+      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+    }
+    let first = try image("before")
+    let nearby = try image("near")
+    let step = name == "table" ? 120 : 64
+    var stitcher = ScrollingScreenshotStitcher(width: 800, height: 800, maximumPixels: 800 * 4000)
+    #expect({ stitcher.append(first) }())
+    let original = stitcher.pixels
+    let rejected = stitcher.append(try image("jump"))
+    #expect(!rejected)
+    #expect(stitcher.height == 800)
+    #expect({ stitcher.pixels == original }())
+    let accepted = stitcher.append(nearby)
+    #expect(accepted)
+    #expect(stitcher.height == 800 + step)
+    var reference = ScrollingScreenshotStitcher(width: 800, height: 800, maximumPixels: 800 * 4000)
+    reference.append(nearby)
+    let expected = original + reference.pixels.suffix(step * 800 * 4)
+    #expect({ stitcher.pixels == expected }())
+  }
+
+  @Test("The article fixture documents a pixel-identical periodic overlap")
+  func scrollingPeriodicArticleOverlap() throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/Scrolling")
+    func pixels(_ suffix: String) throws -> [UInt8] {
+      let data = try Data(contentsOf: directory.appendingPathComponent("solid-article-\(suffix).png"))
+      return try scrollingImagePixels(#require(NSBitmapImageRep(data: data)?.cgImage))
+    }
+    let first = try pixels("before")
+    let jump = try pixels("jump")
+    let stride = 800 * 4
+    #expect(Array(first[(225 * stride)..<(800 * stride)]) == Array(jump[(3 * stride)..<(578 * stride)]))
+  }
+
+  @Test("Neutral rows after a changing header stay unmasked and informative removal stays bounded",
+        arguments: [0, 100, 110])
+  func scrollingHeaderNeutralRows(informativeRows: Int) {
+    let width = 256
+    let frameHeight = 800
+    let shift = 128
+    let stride = width * 4
+    let content = scrollingSolidAreaPage(width: width, height: 1400, band: 0..<0)
+    var page = [UInt8](repeating: 255, count: (frameHeight + shift) * stride)
+    let body = (shift + 200)..<(shift + 200 + informativeRows)
+    page.replaceSubrange((body.lowerBound * stride)..<(body.upperBound * stride),
+      with: content[(body.lowerBound * stride)..<(body.upperBound * stride)])
+    func frame(_ offset: Int) -> [UInt8] {
+      var bytes = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      let source = offset == 0 ? 1000 : 1200
+      bytes.replaceSubrange(0..<(80 * stride), with: content[(source * stride)..<((source + 80) * stride)])
+      for row in (offset == 0 ? 100..<120 : 140..<160) {
+        for column in (width - 12)..<width {
+          let index = (row * width + column) * 4
+          bytes[index] = 75; bytes[index + 1] = 75; bytes[index + 2] = 75
+        }
+      }
+      return bytes
+    }
+    let first = frame(0)
+    let next = frame(shift)
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 2000)
+    #expect({ stitcher.append(rgba: first) }())
+    let accepted = stitcher.append(rgba: next)
+    #expect(accepted == (informativeRows == 110))
+    #expect(stitcher.height == frameHeight + (accepted ? shift : 0))
+    #expect({ stitcher.pixels == (accepted ? first + Array(next.suffix(shift * stride)) : first) }())
+  }
+
+  @Test("Recorded full-window Safari headers preserve neutral body rows and exact output",
+        arguments: ["bands", "text"])
+  func scrollingLiveSafariHeader(name: String) throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/Scrolling")
+    func image(_ suffix: String) throws -> CGImage {
+      let data = try Data(contentsOf: directory.appendingPathComponent("live-safari-\(name)-\(suffix).png"))
+      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+    }
+    let first = try image("before")
+    let next = try image("after")
+    let shift = name == "bands" ? 169 : 320
+    let width = first.width
+    let height = first.height
+    let stride = width * 4
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: height, maximumPixels: 100_000_000)
+    #expect({ stitcher.append(first) }())
+    #expect({ stitcher.append(next) }())
+    #expect(stitcher.height == height + shift)
+    let expected = Array(try scrollingImagePixels(first).prefix((height - 126) * stride))
+      + Array(try scrollingImagePixels(next).suffix((shift + 126) * stride))
+    #expect({ stitcher.pixels == expected }())
+    let output = try #require(stitcher.image)
+    var cropped = [UInt8]()
+    cropped.reserveCapacity(output.width * output.height * 4)
+    for row in 0..<output.height {
+      cropped.append(contentsOf: expected[(row * stride)..<(row * stride + output.width * 4)])
+    }
+    #expect(try scrollingImagePixels(output) == cropped)
+  }
+
+  @Test("The height cap does not replace real body rows with an ambiguous plain footer")
+  func scrollingSolidFooterAtCap() {
+    let width = 256
+    let stride = width * 4
+    let source = scrollingTextContent(width: width, height: 40 * 19)
+    var page = [UInt8](repeating: 255, count: 1200 * stride)
+    for row in 0..<1200 where row % 32 < 12 {
+      let start = (row / 32 * 19 + row % 32) * stride
+      page.replaceSubrange((row * stride)..<((row + 1) * stride), with: source[start..<(start + stride)])
+    }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: 800, maximumPixels: width * 1000)
+    for offset in [0, 64, 128, 192, 256] {
+      let frame = Array(page[(offset * stride)..<((offset + 800) * stride)])
+      #expect({ stitcher.append(rgba: frame) }())
+      let expected = Array(page.prefix(min(800 + offset, 1000) * stride))
+      #expect({ stitcher.pixels == expected }())
+    }
+    #expect(stitcher.capReached)
+    let original = stitcher.pixels
+    #expect({ !stitcher.append(rgba: Array(page.prefix(800 * stride))) }())
+    #expect({ stitcher.pixels == original }())
+  }
+
   @Test("Recorded Safari toolbar and Chrome scrollbar frames retain exact output pixels",
         arguments: ["safari-toolbar", "chrome-scrollbar"])
   func scrollingRecordedBrowserUI(name: String) throws {
@@ -40,14 +170,95 @@ struct ScreenshotCaptureTests {
     #expect({ stitcher.append(first) }())
     #expect({ stitcher.append(next) }())
     #expect(stitcher.height == frameHeight + shift)
-    let bottomChrome = 96
+    let bottomChrome = 126
     let expected = Array(oldPixels.prefix((frameHeight - bottomChrome) * width * 4))
       + Array(nextPixels.suffix((shift + bottomChrome) * width * 4))
     #expect({ stitcher.pixels == expected }())
+    let output = try #require(stitcher.image)
+    #expect(output.width <= width && output.width >= width - width / 8 - 1)
+    if name == "chrome-scrollbar" { #expect(output.width < width) }
+    let crop = width - output.width
+    let expectedImage = expected.enumerated().filter { $0.offset % (width * 4) < (width - crop) * 4 }.map(\.element)
+    #expect(try scrollingImagePixels(output) == expectedImage)
   }
 
-  @Test("Changing edge thumbs and header colours preserve body matching and unmodified output",
-        arguments: ["left", "right", "header", "both", "middle", "scattered", "wideEdge", "tallHeader",
+  private func scrollingImagePixels(_ image: CGImage) throws -> [UInt8] {
+    var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+    try bytes.withUnsafeMutableBytes { buffer in
+      let context = try #require(CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
+        bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+      context.setBlendMode(.copy)
+      context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+    return bytes
+  }
+
+  @Test("Forty bands retain exact pixels across thirteen joins with rounded corners, shading and a moving thumb")
+  func scrollingRoundedCorners() throws {
+    let width = 512
+    let frameHeight = 800
+    let stride = width * 4
+    var page = scrollingTextContent(width: width, height: 3200)
+    for row in 0..<3200 {
+      for column in 0..<width where page[(row * width + column) * 4] == 255 {
+        let index = (row * width + column) * 4
+        let value = UInt8(130 + row / 80 * 3)
+        page[index] = value; page[index + 1] = value; page[index + 2] = value
+      }
+    }
+    func shade(_ bytes: inout [UInt8], height: Int) {
+      for row in (height - 35)..<height {
+        let alpha = (row - height + 36) * 4
+        for column in 0..<width {
+          let index = (row * width + column) * 4
+          for channel in 0..<3 {
+            bytes[index + channel] = UInt8((Int(bytes[index + channel]) * (255 - alpha) + 24 * alpha) / 255)
+          }
+        }
+      }
+    }
+    func corners(_ bytes: inout [UInt8], height: Int, top: Bool, bottom: Bool) {
+      for row in 0..<height where (top && row < 20) || (bottom && row >= height - 20) {
+        let dy = row < 20 ? Double(row) + 0.5 - 20 : Double(height - row) - 0.5 - 20
+        for column in 0..<width where column < 20 || column >= width - 20 {
+          let dx = column < 20 ? Double(column) + 0.5 - 20 : Double(width - column) - 0.5 - 20
+          if dx * dx + dy * dy > 400 {
+            let index = (row * width + column) * 4
+            bytes[index] = 72; bytes[index + 1] = 72; bytes[index + 2] = 72
+          }
+        }
+      }
+    }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 4000)
+    for offset in Array(Swift.stride(from: 0, through: 2304, by: 192)) + [2400] {
+      var frame = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      for row in (70 + offset / 4)..<(160 + offset / 4) {
+        for column in (width - 12)..<width {
+          let index = (row * width + column) * 4
+          frame[index] = 110; frame[index + 1] = 110; frame[index + 2] = 110
+        }
+      }
+      shade(&frame, height: frameHeight)
+      corners(&frame, height: frameHeight, top: true, bottom: true)
+      #expect({ stitcher.append(rgba: frame) }())
+      #expect(stitcher.height == frameHeight + offset)
+      if offset == 0 { continue }
+      let image = try #require(stitcher.image)
+      #expect(image.width == width - 12)
+      var expected = Array(page.prefix((frameHeight + offset) * stride))
+      shade(&expected, height: frameHeight + offset)
+      corners(&expected, height: frameHeight + offset, top: true, bottom: true)
+      let cropped = expected.enumerated().filter { $0.offset % stride < image.width * 4 }.map(\.element)
+      #expect(try scrollingImagePixels(image) == cropped)
+      let preview = try #require(stitcher.thumbnail(maximumWidth: image.width, maximumHeight: image.height))
+      #expect(try scrollingImagePixels(preview) == cropped)
+    }
+    #expect(stitcher.height == 3200)
+  }
+
+  @Test("Narrow right thumbs and short headers match while other edge and body changes reject",
+        arguments: ["left", "right", "header", "both", "middle", "scattered", "wideEdge", "wideScrollbar", "tallHeader",
                     "shortOverlap", "twoEdges"])
   func scrollingChangingStrips(mode: String) {
     let width = 256
@@ -55,7 +266,7 @@ struct ScreenshotCaptureTests {
     let shift = mode == "shortOverlap" ? 500 : 128
     let stride = width * 4
     let header = mode == "shortOverlap" ? 160
-      : ["header", "both", "tallHeader"].contains(mode) ? (mode == "tallHeader" ? 240 : 80) : 0
+      : ["header", "both", "tallHeader"].contains(mode) ? (mode == "tallHeader" ? 120 : 80) : 0
     let page = scrollingTextContent(width: width, height: frameHeight + shift)
     func frame(_ offset: Int) -> [UInt8] {
       var bytes = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
@@ -63,8 +274,8 @@ struct ScreenshotCaptureTests {
         for column in 0..<width {
           var value: UInt8?
           if row < header { value = offset == 0 ? 40 : 200 }
-          if ["left", "right", "both", "wideEdge", "twoEdges"].contains(mode) {
-            let thickness = mode == "wideEdge" ? 40 : 12
+          if ["left", "right", "both", "wideEdge", "wideScrollbar", "twoEdges"].contains(mode) {
+            let thickness = mode == "wideEdge" ? 40 : mode == "wideScrollbar" ? 20 : 12
             let atEdge = mode == "twoEdges" ? column < thickness || column >= width - thickness
               : mode == "left" ? column < thickness : column >= width - thickness
             if atEdge, (offset == 0 ? 100..<200 : 120..<220).contains(row) {
@@ -89,7 +300,7 @@ struct ScreenshotCaptureTests {
     var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 2000)
     #expect({ stitcher.append(rgba: first) }())
     let accepted = stitcher.append(rgba: next)
-    let shouldAccept = ["left", "right", "header", "both"].contains(mode)
+    let shouldAccept = ["right", "header", "both"].contains(mode)
     #expect(accepted == shouldAccept)
     #expect(stitcher.height == (shouldAccept ? frameHeight + shift : frameHeight))
     let expected = shouldAccept ? first + Array(next.suffix(shift * stride)) : first
