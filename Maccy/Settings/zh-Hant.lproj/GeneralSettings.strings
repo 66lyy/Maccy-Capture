@@ -1,4 +1,5 @@
-"ScreenshotLongSlowScroll" = "請慢一點滾動";
+"ScreenshotLongSlowScroll" = "太快了，請慢一點";
+"ScreenshotLongLostTrack" = "跟丟了，請往回捲一點";
 "Title" = "一般";
 "LaunchAtLogin" = "登入時啟動";
 "CheckForUpdates" = "自動檢查更新";

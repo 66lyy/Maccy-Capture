@@ -11,6 +11,155 @@ private extension ScrollingScreenshotStitcher {
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Inferred leading and trailing misses require informative body confirmation",
+        arguments: [false, true])
+  func scrollingExcludedBandsRequireBody(trailing: Bool) {
+    let stride = 8 * 4
+    let first = scrollingFrame(0)
+    var next = scrollingFrame(6)
+    let rows = trailing ? 16..<18 : 0..<2
+    let changed = scrollingFrame(100)
+    next.replaceSubrange((rows.lowerBound * stride)..<(rows.upperBound * stride),
+      with: changed.prefix(2 * stride))
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
+    #expect({ stitcher.append(rgba: first) }())
+    #expect({ stitcher.append(rgba: next) }())
+    #expect(stitcher.matchedShift == 6)
+    #expect(stitcher.height == 30)
+    let trim = trailing ? 2 : 0
+    #expect({ stitcher.pixels == Array(first.prefix((24 - trim) * stride))
+      + Array(next.suffix((6 + trim) * stride)) }())
+
+    var unsupported = next
+    unsupported.replaceSubrange((2 * stride)..<(16 * stride),
+      with: [UInt8](repeating: 255, count: 14 * stride))
+    var rejected = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 100)
+    #expect({ rejected.append(rgba: first) }())
+    #expect({ !rejected.append(rgba: unsupported) }())
+    #expect({ rejected.pixels == first }())
+  }
+
+  @Test("Candidate overflow retains the strongest thirty-two anchor vote totals deterministically")
+  func scrollingCandidateVoteRanking() {
+    #expect(ScrollingScreenshotStitcher.rankedCandidateShifts([:]).isEmpty)
+    #expect(ScrollingScreenshotStitcher.rankedCandidateShifts([7: 1, 19: 2]) == [7, 19])
+    var votes = Dictionary(uniqueKeysWithValues: (1...64).map { ($0, 1) })
+    votes[60] = 100
+    votes[61] = 99
+    let expected = Set(Array(1...30) + [60, 61])
+    #expect(ScrollingScreenshotStitcher.rankedCandidateShifts(votes) == expected)
+    #expect(ScrollingScreenshotStitcher.rankedCandidateShifts(
+      Dictionary(uniqueKeysWithValues: votes.sorted { $0.key > $1.key })) == expected)
+  }
+
+  @Test("Removing a scrollbar does not reveal its stale pixels in already stored rows")
+  func scrollingHistoricalScrollbarCrop() throws {
+    let width = 800, frameHeight = 800, stride = width * 4
+    let page = scrollingTextContent(width: width, height: 1280)
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight,
+      maximumPixels: width * 2000)
+    for offset in [0, 160, 320, 480] {
+      var frame = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      if offset < 320 {
+        for row in (70 + offset / 4)..<(160 + offset / 4) {
+          for column in (width - 12)..<width {
+            let index = (row * width + column) * 4
+            frame[index] = 110; frame[index + 1] = 110; frame[index + 2] = 110
+          }
+        }
+      }
+      #expect({ stitcher.append(rgba: frame) }())
+      #expect(stitcher.height == frameHeight + offset)
+    }
+    let image = try #require(stitcher.image)
+    #expect(image.width < width)
+    #expect(image.width >= width - 20)
+    let expected = page.enumerated().filter { $0.offset % stride < image.width * 4 }.map(\.element)
+    #expect(try scrollingImagePixels(image) == expected)
+    #expect({ stitcher.pixels != page }())
+    #expect({ Array(stitcher.pixels.suffix(frameHeight * stride)) == Array(page.suffix(frameHeight * stride)) }())
+  }
+
+  @Test("Static corner replacement retains exact pixels across short and tall edge overlays",
+        arguments: [3, 24, 80, 140])
+  func scrollingCornerReplacementDepth(depth: Int) throws {
+    let width = 800, frameHeight = 800, stride = width * 4
+    let page = scrollingTextContent(width: width, height: 1120)
+    func edges(_ bytes: inout [UInt8], height: Int) {
+      for row in (height - depth)..<height {
+        for column in Array(0..<16) + Array((width - 16)..<width) {
+          let index = (row * width + column) * 4
+          bytes[index] = 72; bytes[index + 1] = 72; bytes[index + 2] = 72
+        }
+      }
+    }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight,
+      maximumPixels: width * 2000)
+    for offset in [0, 160, 320] {
+      var frame = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      edges(&frame, height: frameHeight)
+      #expect({ stitcher.append(rgba: frame) }())
+      #expect(stitcher.height == frameHeight + offset)
+      var expected = Array(page.prefix((frameHeight + offset) * stride))
+      edges(&expected, height: frameHeight + offset)
+      #expect({ stitcher.pixels == expected }())
+    }
+  }
+
+  @Test("Corner replacement includes faint shading below signature quantization")
+  func scrollingFaintCornerShading() {
+    let width = 128, frameHeight = 800, stride = width * 4
+    var page = [UInt8](repeating: 255, count: stride * 960)
+    for row in 0..<960 {
+      let seed = UInt64(row + 1) &* 0x9E3779B97F4A7C15
+      for column in 0..<32 {
+        let index = row * stride + column * 4
+        page[index] = UInt8(truncatingIfNeeded: seed >> 32)
+        page[index + 1] = UInt8(truncatingIfNeeded: seed >> 40)
+        page[index + 2] = UInt8(truncatingIfNeeded: seed >> 48)
+      }
+    }
+    func shade(_ bytes: inout [UInt8], height: Int) {
+      for row in (height - 20)..<height {
+        for column in 64..<96 {
+          let index = row * stride + column * 4
+          bytes[index] = 254; bytes[index + 1] = 254; bytes[index + 2] = 254
+        }
+      }
+      for row in (height - 6)..<height {
+        for column in Array(0..<16) + Array(112..<128) {
+          let index = row * stride + column * 4
+          bytes[index] = 72; bytes[index + 1] = 72; bytes[index + 2] = 72
+        }
+      }
+    }
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight,
+      maximumPixels: width * 2000)
+    for offset in [0, 160] {
+      var frame = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      shade(&frame, height: frameHeight)
+      #expect({ stitcher.append(rgba: frame) }())
+      var expected = Array(page.prefix((frameHeight + offset) * stride))
+      shade(&expected, height: frameHeight + offset)
+      #expect(stitcher.height == frameHeight + offset)
+      #expect({ stitcher.pixels == expected }())
+    }
+  }
+
+  @Test("Warning thresholds use pixel shifts at both backing scales", arguments: [1, 2])
+  func scrollingWarningPixelUnits(scale: Int) {
+    var hint = ScrollingScreenshotHintState()
+    hint.record(.appended, shift: 40 * scale, maximumShift: 100 * scale)
+    #expect(hint.warning == .normal)
+    hint.record(.appended, shift: 86 * scale, maximumShift: 100 * scale)
+    #expect(hint.warning == .tooFast)
+    hint.record(.unmatched)
+    hint.record(.unmatched)
+    #expect(hint.warning == .lostTrack)
+    hint.record(.reanchored)
+    #expect(hint.warning == .normal)
+  }
+
   @Test("The scrolling thumbnail and PNG retain the first frame's Display P3 profile")
   func scrollingWideGamutExport() async throws {
     let space = try #require(CGColorSpace(name: CGColorSpace.displayP3))
@@ -25,12 +174,93 @@ struct ScreenshotCaptureTests {
     let processor = ScrollingScreenshotProcessor()
     let result = try await processor.append(frame, refreshPreview: true, maximumPixels: 8 * 48)
     let thumbnail = try #require(result.thumbnail)
-    let data = try #require(await processor.pngData())
+    let output = try #require(await processor.export())
+    let data = output.data
     let decoded = try ScreenshotCaptureSession.ValidatedImage.validate(data).image
     for image in [thumbnail, decoded] {
       #expect(image.colorSpace?.isWideGamutRGB == true)
       #expect(ScreenshotPixelLoupe.sample(image, at: .zero)?.hex == "#33CC66")
     }
+  }
+
+  @Test("Tail removal rejects abnormal trims without indexing empty chunks or changing stored pixels")
+  func scrollingEmptyTailRemoval() {
+    for initial: [[UInt8]] in [[], [[]], [[1, 2], [], [3, 4, 5]]] {
+      for count in [-1, Int.max] {
+        var chunks = initial
+        #expect(!ScrollingScreenshotStitcher.removeTail(byteCount: count, from: &chunks))
+        #expect(chunks == initial)
+      }
+      var chunks = initial
+      #expect(ScrollingScreenshotStitcher.removeTail(byteCount: 0, from: &chunks))
+      #expect(chunks == initial)
+    }
+    var chunks: [[UInt8]] = [[1, 2], [], [3, 4, 5]]
+    #expect(ScrollingScreenshotStitcher.removeTail(byteCount: 4, from: &chunks))
+    #expect(chunks == [[1]])
+    #expect(ScrollingScreenshotStitcher.removeTail(byteCount: 1, from: &chunks))
+    #expect(chunks.isEmpty)
+    #expect(!ScrollingScreenshotStitcher.removeTail(byteCount: 1, from: &chunks))
+    #expect(chunks.isEmpty)
+  }
+
+  @Test("Low-contrast browser text provides anchors without changing exported pixels",
+        arguments: ["chrome-dim", "chrome-low", "safari-dim", "safari-low"])
+  func scrollingLowContrast(name: String) throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/Scrolling")
+    func image(_ suffix: String) throws -> CGImage {
+      let data = try Data(contentsOf: directory.appendingPathComponent("contrast-\(name)-\(suffix).png"))
+      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+    }
+    let first = try image("start")
+    let next = try image("next")
+    var stitcher = ScrollingScreenshotStitcher(width: first.width, height: first.height,
+      maximumPixels: 100_000_000)
+    #expect({ stitcher.append(first) }())
+    #expect({ stitcher.append(next) }())
+    #expect(stitcher.height == first.height + 160)
+    #expect(stitcher.imageWidth == first.width)
+    let expected = try scrollingImagePixels(first) + scrollingImagePixels(next).suffix(160 * first.width * 4)
+    #expect({ stitcher.pixels == expected }())
+    #expect({ !stitcher.append(next) }())
+    #expect(stitcher.appendResult == .unchanged)
+    #expect({ !stitcher.append(rgba: []) }())
+    #expect(stitcher.appendResult == .invalid)
+    #expect({ stitcher.pixels == expected }())
+  }
+
+  @Test("A disappearing floating bar releases its replacement tail and restores the full match range",
+        arguments: ["chrome", "safari"])
+  func scrollingDisappearingTail(browser: String) throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/Scrolling")
+    func image(_ y: Int) throws -> CGImage {
+      let data = try Data(contentsOf: directory.appendingPathComponent("tail-\(browser)-\(y).png"))
+      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+    }
+    let first = try image(0)
+    let last = try image(960)
+    var stitcher = ScrollingScreenshotStitcher(width: first.width, height: first.height,
+      maximumPixels: 100_000_000)
+    var compressed = 0
+    var previousPixels: [UInt8] = []
+    for y in [0, 160, 320, 480, 640, 800, 960] {
+      let frame = try image(y)
+      let pixels = try scrollingImagePixels(frame)
+      let previousHeight = stitcher.height
+      let appended = stitcher.append(frame)
+      #expect(appended == (pixels != previousPixels))
+      #expect(stitcher.height == (pixels == previousPixels ? previousHeight : first.height + y))
+      previousPixels = pixels
+      if y == 800 { compressed = stitcher.maximumMatchableShift }
+    }
+    #expect(stitcher.maximumMatchableShift > compressed)
+    #expect(stitcher.maximumMatchableShift >= 520)
+    let expected = try scrollingImagePixels(first)
+      + Array(scrollingImagePixels(image(800)).prefix(160 * first.width * 4))
+      + scrollingImagePixels(last)
+    #expect({ stitcher.pixels == expected }())
   }
 
   @Test("Recorded sparse content rejects aliased jumps without losing rows and recovers nearby frames",
@@ -557,6 +787,116 @@ struct ScreenshotCaptureTests {
     #expect(!state.shouldShowSlowScrollHint)
   }
 
+  @Test("Speed warnings require risky successful shifts, with strict thresholds and calm-frame hysteresis")
+  func scrollingSpeedWarning() {
+    var state = ScrollingScreenshotHintState()
+    for shift in [0, 8, 21, 49, 50, 70, 70] {
+      state.record(.appended, shift: shift, maximumShift: 100)
+      #expect(state.warning == .normal)
+    }
+    state.record(.appended, shift: 71, maximumShift: 100)
+    #expect(state.warning == .normal)
+    state.record(.appended, shift: 71, maximumShift: 100)
+    #expect(state.warning == .tooFast)
+    state.record(.appended, shift: 49, maximumShift: 100)
+    state.record(.appended, shift: 49, maximumShift: 100)
+    #expect(state.warning == .tooFast)
+    state.record(.appended, shift: 49, maximumShift: 100)
+    #expect(state.warning == .normal)
+    state.record(.appended, shift: 85, maximumShift: 100)
+    #expect(state.warning == .normal)
+    state.record(.unchanged)
+    state.record(.appended, shift: 86, maximumShift: 100)
+    #expect(state.warning == .tooFast)
+    state.record(.unchanged, now: .seconds(2))
+    state.record(.unchanged, now: .milliseconds(2999))
+    #expect(state.warning == .tooFast)
+    state.record(.unchanged, now: .seconds(3))
+    #expect(state.warning == .normal)
+    state.record(.appended, shift: nil, maximumShift: 0)
+    state.record(.invalid, shift: 100, maximumShift: 100)
+    #expect(state.warning == .normal)
+  }
+
+  @Test("Lost track takes precedence over speed and survives idle time until re-anchoring")
+  func scrollingWarningPrecedence() {
+    var state = ScrollingScreenshotHintState()
+    state.record(.appended, shift: 90, maximumShift: 100)
+    #expect(state.warning == .tooFast)
+    state.record(.unmatched)
+    state.record(.unmatched)
+    #expect(state.warning == .lostTrack)
+    state.record(.unchanged, now: .seconds(1))
+    state.record(.unchanged, now: .seconds(5))
+    state.record(.upward)
+    #expect(state.warning == .lostTrack)
+    state.record(.reanchored)
+    #expect(state.warning == .normal)
+  }
+
+  @Test("Accepted shift and candidate-search limit are exposed without stale values on failures")
+  func scrollingShiftExposure() {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 200)
+    stitcher.append(rgba: scrollingFrame(0))
+    #expect(stitcher.matchedShift == nil)
+    #expect(stitcher.maximumMatchableShift == 16)
+    stitcher.append(rgba: scrollingFrame(6))
+    #expect(stitcher.matchedShift == 6)
+    #expect(stitcher.maximumMatchableShift == 16)
+    stitcher.append(rgba: scrollingFrame(6))
+    #expect(stitcher.matchedShift == nil)
+    stitcher.append(rgba: [])
+    #expect(stitcher.matchedShift == nil)
+    #expect(stitcher.appendResult == .invalid)
+    stitcher.append(rgba: scrollingFrame(90))
+    #expect(stitcher.matchedShift == nil)
+  }
+
+  @Test("Loss freezes the canvas; small and large scroll-backs re-anchor without rewriting stored rows",
+        arguments: [12, 66])
+  func scrollingReanchor(offset: Int) {
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 300)
+    var truth = scrollingFrame(0)
+    for start in stride(from: 0, through: 72, by: 6) {
+      #expect({ stitcher.append(rgba: scrollingFrame(start)) }())
+      if start > 0 { truth += scrollingFrame(start).suffix(6 * 8 * 4) }
+    }
+    stitcher.append(rgba: scrollingFrame(120))
+    stitcher.append(rgba: scrollingFrame(150))
+    #expect(stitcher.isLost)
+    #expect({ stitcher.pixels == truth }())
+    #expect({ !stitcher.append(rgba: scrollingFrame(offset)) }())
+    #expect(stitcher.appendResult == .reanchored)
+    #expect(!stitcher.isLost)
+    #expect({ stitcher.pixels == truth }())
+    for start in stride(from: offset + 6, through: 90, by: 6) {
+      stitcher.append(rgba: scrollingFrame(start))
+      if start > 72 { truth += scrollingFrame(start).suffix(6 * 8 * 4) }
+      #expect({ stitcher.pixels == truth }())
+    }
+    #expect(stitcher.height == 114)
+  }
+
+  @Test("Repeated look-alike positions and empty frames cannot re-anchor a lost capture")
+  func scrollingAmbiguousReanchor() {
+    func frame(_ start: Int) -> [UInt8] {
+      (start..<(start + 24)).flatMap { row in
+        Array(scrollingFrame((72..<96).contains(row) ? row - 72 : row).prefix(8 * 4))
+      }
+    }
+    var stitcher = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 8 * 300)
+    for start in stride(from: 0, through: 72, by: 6) { stitcher.append(rgba: frame(start)) }
+    let original = stitcher.pixels
+    stitcher.append(rgba: frame(150))
+    stitcher.append(rgba: frame(180))
+    #expect(stitcher.isLost)
+    stitcher.append(rgba: frame(0))
+    #expect(stitcher.isLost)
+    stitcher.append(rgba: [UInt8](repeating: 255, count: 8 * 24 * 4))
+    #expect(stitcher.isLost)
+    #expect({ stitcher.pixels == original }())
+  }
+
   @Test("Processor reports match failures and hint recovery even without a refreshed thumbnail")
   func scrollingProcessorHint() async throws {
     func frame(_ start: Int) throws -> CGImage {
@@ -580,10 +920,13 @@ struct ScreenshotCaptureTests {
     #expect(second.thumbnail == nil)
     #expect(second.height == 24)
     let recovered = try await processor.append(frame(18), refreshPreview: false, maximumPixels: 8 * 100)
-    #expect(recovered.appendResult == .appended)
+    #expect(recovered.appendResult == .reanchored)
     #expect(!recovered.showSlowScrollHint)
     #expect(recovered.thumbnail == nil)
-    #expect(recovered.height == 30)
+    #expect(recovered.height == 24)
+    let resumed = try await processor.append(frame(20), refreshPreview: false, maximumPixels: 8 * 100)
+    #expect(resumed.appendResult == .appended)
+    #expect(resumed.height == 32)
   }
 
   @Test("Changing the long screenshot hint does not resize the panel")
@@ -591,12 +934,12 @@ struct ScreenshotCaptureTests {
     let panel = ScrollingScreenshotPanel(beside: NSRect(x: 20, y: 20, width: 400, height: 400),
       bounds: NSRect(x: 0, y: 0, width: 1200, height: 900), level: 0)
     let size = panel.frame.size
-    panel.updateHint(capped: false, showSlowScrollHint: true)
-    panel.contentView?.layoutSubtreeIfNeeded()
-    #expect(panel.frame.size == size)
-    panel.updateHint(capped: false, showSlowScrollHint: false)
-    panel.contentView?.layoutSubtreeIfNeeded()
-    #expect(panel.frame.size == size)
+    for warning: ScrollingScreenshotHintState.Warning in [.tooFast, .lostTrack, .normal] {
+      panel.updateHint(capped: false, warning: warning)
+      panel.contentView?.layoutSubtreeIfNeeded()
+      #expect(panel.frame.size == size)
+      #expect(panel.contentView?.layer?.borderWidth == (warning == .normal ? 0 : 2))
+    }
     panel.close()
   }
 

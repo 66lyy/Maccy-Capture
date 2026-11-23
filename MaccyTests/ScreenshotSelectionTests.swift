@@ -59,6 +59,86 @@ struct ScreenshotSelectionTests {
     #expect(ScrollingScreenshotPanel.placement(beside: bounds, bounds: bounds, size: .zero) == .zero)
   }
 
+  @Test("Observed scrolling removes the fixed wait, while quiet captures retain their idle backoff")
+  func scrollingActivityCadence() {
+    var cadence = ScrollingScreenshotCadence()
+    for result: ScrollingScreenshotStitcher.AppendResult in [.appended, .unchanged, .unmatched, .reanchored] {
+      #expect(cadence.delay(after: result, elapsed: .milliseconds(1), scrollIsActive: true) == .zero)
+    }
+    for _ in 0..<4 { _ = cadence.delay(after: .unchanged, elapsed: .zero) }
+    #expect(cadence.delay(after: .unchanged, elapsed: .milliseconds(20)) == .milliseconds(130))
+  }
+
+  @Test("Activity monitors only observe events, tolerate missing global monitoring and remove tokens once")
+  func scrollingActivityMonitor() throws {
+    var local: ((NSEvent) -> NSEvent?)?
+    var global: ((NSEvent) -> Void)?
+    var removed = 0
+    let monitor = ScrollingScreenshotActivityMonitor(addLocal: { local = $0; return NSObject() },
+      addGlobal: { global = $0; return NSObject() }, remove: { _ in removed += 1 })
+    var observed = 0
+    monitor.start { _ in observed += 1 }
+    let cgEvent = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+      wheelCount: 2, wheel1: -40, wheel2: 17, wheel3: 0))
+    let event = try #require(NSEvent(cgEvent: cgEvent))
+    #expect(local?(event) === event)
+    global?(event)
+    #expect(observed == 2)
+    #expect(cgEvent.getIntegerValueField(.scrollWheelEventPointDeltaAxis1) == -40)
+    #expect(cgEvent.getIntegerValueField(.scrollWheelEventPointDeltaAxis2) == 17)
+    monitor.stop()
+    monitor.stop()
+    #expect(removed == 2)
+    let unavailable = ScrollingScreenshotActivityMonitor(addLocal: { _ in nil },
+      addGlobal: { _ in nil }, remove: { _ in Issue.record("Removed a nonexistent monitor") })
+    unavailable.start { _ in }
+    unavailable.stop()
+  }
+
+  @Test("Long capture removes its activity monitors on copy, pin, Cancel, Escape and capture errors",
+        arguments: ["copy", "pin", "cancel", "escape", "error"])
+  func scrollingMonitorLifecycle(action: String) async throws {
+    var installed = 0
+    var removed = 0
+    let monitor = ScrollingScreenshotActivityMonitor(addLocal: { _ in installed += 1; return NSObject() },
+      addGlobal: { _ in installed += 1; return NSObject() }, remove: { _ in removed += 1 })
+    let controller = ScreenshotSelectionController(displays: { [Self.displays[0]] },
+      presentWindow: { _, _ in }, captureRegion: { _, rectangle, _ in
+        if action == "error" { throw ScreenshotCaptureSession.Failure.captureFailed }
+        return NSImage(size: rectangle.size, flipped: false) { bounds in
+          NSColor.white.setFill(); bounds.fill(); return true
+        }
+      }, freezeDisplays: { _ in [] }, listWindows: { [] }, makeScrollMonitor: { monitor })
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 20))
+    window.selectionView.endSelection(at: NSPoint(x: 220, y: 180))
+    window.onLongScreenshot?()
+    #expect(installed == 2)
+    if action != "error" {
+      for _ in 0..<100 {
+        if window.scrollingPanel?.image != nil { break }
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      let panel = try #require(window.scrollingPanel)
+      if action == "copy" || action == "pin" { panel.onFinish?(action == "pin") }
+      else if action == "cancel" { panel.onCancel?() }
+      else {
+        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+          timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: "\u{1B}",
+          charactersIgnoringModifiers: "\u{1B}", isARepeat: false, keyCode: 53))
+        panel.keyDown(with: event)
+      }
+    }
+    _ = try await task.value
+    #expect(removed == 2)
+    #expect(controller.windows.isEmpty)
+    controller.cancel()
+    #expect(removed == 2)
+  }
+
   @Test("Panel non-control areas pass input through without event posting and buttons remain clickable")
   func scrollingPanelWheel() throws {
     let panel = ScrollingScreenshotPanel(beside: .zero,

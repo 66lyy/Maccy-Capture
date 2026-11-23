@@ -6,7 +6,7 @@ import CoreGraphics
 
 nonisolated struct ScrollingScreenshotStitcher {
   enum AppendResult: Sendable {
-    case appended, unchanged, upward, unmatched, capped, invalid
+    case appended, reanchored, unchanged, upward, unmatched, capped, invalid
   }
 
   let width: Int
@@ -19,11 +19,36 @@ nonisolated struct ScrollingScreenshotStitcher {
   private var signatures = RowSignatures()
   private var lastFrame: RowSignatures?
   private(set) var appendResult = AppendResult.invalid
+  private(set) var matchedShift: Int?
+  private(set) var maximumMatchableShift: Int
   private var footerHeight = 0
   private var replacementTailHeight = 0
   private var outputColumns: Range<Int>?
   private(set) var capReached = false
   private(set) var height = 0
+  private(set) var isLost = false
+  private var failedFrames = 0
+  private var referenceHeight = 0
+  private var recoveryProbe = false
+  private var anchors: [Anchor] = []
+
+  private struct Anchor {
+    let signatures: RowSignatures
+    let height: Int
+    let footer: Int
+    let tail: Int
+  }
+
+  private var anchor: Anchor {
+    Anchor(signatures: signatures, height: referenceHeight, footer: footerHeight, tail: replacementTailHeight)
+  }
+
+  private mutating func rememberAnchor() {
+    anchors.removeAll { $0.height < height - frameHeight * 3 }
+    if anchors.last.map({ referenceHeight - $0.height >= max(1, frameHeight / 6) }) ?? true {
+      anchors.append(anchor)
+    }
+  }
 
   private struct RowSignatures {
     var values: [UInt8] = []
@@ -51,24 +76,44 @@ nonisolated struct ScrollingScreenshotStitcher {
 
   var imageWidth: Int { outputPixelColumns.count }
 
-  private func cornerFooter(in next: RowSignatures, shift: Int, footer: Int) -> Int {
-    guard binCount >= 8, frameHeight / 16 >= 3, footer + 3 < frameHeight else { return 0 }
+  static func removeTail(byteCount: Int, from chunks: inout [[UInt8]]) -> Bool {
+    guard byteCount >= 0, chunks.reduce(0, { $0 + $1.count }) >= byteCount else { return false }
+    var remaining = byteCount
+    while remaining > 0, let last = chunks.indices.last {
+      let count = min(remaining, chunks[last].count)
+      if count == chunks[last].count { chunks.removeLast() }
+      else { chunks[last].removeLast(count) }
+      remaining -= count
+    }
+    return remaining == 0
+  }
+
+  private func hasStaticEdges(in next: RowSignatures, footer: Int, shift: Int? = nil) -> Bool {
+    guard binCount >= 8, frameHeight / 16 >= 3, footer + 3 < frameHeight else { return false }
     let edge = max(1, binCount / 16)
     let edges = [0..<edge, (binCount - edge)..<binCount]
+    var currentEvidence = [false, false]
     for depth in 0..<3 {
       let row = frameHeight - footer - depth - 1
       let middle = (binCount / 4)..<(binCount * 3 / 4)
       let oldBackground = middle.map { signatures.values[row * binCount + $0] }.sorted()[middle.count / 2]
       let newBackground = middle.map { next.values[row * binCount + $0] }.sorted()[middle.count / 2]
-      guard row >= shift, edges.allSatisfy({ columns in
+      guard row >= (shift ?? 0), edges.enumerated().allSatisfy({ index, columns in
         columns.contains { column in
-          abs(Int(signatures.values[row * binCount + column]) - Int(oldBackground)) >= 8
-            && abs(Int(next.values[row * binCount + column]) - Int(newBackground)) >= 8
-            && rowsMatch(row, row, in: next, columns: column..<(column + 1))
-            && !rowsMatch(row, row - shift, in: next, columns: column..<(column + 1))
+          let oldContrast = abs(Int(signatures.values[row * binCount + column]) - Int(oldBackground)) >= 8
+          let newContrast = abs(Int(next.values[row * binCount + column]) - Int(newBackground)) >= 8
+          let matches = rowsMatch(row, row, in: next, columns: column..<(column + 1))
+          if newContrast && matches { currentEvidence[index] = true }
+          return (shift == nil ? oldContrast || newContrast : oldContrast && newContrast) && matches
+            && (shift.map { !rowsMatch(row, row - $0, in: next, columns: column..<(column + 1)) } ?? true)
         }
-      }) else { return 0 }
+      }) else { return false }
     }
+    return shift != nil || currentEvidence.allSatisfy { $0 }
+  }
+
+  private func cornerFooter(in next: RowSignatures, shift: Int, footer: Int) -> Int {
+    guard hasStaticEdges(in: next, footer: footer, shift: shift) else { return 0 }
     return min(frameHeight, footer + frameHeight / 16)
   }
 
@@ -109,7 +154,44 @@ nonisolated struct ScrollingScreenshotStitcher {
       }
     }
     result.hashes = [firstHashes, secondHashes]
+    normalizeLowContrast(&result)
     return result
+  }
+
+  private func normalizeLowContrast(_ result: inout RowSignatures) {
+    let bins = binCount
+    let columns = (bins / 16)..<(bins - bins / 16)
+    var minimum = 255
+    var maximum = 0
+    for row in (frameHeight / 8)..<(frameHeight * 3 / 4) {
+      for column in columns {
+        let value = Int(result.values[row * bins + column])
+        minimum = min(minimum, value)
+        maximum = max(maximum, value)
+      }
+    }
+    guard maximum > minimum, maximum - minimum < 8 else { return }
+    for index in result.values.indices {
+      result.values[index] = UInt8(clamping: (Int(result.values[index]) - minimum) * 16)
+    }
+    for row in 0..<frameHeight {
+      let start = row * bins
+      let values = result.values[start..<(start + bins)]
+      let mean = values.reduce(0, { $0 + Int($1) }) / bins
+      let hashBins = min(bins, 32)
+      var hashes = [UInt64](repeating: 14_695_981_039_346_656_037, count: 2)
+      for bin in 0..<hashBins {
+        let left = bin * bins / hashBins
+        let right = (bin + 1) * bins / hashBins
+        let value = result.values[(start + left)..<(start + right)].reduce(0, { $0 + Int($1) })
+          / (right - left) - mean + 256
+        hashes[0] = (hashes[0] ^ UInt64(value / 16)) &* 1_099_511_628_211
+        hashes[1] = (hashes[1] ^ UInt64((value + 8) / 16)) &* 1_099_511_628_211
+      }
+      result.hashes[0][row] = hashes[0]
+      result.hashes[1][row] = hashes[1]
+      result.informative[row] = Int(values.max()!) - Int(values.min()!) >= 8
+    }
   }
 
   private static func fillSignatures(_ buffers: SignatureBuffers, width: Int, bins: Int, rows: Range<Int>) {
@@ -314,6 +396,7 @@ nonisolated struct ScrollingScreenshotStitcher {
       && informativeMasked * 100 <= informativeOverlap * 43
     guard informativeMasked * 4 <= informativeOverlap || changingHeaderBudget,
           informativeCompared >= max(min(8, end - header), informativeOverlap / 3),
+          informativeMatched >= min(leading + trailing > 0 ? 8 : 4, compared),
           unmaskedMatches >= min(4, compared),
           distinctMatches.count >= min(4, compared) else { return nil }
     return (Double(informativeMatched) / Double(informativeCompared), candidateHeader, candidateTrimmed)
@@ -322,7 +405,7 @@ nonisolated struct ScrollingScreenshotStitcher {
   private func candidateShifts(in next: RowSignatures, header: Int, end: Int, maximumShift: Int,
                                previous: RowSignatures? = nil) -> Set<Int> {
     let previous = previous ?? signatures
-    var candidates: Set<Int> = []
+    var votes: [Int: Int] = [:]
     for grid in 0..<2 {
       var previousRows: [UInt64: [Int]] = [:]
       var newRows: [UInt64: [Int]] = [:]
@@ -341,12 +424,17 @@ nonisolated struct ScrollingScreenshotStitcher {
         guard let positions = previousRows[next.hashes[grid][row]] else { continue }
         for previousRow in positions {
           let shift = previousRow - row
-          if shift > 0, shift <= maximumShift { candidates.insert(shift) }
-          if candidates.count > 32 { return [] }
+          if shift > 0, shift <= maximumShift { votes[shift, default: 0] += 1 }
         }
       }
     }
-    return candidates
+    return Self.rankedCandidateShifts(votes)
+  }
+
+  static func rankedCandidateShifts(_ votes: [Int: Int]) -> Set<Int> {
+    Set(votes.sorted {
+      $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value
+    }.prefix(32).map(\.key))
   }
 
   private func isUpwardScroll(from previous: RowSignatures, to next: RowSignatures) -> Bool {
@@ -384,11 +472,75 @@ nonisolated struct ScrollingScreenshotStitcher {
     self.width = width
     frameHeight = height
     maximumHeight = width > 0 ? maximumPixels / width : 0
+    maximumMatchableShift = max(0, height - max(4, height / 3))
   }
 
   @discardableResult
   mutating func append(rgba: [UInt8]) -> Bool {
+    var wasUpward = false
+    if !isLost {
+      let changed = appendForward(rgba: rgba)
+      if appendResult == .appended {
+        failedFrames = 0
+        rememberAnchor()
+        return changed
+      }
+      if appendResult == .reanchored {
+        failedFrames = 0
+        return false
+      }
+      if appendResult == .unmatched { failedFrames = min(2, failedFrames + 1) }
+      else if appendResult == .upward { failedFrames = 0 }
+      guard !capReached, appendResult == .unmatched || appendResult == .upward else { return false }
+      wasUpward = appendResult == .upward
+      if failedFrames == 2 { isLost = true }
+    } else {
+      matchedShift = nil
+      guard width > 0, frameHeight > 0, width <= Int.max / 4 / frameHeight,
+            rgba.count == width * frameHeight * 4 else {
+        appendResult = .invalid
+        return false
+      }
+      let next = rowSignatures(rgba)
+      if lastFrame?.values == next.values {
+        appendResult = .unchanged
+        return false
+      }
+      appendResult = .unmatched
+      lastFrame = next
+    }
+    guard let next = lastFrame else { return false }
+    var recovered: Self?
+    for anchor in anchors + [self.anchor] {
+      var probe = self
+      probe.signatures = anchor.signatures
+      probe.footerHeight = anchor.footer
+      probe.replacementTailHeight = anchor.tail
+      probe.referenceHeight = anchor.height
+      probe.recoveryProbe = true
+      probe.lastFrame = nil
+      _ = probe.appendForward(rgba: rgba, keys: next)
+      guard probe.appendResult == .reanchored else { continue }
+      if let recovered, recovered.referenceHeight != probe.referenceHeight { return false }
+      recovered = probe
+    }
+    guard let recovered else { return false }
+    signatures = recovered.signatures
+    footerHeight = recovered.footerHeight
+    replacementTailHeight = recovered.replacementTailHeight
+    referenceHeight = recovered.referenceHeight
+    maximumMatchableShift = recovered.maximumMatchableShift
+    matchedShift = nil
+    failedFrames = 0
+    isLost = false
+    appendResult = wasUpward ? .upward : .reanchored
+    return false
+  }
+
+  @discardableResult
+  private mutating func appendForward(rgba: [UInt8], keys suppliedKeys: RowSignatures? = nil) -> Bool {
     appendResult = .invalid
+    matchedShift = nil
     if capReached {
       appendResult = .capped
       return false
@@ -396,13 +548,13 @@ nonisolated struct ScrollingScreenshotStitcher {
     guard width > 0, frameHeight > 0, maximumHeight >= frameHeight,
           width <= Int.max / 4 / frameHeight, rgba.count == width * frameHeight * 4,
           !capReached else { return false }
-    let keys = rowSignatures(rgba)
+    let keys = suppliedKeys ?? rowSignatures(rgba)
     let previousFrame = lastFrame
     var matchesReference = false
     appendResult = .unchanged
     defer {
       lastFrame = keys
-      if appendResult != .appended {
+      if appendResult != .appended && appendResult != .reanchored {
         if capReached { appendResult = .capped }
         else if !matchesReference, let previousFrame, previousFrame.values != keys.values {
           appendResult = isUpwardScroll(from: previousFrame, to: keys) ? .upward : .unmatched
@@ -412,6 +564,7 @@ nonisolated struct ScrollingScreenshotStitcher {
     if chunks.isEmpty {
       chunks = [rgba]
       height = frameHeight
+      referenceHeight = height
       signatures = keys
       capReached = height == maximumHeight
       appendResult = .appended
@@ -421,6 +574,11 @@ nonisolated struct ScrollingScreenshotStitcher {
     while header < frameHeight && rowsMatch(header, header, in: keys) { header += 1 }
     guard header < frameHeight else {
       matchesReference = true
+      let informativeRows = keys.informative.indices.filter { keys.informative[$0] }
+      if recoveryProbe, informativeRows.count >= min(8, frameHeight),
+         Set(informativeRows.map { keys.hashes[0][$0] }).count >= min(4, frameHeight) {
+        appendResult = .reanchored
+      }
       return false
     }
     var footer = 0
@@ -440,6 +598,7 @@ nonisolated struct ScrollingScreenshotStitcher {
     var trimmed = max(footerHeight, footer, replacementTailHeight)
     let band = frameHeight - header - trimmed
     let minimumOverlap = max(4, band / 3)
+    maximumMatchableShift = max(0, band - minimumOverlap)
     guard band > minimumOverlap else { return false }
     var bestShift = 0
     var bestHeader = header
@@ -498,13 +657,25 @@ nonisolated struct ScrollingScreenshotStitcher {
       previousColumns.upperBound, bestColumns.upperBound)
     guard columns.lowerBound == 0, binCount - columns.count <= scrollbarBinCap else { return false }
     trimmed = max(bestTrimmed, footer)
-    let start = max(bestHeader, frameHeight - trimmed - bestShift)
+    var start = max(bestHeader, frameHeight - trimmed - bestShift)
     if footer > 0, height - trimmed + frameHeight - start > maximumHeight {
       let movesWithBody = ((frameHeight - footer)..<frameHeight).allSatisfy {
         rowsMatch($0, $0 - bestShift, in: keys, previous: keys)
       }
       if movesWithBody { footer = 0 }
     }
+    let nextReferenceHeight = referenceHeight - trimmed + frameHeight - start
+    let nextTail = max(bestCorner, hasStaticEdges(in: keys, footer: footer) ? replacementTailHeight : 0)
+    if recoveryProbe || nextReferenceHeight <= height {
+      signatures = keys
+      referenceHeight = nextReferenceHeight
+      footerHeight = footer
+      replacementTailHeight = nextTail
+      appendResult = .reanchored
+      return false
+    }
+    start += height - referenceHeight
+    guard start >= bestHeader, start < frameHeight - footer else { return false }
     let contentCount = frameHeight - footer - start
     let count = min(contentCount, maximumHeight - (height - trimmed + footer))
     guard count > 0 else {
@@ -512,39 +683,67 @@ nonisolated struct ScrollingScreenshotStitcher {
       return false
     }
     let stride = width * 4
-    var removedBytes = trimmed * stride
-    while removedBytes > 0 {
-      let last = chunks.count - 1
-      let removed = min(removedBytes, chunks[last].count)
-      if removed == chunks[last].count {
-        chunks.removeLast()
-      } else {
-        chunks[last].removeLast(removed)
-      }
-      removedBytes -= removed
+    guard Self.removeTail(byteCount: trimmed * stride, from: &chunks) else {
+      appendResult = .invalid
+      return false
     }
     chunks.append(Array(rgba[(start * stride)..<((start + count) * stride)]))
     outputColumns = columns
-    replacementTailHeight = max(replacementTailHeight, bestCorner)
+    replacementTailHeight = nextTail
     if footer > 0 { chunks.append(Array(rgba[((frameHeight - footer) * stride)..<rgba.count])) }
     height = height - trimmed + count + footer
+    referenceHeight = height
     footerHeight = footer
     signatures = keys
     capReached = count < contentCount || height == maximumHeight
+    matchedShift = bestShift
     appendResult = .appended
     return true
   }
 }
 
 nonisolated struct ScrollingScreenshotHintState {
-  private(set) var consecutiveFailures = 0
-  var shouldShowSlowScrollHint: Bool { consecutiveFailures >= 2 }
+  enum Warning: Sendable { case normal, tooFast, lostTrack }
 
-  mutating func record(_ result: ScrollingScreenshotStitcher.AppendResult) {
+  private(set) var consecutiveFailures = 0
+  private(set) var warning = Warning.normal
+  private var fastFrames = 0
+  private var calmFrames = 0
+  private var unchangedSince: Duration?
+  var shouldShowSlowScrollHint: Bool { warning != .normal }
+
+  mutating func record(_ result: ScrollingScreenshotStitcher.AppendResult,
+                       shift: Int? = nil, maximumShift: Int = 0, now: Duration = .zero) {
+    if result != .unchanged { unchangedSince = nil }
     switch result {
-    case .unmatched: consecutiveFailures = min(2, consecutiveFailures + 1)
-    case .appended, .upward, .capped: consecutiveFailures = 0
-    case .unchanged, .invalid: break
+    case .unmatched:
+      fastFrames = 0
+      calmFrames = 0
+      consecutiveFailures = min(2, consecutiveFailures + 1)
+      if consecutiveFailures == 2 { warning = .lostTrack }
+    case .appended:
+      consecutiveFailures = 0
+      if warning == .lostTrack { warning = .normal }
+      guard let shift, shift > 0, maximumShift > 0 else { return }
+      let fraction = Double(shift) / Double(maximumShift)
+      fastFrames = fraction > 0.7 ? fastFrames + 1 : 0
+      calmFrames = fraction < 0.5 ? calmFrames + 1 : 0
+      if fraction > 0.85 || fastFrames >= 2 { warning = .tooFast }
+      else if calmFrames >= 3 { warning = .normal }
+    case .reanchored, .capped:
+      self = Self()
+    case .upward:
+      consecutiveFailures = 0
+      fastFrames = 0
+      calmFrames = 0
+    case .unchanged:
+      if unchangedSince == nil { unchangedSince = now }
+      if warning == .tooFast, let unchangedSince, now - unchangedSince >= .seconds(1) {
+        warning = .normal
+        fastFrames = 0
+        calmFrames = 0
+      }
+    case .invalid: break
     }
   }
 }
@@ -553,6 +752,7 @@ nonisolated struct ScrollingScreenshotHintState {
 extension ScrollingScreenshotStitcher {
   nonisolated mutating func append(_ image: CGImage) -> Bool {
     appendResult = .invalid
+    matchedShift = nil
     guard image.width == width, image.height == frameHeight, width > 0, frameHeight > 0,
           width <= Int.max / 4 / frameHeight else { return false }
     let colorSpace = chunks.isEmpty ? ScreenshotColorSpace.rgb(image.colorSpace) : outputColorSpace
@@ -679,8 +879,10 @@ nonisolated struct ScrollingScreenshotCadence {
   private var unchangedFrames = 0
   var isIdle: Bool { unchangedFrames >= 4 }
 
-  mutating func delay(after result: ScrollingScreenshotStitcher.AppendResult, elapsed: Duration) -> Duration {
+  mutating func delay(after result: ScrollingScreenshotStitcher.AppendResult, elapsed: Duration,
+                      scrollIsActive: Bool = false) -> Duration {
     unchangedFrames = result == .unchanged ? min(4, unchangedFrames + 1) : 0
+    if scrollIsActive { return .zero }
     return max(.milliseconds(5), (isIdle ? .milliseconds(150) : .milliseconds(50)) - max(.zero, elapsed))
   }
 }
@@ -698,7 +900,10 @@ actor ScrollingScreenshotProcessor {
     let height: Int
     let capReached: Bool
     let showSlowScrollHint: Bool
+    let warning: ScrollingScreenshotHintState.Warning
     let appendResult: ScrollingScreenshotStitcher.AppendResult
+    let matchedShift: Int?
+    let maximumMatchableShift: Int
   }
 
   enum Failure: Error { case invalidFrame }
@@ -706,6 +911,7 @@ actor ScrollingScreenshotProcessor {
   private var stitcher: ScrollingScreenshotStitcher?
   private var needsPreview = false
   private var hintState = ScrollingScreenshotHintState()
+  private let clockOrigin = ContinuousClock.now
 
   func append(_ image: CGImage, refreshPreview: Bool, maximumPixels: Int) throws -> Update {
     try Task.checkCancellation()
@@ -716,7 +922,8 @@ actor ScrollingScreenshotProcessor {
       stitcher = ScrollingScreenshotStitcher(width: image.width, height: image.height, maximumPixels: maximumPixels)
     }
     let changed = stitcher!.append(image)
-    hintState.record(stitcher!.appendResult)
+    hintState.record(stitcher!.appendResult, shift: stitcher!.matchedShift,
+      maximumShift: stitcher!.maximumMatchableShift, now: clockOrigin.duration(to: .now))
     needsPreview = needsPreview || changed
     try Task.checkCancellation()
     let capped = stitcher!.capReached
@@ -724,7 +931,8 @@ actor ScrollingScreenshotProcessor {
     if thumbnail != nil { needsPreview = false }
     return Update(thumbnail: thumbnail, width: stitcher!.imageWidth, height: stitcher!.height,
       capReached: capped, showSlowScrollHint: hintState.shouldShowSlowScrollHint,
-      appendResult: stitcher!.appendResult)
+      warning: hintState.warning, appendResult: stitcher!.appendResult,
+      matchedShift: stitcher!.matchedShift, maximumMatchableShift: stitcher!.maximumMatchableShift)
   }
 
   func export(includePreview: Bool = false) throws -> Output? {

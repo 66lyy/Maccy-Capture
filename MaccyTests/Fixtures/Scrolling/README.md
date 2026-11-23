@@ -61,3 +61,17 @@ the smallest whole-percentage budget covering both recordings. Other inferred
 masks retain the 25% budget. Body matching still requires 95%, and inferred
 headers remain bounded to 1/8 height. The minimum overlap retains its first
 informative-row safeguard without treating intervening neutral rows as header.
+
+`contrast-{chrome,safari}-{dim,low}-{start,next}.png` are 1120×800 browser
+captures of native 20-pixel monospace text at offsets 0 and 160. The dim page
+uses #060606 text on black; the light page uses #fafafa on #f8f8f8. Central
+body contrast below 8 is amplified in signatures only. Source and exported
+pixels remain unchanged, and ordinary-contrast frames use the original path.
+
+`tail-{chrome,safari}-{0,160,320,480,640,800,960}.png` record a translucent 50-pixel
+floating bar with rounded/shaded edges. It is present through offset 640 and
+gone at 800. Stored tails may persist only with matching current static-edge
+evidence. The 960 frame regains the uncompressed range; its exact 1760-pixel
+output is checked against unoccluded rows from the recorded inputs.
+Chrome's requested-320 input is byte-identical to its 160 input; the test
+requires that duplicate to leave the canvas unchanged rather than advance it.

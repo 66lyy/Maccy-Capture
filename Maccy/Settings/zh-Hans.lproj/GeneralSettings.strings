@@ -1,4 +1,5 @@
-"ScreenshotLongSlowScroll" = "请慢一点滚动";
+"ScreenshotLongSlowScroll" = "太快了，请慢一点";
+"ScreenshotLongLostTrack" = "跟丢了，请往回滚一点";
 "Title" = "通用";
 "PreferencesWindowTitle" = "偏好设置";
 "ShortcutSettingsTitle" = "快捷键";

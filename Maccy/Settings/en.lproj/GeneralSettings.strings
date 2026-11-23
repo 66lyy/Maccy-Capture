@@ -1,4 +1,5 @@
-"ScreenshotLongSlowScroll" = "Scroll more slowly";
+"ScreenshotLongSlowScroll" = "Too fast, slow down";
+"ScreenshotLongLostTrack" = "Lost track, scroll back up a little";
 "Title" = "General";
 "PreferencesWindowTitle" = "Settings";
 "ShortcutSettingsTitle" = "Shortcuts";

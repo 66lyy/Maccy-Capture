@@ -102,7 +102,8 @@ final class ScreenshotSelectionController {
   private var globalEscapeMonitor: Any?
   private var scrollingTask: Task<Void, Never>?
   private var scrollingDelayTask: Task<Void, Error>?
-  private var scrollingDelayIsIdle = false
+  private var scrollingLastActivity: ContinuousClock.Instant?
+  private let makeScrollMonitor: @MainActor () -> ScrollingScreenshotActivityMonitor
 
   init(
     displays: @escaping @MainActor () -> [Display] = { Display.current() },
@@ -119,7 +120,8 @@ final class ScreenshotSelectionController {
     },
     listWindows: @escaping @Sendable () -> [ScreenshotElementDetection.Window] = {
       ScreenshotElementDetection.windows()
-    }
+    },
+    makeScrollMonitor: @escaping @MainActor () -> ScrollingScreenshotActivityMonitor = { .init() }
   ) {
     self.displays = displays
     self.pointerLocation = pointerLocation
@@ -127,6 +129,7 @@ final class ScreenshotSelectionController {
     self.captureRegion = captureRegion
     self.freezeDisplays = freezeDisplays
     self.listWindows = listWindows
+    self.makeScrollMonitor = makeScrollMonitor
   }
 
   func select(pinImmediately: Bool, timeout: Duration = .seconds(120)) async throws -> Selection? {
@@ -310,19 +313,22 @@ final class ScreenshotSelectionController {
       }
       let screenRect = rectangle.offsetBy(dx: display.frame.minX, dy: display.frame.minY)
       let panel = ScrollingScreenshotPanel(
-        beside: screenRect, bounds: display.visibleFrame ?? display.frame, level: window.level.rawValue + 1
+        beside: screenRect, bounds: display.visibleFrame ?? display.frame, level: window.level.rawValue + 1,
+        activityMonitor: makeScrollMonitor()
       )
       window.scrollingPanel = panel
       let processor = ScrollingScreenshotProcessor()
       let captureRect = Self.captureRectangle(rectangle, display: display)
       panel.onCancel = { [weak self] in self?.cancel() }
       panel.onScrollActivity = { [weak self] in
-        guard let self, scrollingDelayIsIdle else { return }
+        guard let self else { return }
+        scrollingLastActivity = .now
         scrollingDelayTask?.cancel()
       }
       panel.onFinish = { [weak self, weak window, weak panel] pin in
         guard let self, isSelecting, let panel, panel.onFinish != nil else { return }
         panel.onFinish = nil
+        panel.stopMonitoring()
         scrollingTask?.cancel()
         scrollingDelayTask?.cancel()
         scrollingTask = Task { [weak self, weak window] in
@@ -367,19 +373,22 @@ final class ScreenshotSelectionController {
               panel.update(image, width: update.width, height: update.height, capped: update.capReached)
               lastThumbnailUpdate = now
             }
-            panel.updateHint(capped: update.capReached, showSlowScrollHint: update.showSlowScrollHint)
+            panel.updateHint(capped: update.capReached, warning: update.warning)
             if update.capReached { return }
-            let delay = cadence.delay(after: update.appendResult, elapsed: started.duration(to: .now))
-            scrollingDelayIsIdle = cadence.isIdle
+            let active = scrollingLastActivity.map { $0.duration(to: .now) < .milliseconds(200) } ?? false
+            let delay = cadence.delay(after: update.appendResult, elapsed: started.duration(to: .now),
+              scrollIsActive: active)
+            if delay == .zero {
+              await Task.yield()
+              continue
+            }
             let sleeper = Task { try await Task.sleep(for: delay) }
             scrollingDelayTask = sleeper
             do { try await sleeper.value }
             catch {
               try Task.checkCancellation()
-              try await Task.sleep(for: .milliseconds(5))
             }
             scrollingDelayTask = nil
-            scrollingDelayIsIdle = false
           } catch {
             if !Task.isCancelled { cancel() }
             return
@@ -425,7 +434,7 @@ final class ScreenshotSelectionController {
     scrollingTask?.cancel()
     scrollingDelayTask?.cancel()
     scrollingDelayTask = nil
-    scrollingDelayIsIdle = false
+    scrollingLastActivity = nil
     scrollingTask = nil
     timeoutTask?.cancel()
     timeoutTask = nil

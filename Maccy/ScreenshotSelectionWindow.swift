@@ -73,19 +73,54 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
 }
 
 @MainActor
+final class ScrollingScreenshotActivityMonitor {
+  private let addLocal: (@escaping (NSEvent) -> NSEvent?) -> Any?
+  private let addGlobal: (@escaping (NSEvent) -> Void) -> Any?
+  private let remove: (Any) -> Void
+  private var tokens: [Any] = []
+  var isMonitoring: Bool { !tokens.isEmpty }
+
+  init(
+    addLocal: @escaping (@escaping (NSEvent) -> NSEvent?) -> Any? = {
+      NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
+    },
+    addGlobal: @escaping (@escaping (NSEvent) -> Void) -> Any? = {
+      NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
+    },
+    remove: @escaping (Any) -> Void = { NSEvent.removeMonitor($0) }
+  ) {
+    self.addLocal = addLocal
+    self.addGlobal = addGlobal
+    self.remove = remove
+  }
+
+  func start(_ observe: @escaping (NSEvent) -> Void) {
+    stop()
+    tokens = [addLocal { event in observe(event); return event }, addGlobal(observe)].compactMap { $0 }
+  }
+
+  func stop() {
+    tokens.forEach(remove)
+    tokens.removeAll()
+  }
+
+  isolated deinit { tokens.forEach(remove) }
+}
+
+@MainActor
 final class ScrollingScreenshotPanel: NSPanel {
   var onFinish: ((Bool) -> Void)?
   var onCancel: (() -> Void)?
   var onScrollActivity: (() -> Void)?
-  private var localScrollMonitor: Any?
-  private var globalScrollMonitor: Any?
+  private let activityMonitor: ScrollingScreenshotActivityMonitor
   private var controls: [NSButton] = []
   private(set) var image: CGImage?
   private let thumbnail = NSImageView()
   private let dimensions = NSTextField(labelWithString: "")
   private let hint = NSTextField(wrappingLabelWithString: "")
+  private let warningIcon = NSImageView()
   private var outputButtons: [NSButton] = []
-  var isMonitoringScrollEvents: Bool { localScrollMonitor != nil || globalScrollMonitor != nil }
+  var isMonitoringScrollEvents: Bool { activityMonitor.isMonitoring }
 
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
@@ -120,7 +155,9 @@ final class ScrollingScreenshotPanel: NSPanel {
       width: size.width, height: size.height)
   }
 
-  init(beside rectangle: NSRect, bounds: NSRect, level: Int) {
+  init(beside rectangle: NSRect, bounds: NSRect, level: Int,
+       activityMonitor: ScrollingScreenshotActivityMonitor = .init()) {
+    self.activityMonitor = activityMonitor
     let frame = Self.placement(
       beside: rectangle, bounds: bounds, size: NSSize(width: 330, height: 240)
     )
@@ -143,7 +180,16 @@ final class ScrollingScreenshotPanel: NSPanel {
     dimensions.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     hint.stringValue = text("ScreenshotLongHint")
     hint.font = .systemFont(ofSize: 12)
-    hint.preferredMaxLayoutWidth = 264
+    hint.preferredMaxLayoutWidth = 244
+    warningIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
+    warningIcon.contentTintColor = .systemOrange
+    warningIcon.alphaValue = 0
+    warningIcon.widthAnchor.constraint(equalToConstant: 14).isActive = true
+    warningIcon.heightAnchor.constraint(equalToConstant: 14).isActive = true
+    let hintLine = NSStackView(views: [warningIcon, hint])
+    hintLine.spacing = 6
+    hintLine.alignment = .centerY
+    hintLine.heightAnchor.constraint(equalToConstant: 32).isActive = true
     let copy = NSButton(title: text("AnnotationCopy"), target: self, action: #selector(copyResult))
     let pin = NSButton(title: text("ScreenshotPinImage"), target: self, action: #selector(pinResult))
     let cancel = NSButton(title: text("ScreenshotCancel"), target: self, action: #selector(cancelResult))
@@ -156,7 +202,7 @@ final class ScrollingScreenshotPanel: NSPanel {
     outputButtons.forEach { $0.isEnabled = false }
     let actions = NSStackView(views: [copy, pin, cancel])
     actions.spacing = 8
-    let stack = NSStackView(views: [thumbnail, dimensions, hint, actions])
+    let stack = NSStackView(views: [thumbnail, dimensions, hintLine, actions])
     stack.orientation = .vertical
     stack.spacing = 8
     stack.translatesAutoresizingMaskIntoConstraints = false
@@ -175,13 +221,7 @@ final class ScrollingScreenshotPanel: NSPanel {
 
   private func startMonitoringScrollEvents() {
     guard isVisible, !isMonitoringScrollEvents else { return }
-    let events: NSEvent.EventTypeMask = [.scrollWheel, .mouseMoved, .leftMouseDragged]
-    localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
-      if event.type == .scrollWheel { self?.onScrollActivity?() }
-      else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
-      return event
-    }
-    globalScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
+    activityMonitor.start { [weak self] event in
       if event.type == .scrollWheel { self?.onScrollActivity?() }
       else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
     }
@@ -190,10 +230,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   }
 
   private func stopMonitoringScrollEvents() {
-    if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
-    if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
-    localScrollMonitor = nil
-    globalScrollMonitor = nil
+    activityMonitor.stop()
   }
 
   @objc private func pauseScrollMonitoring(_ notification: Notification) { stopMonitoringScrollEvents() }
@@ -241,6 +278,8 @@ final class ScrollingScreenshotPanel: NSPanel {
     super.close()
   }
 
+  func stopMonitoring() { stopMonitoringScrollEvents() }
+
   func update(_ image: CGImage, width: Int, height: Int, capped: Bool) {
     self.image = image
     thumbnail.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
@@ -250,8 +289,20 @@ final class ScrollingScreenshotPanel: NSPanel {
   }
 
   func updateHint(capped: Bool, showSlowScrollHint: Bool) {
+    updateHint(capped: capped, warning: showSlowScrollHint ? .tooFast : .normal)
+  }
+
+  func updateHint(capped: Bool, warning: ScrollingScreenshotHintState.Warning) {
     hint.stringValue = text(capped ? "ScreenshotLongLimit"
-      : showSlowScrollHint ? "ScreenshotLongSlowScroll" : "ScreenshotLongHint")
+      : warning == .lostTrack ? "ScreenshotLongLostTrack"
+      : warning == .tooFast ? "ScreenshotLongSlowScroll" : "ScreenshotLongHint")
+    let warns = !capped && warning != .normal
+    hint.textColor = warns ? .systemOrange : .labelColor
+    warningIcon.alphaValue = warns ? 1 : 0
+    contentView?.wantsLayer = true
+    contentView?.layer?.cornerRadius = 16
+    contentView?.layer?.borderWidth = warns ? 2 : 0
+    contentView?.layer?.borderColor = NSColor.systemOrange.cgColor
   }
 
   override func keyDown(with event: NSEvent) {
