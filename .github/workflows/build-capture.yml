@@ -83,6 +83,8 @@ jobs:
             -only-testing:MaccyTests/ScreenshotAnnotationTests \
             -only-testing:MaccyTests/SharedStateTests/ClipboardTests \
             -only-testing:MaccyTests/SharedStateTests/HistoryTests \
+            -only-testing:MaccyTests/SharedStateTests/HistoryItemTests \
+            -only-testing:MaccyTests/SharedStateTests/SearchTests \
             -parallel-testing-enabled NO \
             CODE_SIGN_IDENTITY=- \
             CODE_SIGN_STYLE=Manual \
