@@ -256,6 +256,175 @@ struct ScreenshotAnnotationTests {
     #expect(document.marks.first?.points.first == destination)
   }
 
+  @Test("Text marks resize from their corner handles and the size slider, one undo step per change")
+  func resizeText() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 480, height: 320)
+    canvas.imageInset = 0
+    canvas.tool = .text
+    canvas.fontSize = 24
+    canvas.beginMark(at: NSPoint(x: 40, y: 40))
+    canvas.fontSize = 120
+    let large = try #require(canvas.textField?.font)
+    #expect((canvas.textField?.frame.height ?? 0) >= ceil(large.ascender - large.descender + large.leading))
+    #expect(canvas.textField?.frame.minY == 40)
+    canvas.fontSize = 36
+    #expect(canvas.textField?.font?.pointSize == 36)
+    canvas.textField?.stringValue = "Size"
+    canvas.commitText()
+    let original = try #require(document.marks.first)
+    #expect(original.fontSize == 18 && canvas.selectedMarkSize(for: .text) == 36)
+    #expect(original.handlePoints.count == 4)
+
+    let box = original.bounds
+    let corner = NSPoint(x: box.maxX * 2, y: box.maxY * 2)
+    canvas.beginMark(at: corner)
+    #expect(canvas.isMovingMark)
+    canvas.endMark(at: NSPoint(x: corner.x + box.width * 2, y: corner.y + box.height * 2))
+    let grown = try #require(document.marks.first)
+    #expect(abs(grown.fontSize - 36) < 0.01)
+    #expect(grown.bounds.origin == box.origin)
+    #expect(grown.bounds.width > box.width * 1.9)
+    #expect(canvas.selectedMarkIndex == 0)
+
+    #expect(canvas.resizeSelectedMark(to: 40, as: .text))
+    #expect(canvas.resizeSelectedMark(to: 50, as: .text))
+    canvas.endStyleResize()
+    #expect(canvas.resizeSelectedMark(to: 30, as: .text))
+    #expect(document.marks.first?.fontSize == 15 && canvas.selectedMarkSize(for: .text) == 30)
+    document.undo()
+    #expect(document.marks.first?.fontSize == 25)
+    document.undo()
+    #expect(abs((document.marks.first?.fontSize ?? 0) - 36) < 0.01)
+    document.undo()
+    #expect(document.marks.first?.fontSize == 18 && document.marks.first?.points == original.points)
+    document.redo()
+    document.redo()
+    #expect(document.marks.first?.fontSize == 25)
+
+    #expect(!document.restyleMark(at: 0, size: .nan))
+    #expect(document.restyleMark(at: 0, size: 0.5) && document.marks.first?.fontSize == 4)
+    canvas.tool = .arrow
+    canvas.beginMark(at: NSPoint(x: 400, y: 300))
+    canvas.endMark(at: NSPoint(x: 420, y: 310))
+    #expect(!canvas.resizeSelectedMark(to: 60, as: .text))
+    #expect(canvas.selectedMarkSize(for: .text) == nil && canvas.selectedMarkSize(for: .rectangle) != nil)
+  }
+
+  @Test("Committed text keeps the position the field editor drew it at")
+  func committedTextKeepsTypedPosition() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 240, height: 160), styleMask: [.titled], backing: .buffered, defer: false
+    )
+    window.isReleasedWhenClosed = false
+    defer { window.close() }
+    window.contentView = canvas
+    canvas.imageInset = 0
+    canvas.tool = .text
+    canvas.fontSize = 24
+    canvas.beginMark(at: NSPoint(x: 40, y: 40))
+    let field = try #require(canvas.textField)
+    let editor = try #require(field.currentEditor() as? NSTextView)
+    editor.insertText("gyp", replacementRange: NSRange(location: NSNotFound, length: 0))
+    let layout = try #require(editor.layoutManager)
+    let line = layout.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+    let glyph = canvas.convert(NSRect(
+      x: line.minX + layout.location(forGlyphAt: 0).x + editor.textContainerOrigin.x,
+      y: line.minY + editor.textContainerOrigin.y, width: 0, height: line.height
+    ), from: editor)
+    canvas.commitText()
+    let mark = try #require(document.marks.first)
+    #expect(mark.text == "gyp")
+    #expect(abs(mark.points[0].x - glyph.minX) < 0.5 && abs(mark.points[0].y - glyph.minY) < 0.5)
+    #expect(mark.points[0].x > field.frame.minX)
+  }
+
+  @Test("Numbered markers and pen strokes resize from their corner handles")
+  func resizeMarkerAndPen() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let number = ScreenshotAnnotationDocument.Mark(tool: .number, points: [NSPoint(x: 50, y: 50)], text: "1", fontSize: 20)
+    let box = number.bounds
+    #expect(number.handlePoints.count == 4)
+    let grown = number.resized(handle: 2, to: NSPoint(x: box.minX + box.width * 2, y: box.minY + box.height * 2))
+    #expect(abs(grown.fontSize - 40) < 0.01)
+    #expect(abs(grown.bounds.minX - box.minX) < 0.01 && abs(grown.bounds.minY - box.minY) < 0.01)
+    let shrunk = number.resized(handle: 0, to: NSPoint(x: box.midX, y: box.midY))
+    #expect(abs(shrunk.fontSize - 10) < 0.01)
+    #expect(abs(shrunk.bounds.maxX - box.maxX) < 0.01 && abs(shrunk.bounds.maxY - box.maxY) < 0.01)
+
+    let pen = ScreenshotAnnotationDocument.Mark(
+      tool: .pen, points: [NSPoint(x: 10, y: 10), NSPoint(x: 20, y: 30), NSPoint(x: 30, y: 20)]
+    )
+    #expect(pen.handlePoints.count == 4)
+    let stretched = pen.resized(handle: 2, to: NSPoint(x: 50, y: 50))
+    #expect(stretched.points == [NSPoint(x: 10, y: 10), NSPoint(x: 30, y: 50), NSPoint(x: 50, y: 30)])
+    #expect(stretched.lineWidth == pen.lineWidth)
+
+    #expect(document.append(pen))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 240, height: 160)
+    canvas.imageInset = 0
+    canvas.tool = .arrow
+    canvas.beginMark(at: NSPoint(x: 20, y: 30))
+    canvas.endMark(at: NSPoint(x: 20, y: 30))
+    #expect(canvas.selectedMarkIndex == 0)
+    canvas.beginMark(at: NSPoint(x: 30, y: 30))
+    #expect(canvas.isMovingMark)
+    canvas.endMark(at: NSPoint(x: 50, y: 50))
+    #expect(document.marks.first?.points == stretched.points)
+    document.undo()
+    #expect(document.marks.first?.points == pen.points)
+  }
+
+  @Test("The size slider resizes the selected mark of its kind in one undo step per drag")
+  func sliderResizesSelectedMark() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let rectangle = ScreenshotAnnotationDocument.Mark(
+      tool: .rectangle, points: [NSPoint(x: 20, y: 20), NSPoint(x: 80, y: 60)], lineWidth: 3
+    )
+    let mosaic = ScreenshotAnnotationDocument.Mark(
+      tool: .mosaic, points: [NSPoint(x: 100, y: 20), NSPoint(x: 160, y: 60)], lineWidth: 8
+    )
+    let lens = ScreenshotAnnotationDocument.Mark(
+      tool: .magnifier, points: [NSPoint(x: 100, y: 80), NSPoint(x: 160, y: 140)], lineWidth: 3, zoom: 2
+    )
+    #expect(document.append(rectangle) && document.append(mosaic) && document.append(lens))
+    let canvas = ScreenshotAnnotationCanvas(document: document)
+    canvas.frame = NSRect(x: 0, y: 0, width: 240, height: 160)
+    canvas.imageInset = 0
+    canvas.tool = .arrow
+
+    canvas.beginMark(at: NSPoint(x: 20, y: 40))
+    canvas.endMark(at: NSPoint(x: 20, y: 40))
+    #expect(canvas.selectedMarkIndex == 0 && canvas.selectedMarkSize(for: .ellipse) == 3)
+    #expect(!canvas.resizeSelectedMark(to: 20, as: .mosaic))
+    #expect(canvas.resizeSelectedMark(to: 8, as: .arrow) && canvas.resizeSelectedMark(to: 10, as: .arrow))
+    #expect(document.marks[0].lineWidth == 10 && document.marks[0].points == rectangle.points)
+    document.undo()
+    #expect(document.marks[0].lineWidth == 3)
+    document.redo()
+
+    canvas.endStyleResize()
+    canvas.beginMark(at: NSPoint(x: 130, y: 40))
+    canvas.endMark(at: NSPoint(x: 130, y: 40))
+    #expect(canvas.selectedMarkIndex == 1 && canvas.selectedMarkSize(for: .mosaic) == 8)
+    let before = try #require(document.marks[1].mosaic)
+    #expect(canvas.resizeSelectedMark(to: 20, as: .mosaic))
+    #expect(document.marks[1].lineWidth == 20)
+    #expect(document.marks[1].mosaic.map { $0 !== before } == true)
+
+    canvas.endStyleResize()
+    canvas.beginMark(at: NSPoint(x: 101, y: 110))
+    canvas.endMark(at: NSPoint(x: 101, y: 110))
+    #expect(canvas.selectedMarkIndex == 2 && canvas.selectedMarkSize(for: .magnifier) == 2)
+    #expect(canvas.resizeSelectedMark(to: 5, as: .magnifier))
+    #expect(document.marks[2].zoom == 5 && document.marks[2].lineWidth == 3)
+    #expect(!document.restyleMark(at: 2, size: 5))
+  }
+
   @Test("Text moving respects covers and can be cancelled without closing the editor")
   func cancelTextMove() throws {
     let window = try editor()
@@ -435,6 +604,23 @@ struct ScreenshotAnnotationTests {
     window.styleSlider.sendAction(window.styleSlider.action, to: window.styleSlider.target)
     #expect(canvas.fontSize == 55)
     #expect(canvas.lineWidth == 15)
+    window.styleSlider.doubleValue = 67
+    window.styleSlider.sendAction(window.styleSlider.action, to: window.styleSlider.target)
+    canvas.beginMark(at: NSPoint(x: 300, y: 200))
+    canvas.textField?.stringValue = "Size"
+    canvas.commitText()
+    #expect(canvas.resizeSelectedMark(to: 45, as: .text))
+    canvas.endStyleResize()
+    #expect(window.styleSlider.doubleValue == 45 && canvas.fontSize == 67)
+    let markCount = canvas.document.marks.count
+    canvas.needsDisplay = false
+    canvas.beginMark(at: NSPoint(x: 600, y: 400))
+    #expect(canvas.selectedMarkIndex == nil)
+    #expect(canvas.needsDisplay)
+    #expect(window.styleSlider.doubleValue == 67 && window.styleValue.stringValue == "67")
+    #expect(canvas.textField?.font?.pointSize == 67)
+    canvas.commitText()
+    #expect(canvas.document.marks.count == markCount)
     window.toolButtons[0].performClick(nil)
     #expect(window.styleSlider.doubleValue == 15)
     window.colorWell.color = NSColor(srgbRed: 0.1, green: 0.4, blue: 0.7, alpha: 0.5)

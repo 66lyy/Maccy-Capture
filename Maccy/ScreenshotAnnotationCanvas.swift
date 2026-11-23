@@ -19,7 +19,9 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   var tool: ScreenshotAnnotationDocument.Tool = .arrow
   var color = NSColor.red
   var lineWidth: CGFloat = 3
-  var fontSize: CGFloat = 24
+  var fontSize: CGFloat = 24 {
+    didSet { resizeTextField() }
+  }
   var mosaicSize: CGFloat = 12
   var magnifierZoom: CGFloat = 2
   var imageInset: CGFloat = 16
@@ -31,6 +33,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   private var markDrag: MarkDrag?
   private var erasing: (last: NSPoint, indices: Set<Int>)?
   private var selection: (index: Int, revision: Int)?
+  private var styleResize: (index: Int, revision: Int)?
   var isMovingMark: Bool { markDrag != nil }
   var isMovingText: Bool { isMovingMark }
   var selectedMarkIndex: Int? {
@@ -38,6 +41,14 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     guard let selection, selection.revision == document.revision,
           document.marks.indices.contains(selection.index) else { return nil }
     return selection.index
+  }
+
+  // The toolbar size of the selected mark, when it is the kind of size the given tool's slider sets.
+  func selectedMarkSize(for tool: ScreenshotAnnotationDocument.Tool) -> CGFloat? {
+    guard let kind = tool.styleKind, let index = selectedMarkIndex else { return nil }
+    let mark = markDrag?.current ?? document.marks[index]
+    guard mark.tool.styleKind == kind else { return nil }
+    return mark.styleSize * (kind == .zoom ? 1 : imageScale)
   }
 
   var imageRect: NSRect {
@@ -239,15 +250,33 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     changed()
   }
 
+  @discardableResult
+  func resizeSelectedMark(to size: CGFloat, as tool: ScreenshotAnnotationDocument.Tool) -> Bool {
+    guard markDrag == nil, imageScale > 0, let kind = tool.styleKind, let index = selectedMarkIndex,
+          document.marks[index].tool.styleKind == kind else { return false }
+    let merging = styleResize.map { $0.index == index && $0.revision == document.revision } ?? false
+    if document.restyleMark(at: index, size: kind == .zoom ? size : size / imageScale, merging: merging) {
+      select(index)
+      styleResize = (index, document.revision)
+      changed()
+    }
+    return true
+  }
+
+  func endStyleResize() {
+    styleResize = nil
+  }
+
   private func select(_ index: Int) {
     selection = (index, document.revision)
   }
 
   func commitText() {
-    guard let field = textField, let origin = textOrigin else { return }
+    guard let field = textField, var origin = textOrigin else { return }
     textField = nil
     textOrigin = nil
     let value = field.currentEditor()?.string ?? field.stringValue
+    if let typed = typedTextOrigin(field) { origin = typed }
     field.removeFromSuperview()
     if document.append(.init(
       tool: .text, points: [origin], color: field.textColor ?? color,
@@ -256,6 +285,20 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
       select(document.marks.count - 1)
     }
     changed()
+  }
+
+  // Where the field editor drew the first glyph, so committed text stays where it was typed.
+  private func typedTextOrigin(_ field: NSTextField) -> NSPoint? {
+    guard let editor = field.currentEditor() as? NSTextView, let layout = editor.layoutManager,
+          layout.numberOfGlyphs > 0 else { return nil }
+    let line = layout.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+    let inset = editor.textContainerOrigin
+    let start = convert(NSRect(
+      x: line.minX + layout.location(forGlyphAt: 0).x + inset.x, y: line.minY + inset.y, width: 0, height: line.height
+    ), from: editor)
+    let scrolled = (editor.superview as? NSClipView).map { $0.bounds.minX - editor.frame.minX } ?? 0
+    guard start.minX.isFinite, start.minY.isFinite, scrolled.isFinite else { return nil }
+    return imagePoint(at: NSPoint(x: max(start.minX + scrolled, field.frame.minX), y: start.minY), clamped: true)
   }
 
   func discardPendingMark() {
@@ -337,8 +380,12 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     field.isBordered = true
     field.placeholderString = text("AnnotationEnterText")
     field.delegate = self
+    field.usesSingleLineMode = true
+    field.lineBreakMode = .byClipping
+    field.cell?.wraps = false
+    field.cell?.isScrollable = true
     let width = min(360, imageRect.width)
-    let height = min(fontSize + 12, imageRect.height)
+    let height = textFieldHeight(field)
     field.frame = NSRect(
       x: max(imageRect.minX, min(point.x, imageRect.maxX - width)),
       y: max(imageRect.minY, min(point.y, imageRect.maxY - height)), width: width, height: height
@@ -348,6 +395,24 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
     textField = field
     addSubview(field)
     window?.makeFirstResponder(field)
+    changed()
+  }
+
+  // Tall enough for the font's full line, so descenders are not clipped at large sizes.
+  private func textFieldHeight(_ field: NSTextField) -> CGFloat {
+    min(max(ceil(field.intrinsicContentSize.height), fontSize + 12), imageRect.height)
+  }
+
+  private func resizeTextField() {
+    guard let field = textField else { return }
+    field.font = .systemFont(ofSize: fontSize, weight: .semibold)
+    let height = textFieldHeight(field)
+    field.frame = NSRect(
+      x: field.frame.minX, y: max(imageRect.minY, min(field.frame.minY, imageRect.maxY - height)),
+      width: field.frame.width, height: height
+    )
+    textOrigin = imagePoint(at: field.frame.origin, clamped: true)
+    textScale = imageScale
   }
 
   private func changed() {

@@ -270,6 +270,12 @@ extension ScreenshotAnnotationWindow {
   func refreshHistoryButtons() {
     undoButton.isEnabled = canvas?.document.canUndo == true
     redoButton.isEnabled = canvas?.document.canRedo == true
+    if let tool = selectedTool, let size = canvas?.selectedMarkSize(for: tool) {
+      styleSlider.doubleValue = size
+      styleValue.stringValue = tool == .magnifier ? "\(Int(size.rounded()))×" : "\(Int(size.rounded()))"
+    } else {
+      refreshStyle()
+    }
     canvas?.needsDisplay = true
   }
 
@@ -355,8 +361,6 @@ extension ScreenshotAnnotationWindow {
     case .magnifier:
       magnifierZoom = size
       canvas?.magnifierZoom = size
-      styleValue.stringValue = "\(Int(size))×"
-      return
     case .mosaic:
       mosaicSize = size
       canvas?.mosaicSize = size
@@ -366,7 +370,12 @@ extension ScreenshotAnnotationWindow {
       lineWidth = size
       canvas?.lineWidth = size
     }
-    styleValue.stringValue = "\(Int(size))"
+    styleValue.stringValue = selectedTool == .magnifier ? "\(Int(size))×" : "\(Int(size))"
+    if let tool = selectedTool {
+      // One slider drag is one undo step; each click or key press is its own.
+      if NSApp.currentEvent?.type != .leftMouseDragged { canvas?.endStyleResize() }
+      canvas?.resizeSelectedMark(to: size, as: tool)
+    }
   }
 }
 

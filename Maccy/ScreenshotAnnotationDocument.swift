@@ -32,6 +32,17 @@ final class ScreenshotAnnotationDocument {
       return enabled.isEmpty ? [tools[0]] : enabled
     }
     var hasBoxHandles: Bool { [.rectangle, .ellipse, .redact, .mosaic, .magnifier].contains(self) }
+
+    nonisolated enum StyleKind: Sendable { case line, font, mosaic, zoom }
+    var styleKind: StyleKind? {
+      switch self {
+      case .text, .number: .font
+      case .mosaic: .mosaic
+      case .magnifier: .zoom
+      case .redact, .eraser: nil
+      default: .line
+      }
+    }
   }
 
   struct Mark {
@@ -43,6 +54,9 @@ final class ScreenshotAnnotationDocument {
     var fontSize: CGFloat = 24
     var mosaic: CGImage?
     var zoom: CGFloat = 2
+
+    static let minimumFontSize: CGFloat = 4
+    static let maximumFontSize: CGFloat = 1000
 
     var numberDiameter: CGFloat { fontSize * 1.5 }
     var textFont: NSFont { .systemFont(ofSize: fontSize, weight: .semibold) }
@@ -73,10 +87,28 @@ final class ScreenshotAnnotationDocument {
       }
     }
 
+    var styleSize: CGFloat {
+      get {
+        switch tool.styleKind {
+        case .font: fontSize
+        case .zoom: zoom
+        default: lineWidth
+        }
+      }
+      set {
+        switch tool.styleKind {
+        case .font: fontSize = min(max(newValue, Self.minimumFontSize), Self.maximumFontSize)
+        case .zoom: zoom = min(max(newValue, 1), 20)
+        case .line, .mosaic: lineWidth = min(max(newValue, 0.5), 1000)
+        case nil: break
+        }
+      }
+    }
+
     var handlePoints: [NSPoint] {
       if tool == .arrow, let first = points.first, let last = points.last { return [first, last] }
-      guard tool.hasBoxHandles else { return [] }
-      let box = shapeBounds
+      guard tool.hasBoxHandles || [.text, .number, .pen].contains(tool) else { return [] }
+      let box = bounds
       return [
         NSPoint(x: box.minX, y: box.minY), NSPoint(x: box.maxX, y: box.minY),
         NSPoint(x: box.maxX, y: box.maxY), NSPoint(x: box.minX, y: box.maxY)
@@ -96,8 +128,25 @@ final class ScreenshotAnnotationDocument {
       let handles = handlePoints
       guard handles.indices.contains(handle) else { return self }
       var mark = self
+      let anchorIndex = (handle + 2) % handles.count, anchor = handles[anchorIndex]
       if tool == .arrow {
         mark.points[handle == 0 ? 0 : points.count - 1] = point
+      } else if tool == .text || tool == .number {
+        // Text and markers scale their font uniformly, keeping the opposite corner in place.
+        let box = bounds
+        guard box.width > 0, box.height > 0 else { return self }
+        let scale = max(abs(point.x - anchor.x) / box.width, abs(point.y - anchor.y) / box.height)
+        mark.fontSize = min(max(fontSize * scale, Self.minimumFontSize), Self.maximumFontSize)
+        let resized = mark.bounds
+        let left = anchorIndex == 0 || anchorIndex == 3, bottom = anchorIndex < 2
+        let dx = (left ? anchor.x : anchor.x - resized.width) - resized.minX
+        let dy = (bottom ? anchor.y : anchor.y - resized.height) - resized.minY
+        mark.points = mark.points.map { NSPoint(x: $0.x + dx, y: $0.y + dy) }
+      } else if tool == .pen {
+        let start = handles[handle]
+        let sx = start.x == anchor.x ? 1 : (point.x - anchor.x) / (start.x - anchor.x)
+        let sy = start.y == anchor.y ? 1 : (point.y - anchor.y) / (start.y - anchor.y)
+        mark.points = points.map { NSPoint(x: anchor.x + ($0.x - anchor.x) * sx, y: anchor.y + ($0.y - anchor.y) * sy) }
       } else {
         mark.points = [handles[(handle + 2) % handles.count], point]
       }
@@ -169,7 +218,25 @@ final class ScreenshotAnnotationDocument {
   @discardableResult
   func replaceMark(at index: Int, with mark: Mark) -> Bool {
     guard marks.indices.contains(index), marks[index].tool == mark.tool,
-          marks[index].points != mark.points, let mark = validated(mark) else { return false }
+          marks[index].points != mark.points || marks[index].styleSize != mark.styleSize,
+          let mark = validated(mark) else { return false }
+    record(.replace(index: index, from: marks[index], to: mark))
+    return true
+  }
+
+  @discardableResult
+  func restyleMark(at index: Int, size: CGFloat, merging: Bool = false) -> Bool {
+    guard marks.indices.contains(index), marks[index].tool.styleKind != nil, size.isFinite else { return false }
+    var mark = marks[index]
+    mark.styleSize = size
+    guard mark.styleSize != marks[index].styleSize, let mark = validated(mark) else { return false }
+    if merging, let last = undoEdits.last, case .replace(let previous, let original, _) = last, previous == index {
+      undoEdits[undoEdits.count - 1] = .replace(index: index, from: original, to: mark)
+      marks[index] = mark
+      redoEdits.removeAll()
+      revision += 1
+      return true
+    }
     record(.replace(index: index, from: marks[index], to: mark))
     return true
   }
