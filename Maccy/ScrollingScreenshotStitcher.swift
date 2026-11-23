@@ -129,15 +129,16 @@ nonisolated struct ScrollingScreenshotStitcher {
   }
 
   private func rowsMatch(_ old: Int, _ new: Int, in next: RowSignatures,
-                         previous: RowSignatures? = nil) -> Bool {
+                         previous: RowSignatures? = nil, columns: Range<Int>? = nil) -> Bool {
     let bins = binCount
+    let columns = columns ?? 0..<bins
     return (previous ?? signatures).values.withUnsafeBufferPointer { oldBuffer in
       next.values.withUnsafeBufferPointer { newBuffer in
         let lhs = oldBuffer.baseAddress!
         let rhs = newBuffer.baseAddress!
-        var a = old * bins
-        var b = new * bins
-        let end = a + bins
+        var a = old * bins + columns.lowerBound
+        var b = new * bins + columns.lowerBound
+        let end = old * bins + columns.upperBound
         while a < end {
           let difference = Int(lhs[a]) &- Int(rhs[b])
           if difference > 2 || difference < -2 { return false }
@@ -147,6 +148,86 @@ nonisolated struct ScrollingScreenshotStitcher {
         return true
       }
     }
+  }
+
+  private func matchingColumns(in next: RowSignatures, rows: Range<Int>, shift: Int) -> [Range<Int>] {
+    let bins = binCount
+    let cap = max(1, bins / 8)
+    guard bins > cap else { return [] }
+    var left = 0
+    var right = bins
+    let edgeColumns = Array(0..<cap) + Array((bins - cap)..<bins)
+    signatures.values.withUnsafeBufferPointer { old in
+      next.values.withUnsafeBufferPointer { new in
+        for row in rows {
+          guard rowsMatch(row + shift, row, in: next, columns: cap..<(bins - cap)) else { continue }
+          var first = bins
+          var last = -1
+          for column in edgeColumns {
+            let difference = Int(old[(row + shift) * bins + column]) - Int(new[row * bins + column])
+            if abs(difference) > 2 { first = min(first, column); last = column }
+          }
+          if last >= 0, last < cap { left = max(left, last + 1) }
+          if first < bins, first >= bins - cap { right = min(right, first) }
+        }
+      }
+    }
+    var result: [Range<Int>] = []
+    if left > 0 { result.append(left..<bins) }
+    if right < bins { result.append(0..<right) }
+    return result
+  }
+
+  private func informativeHash(_ row: Int, in next: RowSignatures, columns: Range<Int>) -> UInt64? {
+    if columns == 0..<binCount { return next.informative[row] ? next.hashes[0][row] : nil }
+    var minimum = 255
+    var maximum = 0
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for column in columns {
+      let value = next.values[row * binCount + column]
+      minimum = min(minimum, Int(value))
+      maximum = max(maximum, Int(value))
+      hash = (hash ^ UInt64(value)) &* 1_099_511_628_211
+    }
+    return maximum - minimum >= 8 ? hash : nil
+  }
+
+  private func score(shift: Int, in next: RowSignatures, header: Int, trimmed: Int,
+                     columns: Range<Int>) -> (value: Double, header: Int, trimmed: Int)? {
+    let end = frameHeight - trimmed - shift
+    let matches = (header..<end).map { rowsMatch($0 + shift, $0, in: next, columns: columns) }
+    var candidateHeader = header
+    var leadingMissed = false
+    while candidateHeader < end {
+      let matched = matches[candidateHeader - header]
+      if matched, informativeHash(candidateHeader, in: next, columns: columns) != nil { break }
+      if !matched { leadingMissed = true }
+      candidateHeader += 1
+    }
+    if !leadingMissed || candidateHeader > frameHeight / 4 { candidateHeader = header }
+    var matched = 0
+    var missed = 0
+    var trailingMissed = 0
+    var distinctMatches: Set<UInt64> = []
+    for row in candidateHeader..<end {
+      if matches[row - header] {
+        matched += 1
+        trailingMissed = 0
+        if let hash = informativeHash(row, in: next, columns: columns) { distinctMatches.insert(hash) }
+      } else {
+        missed += 1
+        trailingMissed += 1
+      }
+    }
+    var candidateTrimmed = trimmed
+    var compared = end - candidateHeader
+    if missed > 0, trailingMissed == missed, missed <= frameHeight / 4 {
+      candidateTrimmed += missed
+      compared -= missed
+    }
+    let band = frameHeight - candidateHeader - candidateTrimmed
+    guard compared >= max(4, band / 3), distinctMatches.count >= min(4, compared) else { return nil }
+    return (Double(matched) / Double(compared), candidateHeader, candidateTrimmed)
   }
 
   private func candidateShifts(in next: RowSignatures, header: Int, end: Int, maximumShift: Int,
@@ -263,47 +344,34 @@ nonisolated struct ScrollingScreenshotStitcher {
     let minimumOverlap = max(4, band / 3)
     guard band > minimumOverlap else { return false }
     var bestShift = 0
+    var bestHeader = header
     var bestTrimmed = trimmed
     var bestScore = 0.0
     var runnerUp = 0.0
     for shift in candidateShifts(in: keys, header: header, end: frameHeight - trimmed,
                                  maximumShift: band - minimumOverlap) {
-      let overlap = band - shift
-      var matched = 0
-      var missed = 0
-      var trailingMissed = 0
-      var distinctMatches: Set<UInt64> = []
-      for row in header..<(frameHeight - trimmed - shift) {
-        if rowsMatch(row + shift, row, in: keys) {
-          matched += 1
-          trailingMissed = 0
-          if keys.informative[row] { distinctMatches.insert(keys.hashes[0][row]) }
-        } else {
-          missed += 1
-          trailingMissed += 1
+      var candidate = score(shift: shift, in: keys, header: header, trimmed: trimmed, columns: 0..<binCount)
+      if candidate?.value != 1 || candidate?.header != header {
+        for columns in matchingColumns(in: keys, rows: header..<(frameHeight - trimmed - shift), shift: shift) {
+          if let masked = score(shift: shift, in: keys, header: header, trimmed: trimmed, columns: columns),
+             masked.value > (candidate?.value ?? 0)
+              || (masked.value == candidate?.value && masked.header < (candidate?.header ?? header)) {
+            candidate = masked
+          }
         }
-        if missed > max(overlap / 10, frameHeight / 4) { break }
       }
-      var candidateTrimmed = trimmed
-      var compared = overlap
-      if missed > 0, trailingMissed == missed, missed <= frameHeight / 4 {
-        candidateTrimmed += missed
-        compared -= missed
-        let candidateBand = band - missed
-        guard compared >= max(4, candidateBand / 3) else { continue }
-      }
-      guard distinctMatches.count >= min(4, compared) else { continue }
-      let score = Double(matched) / Double(compared)
-      if score > bestScore {
+      guard let candidate else { continue }
+      if candidate.value > bestScore {
         runnerUp = bestScore
-        bestScore = score
+        bestScore = candidate.value
         bestShift = shift
-        bestTrimmed = candidateTrimmed
-      } else { runnerUp = max(runnerUp, score) }
+        bestHeader = candidate.header
+        bestTrimmed = candidate.trimmed
+      } else { runnerUp = max(runnerUp, candidate.value) }
     }
     guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return false }
     trimmed = bestTrimmed
-    let start = max(header, frameHeight - trimmed - bestShift)
+    let start = max(bestHeader, frameHeight - trimmed - bestShift)
     let contentCount = frameHeight - footer - start
     let count = min(contentCount, maximumHeight - (height - trimmed + footer))
     guard count > 0 else {

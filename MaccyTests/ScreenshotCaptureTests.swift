@@ -7,6 +7,95 @@ import Testing
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Recorded Safari toolbar and Chrome scrollbar frames retain exact output pixels",
+        arguments: ["safari-toolbar", "chrome-scrollbar"])
+  func scrollingRecordedBrowserUI(name: String) throws {
+    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("Fixtures/Scrolling")
+    func image(_ suffix: String) throws -> CGImage {
+      let data = try Data(contentsOf: directory.appendingPathComponent("\(name)-\(suffix).png"))
+      let bitmap = try #require(NSBitmapImageRep(data: data))
+      return try #require(bitmap.cgImage)
+    }
+    let first = try image("before")
+    let next = try image("after")
+    let width = first.width
+    let frameHeight = first.height
+    let shift = name == "safari-toolbar" ? 160 : 80
+    func pixels(_ image: CGImage) throws -> [UInt8] {
+      var bytes = [UInt8](repeating: 0, count: width * frameHeight * 4)
+      try bytes.withUnsafeMutableBytes { buffer in
+        let context = try #require(CGContext(data: buffer.baseAddress, width: width, height: frameHeight,
+          bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+        context.setBlendMode(.copy)
+        context.interpolationQuality = .none
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: frameHeight))
+      }
+      return bytes
+    }
+    let oldPixels = try pixels(first)
+    let nextPixels = try pixels(next)
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: 100_000_000)
+    #expect({ stitcher.append(first) }())
+    #expect({ stitcher.append(next) }())
+    #expect(stitcher.height == frameHeight + shift)
+    let bottomChrome = 96
+    let expected = Array(oldPixels.prefix((frameHeight - bottomChrome) * width * 4))
+      + Array(nextPixels.suffix((shift + bottomChrome) * width * 4))
+    #expect({ stitcher.pixels == expected }())
+  }
+
+  @Test("Changing edge thumbs and header colours preserve body matching and unmodified output",
+        arguments: ["left", "right", "header", "both", "middle", "scattered", "wideEdge", "tallHeader",
+                    "shortOverlap", "twoEdges"])
+  func scrollingChangingStrips(mode: String) {
+    let width = 256
+    let frameHeight = 800
+    let shift = mode == "shortOverlap" ? 500 : 128
+    let stride = width * 4
+    let header = mode == "shortOverlap" ? 160
+      : ["header", "both", "tallHeader"].contains(mode) ? (mode == "tallHeader" ? 240 : 80) : 0
+    let page = scrollingTextContent(width: width, height: frameHeight + shift)
+    func frame(_ offset: Int) -> [UInt8] {
+      var bytes = Array(page[(offset * stride)..<((offset + frameHeight) * stride)])
+      for row in 0..<frameHeight {
+        for column in 0..<width {
+          var value: UInt8?
+          if row < header { value = offset == 0 ? 40 : 200 }
+          if ["left", "right", "both", "wideEdge", "twoEdges"].contains(mode) {
+            let thickness = mode == "wideEdge" ? 40 : 12
+            let atEdge = mode == "twoEdges" ? column < thickness || column >= width - thickness
+              : mode == "left" ? column < thickness : column >= width - thickness
+            if atEdge, (offset == 0 ? 100..<200 : 120..<220).contains(row) {
+              let original = value ?? bytes[row * stride + column * 4]
+              value = UInt8((Int(original) + 75) / 2)
+            }
+          }
+          if offset > 0, (100..<300).contains(row) {
+            if mode == "middle", (120..<132).contains(column) { value = 40 }
+            if mode == "scattered", column % 31 == 0 { value = 40 }
+          }
+          if let value {
+            let index = row * stride + column * 4
+            bytes[index] = value; bytes[index + 1] = value; bytes[index + 2] = value
+          }
+        }
+      }
+      return bytes
+    }
+    let first = frame(0)
+    let next = frame(shift)
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: width * 2000)
+    #expect({ stitcher.append(rgba: first) }())
+    let accepted = stitcher.append(rgba: next)
+    let shouldAccept = ["left", "right", "header", "both"].contains(mode)
+    #expect(accepted == shouldAccept)
+    #expect(stitcher.height == (shouldAccept ? frameHeight + shift : frameHeight))
+    let expected = shouldAccept ? first + Array(next.suffix(shift * stride)) : first
+    #expect({ stitcher.pixels == expected }())
+  }
+
   @Test("Native text frames stitch exactly at point and Retina resolutions", arguments: [1, 2])
   func scrollingRetinaText(scale: Int) async throws {
     let width = 1120 * scale
