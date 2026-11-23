@@ -61,6 +61,8 @@ final class ScreenshotSelectionController {
   private var timeoutTask: Task<Void, Never>?
   private var screenObserver: NSObjectProtocol?
   private var scrollingTask: Task<Void, Never>?
+  private var scrollingDelayTask: Task<Void, Error>?
+  private var scrollingDelayIsIdle = false
 
   init(
     displays: @escaping @MainActor () -> [Display] = { Display.current() },
@@ -250,9 +252,14 @@ final class ScreenshotSelectionController {
       window.scrollingPanel = panel
       let processor = ScrollingScreenshotProcessor()
       panel.onCancel = { [weak self] in self?.cancel() }
+      panel.onScrollActivity = { [weak self] in
+        guard let self, scrollingDelayIsIdle else { return }
+        scrollingDelayTask?.cancel()
+      }
       panel.onFinish = { [weak self] pin in
         guard let self, isSelecting else { return }
         scrollingTask?.cancel()
+        scrollingDelayTask?.cancel()
         scrollingTask = Task { [weak self] in
           do {
             guard let data = try await processor.pngData(), !Task.isCancelled,
@@ -270,10 +277,12 @@ final class ScreenshotSelectionController {
       let captureRect = Self.captureRectangle(rectangle, display: display)
       scrollingTask = Task { [weak self, weak panel] in
         var lastThumbnailUpdate: ContinuousClock.Instant?
+        var cadence = ScrollingScreenshotCadence()
         while !Task.isCancelled {
           guard let self, let panel, isSelecting else { return }
           let ids = Set((windows.map(\.windowNumber) + [panel.windowNumber]).compactMap { CGWindowID(exactly: $0) })
           do {
+            let started = ContinuousClock.now
             let frame = try await captureRegion(display, captureRect, ids)
             guard !Task.isCancelled, isSelecting else { return }
             guard let cgImage = frame.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -291,7 +300,17 @@ final class ScreenshotSelectionController {
             }
             panel.updateHint(capped: update.capReached, showSlowScrollHint: update.showSlowScrollHint)
             if update.capReached { return }
-            try await Task.sleep(for: .milliseconds(150))
+            let delay = cadence.delay(after: update.appendResult, elapsed: started.duration(to: .now))
+            scrollingDelayIsIdle = cadence.isIdle
+            let sleeper = Task { try await Task.sleep(for: delay) }
+            scrollingDelayTask = sleeper
+            do { try await sleeper.value }
+            catch {
+              try Task.checkCancellation()
+              try await Task.sleep(for: .milliseconds(5))
+            }
+            scrollingDelayTask = nil
+            scrollingDelayIsIdle = false
           } catch {
             if !Task.isCancelled { cancel() }
             return
@@ -335,6 +354,9 @@ final class ScreenshotSelectionController {
     guard let continuation else { return }
     self.continuation = nil
     scrollingTask?.cancel()
+    scrollingDelayTask?.cancel()
+    scrollingDelayTask = nil
+    scrollingDelayIsIdle = false
     scrollingTask = nil
     timeoutTask?.cancel()
     timeoutTask = nil

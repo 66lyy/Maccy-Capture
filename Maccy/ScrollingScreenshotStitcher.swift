@@ -411,6 +411,16 @@ extension ScrollingScreenshotStitcher {
   }
 }
 
+nonisolated struct ScrollingScreenshotCadence {
+  private var unchangedFrames = 0
+  var isIdle: Bool { unchangedFrames >= 4 }
+
+  mutating func delay(after result: ScrollingScreenshotStitcher.AppendResult, elapsed: Duration) -> Duration {
+    unchangedFrames = result == .unchanged ? min(4, unchangedFrames + 1) : 0
+    return max(.milliseconds(5), (isIdle ? .milliseconds(150) : .milliseconds(50)) - max(.zero, elapsed))
+  }
+}
+
 actor ScrollingScreenshotProcessor {
   struct Update: Sendable {
     let thumbnail: CGImage?

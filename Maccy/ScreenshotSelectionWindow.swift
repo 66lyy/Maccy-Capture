@@ -73,6 +73,10 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
 final class ScrollingScreenshotPanel: NSPanel {
   var onFinish: ((Bool) -> Void)?
   var onCancel: (() -> Void)?
+  var onScrollActivity: (() -> Void)?
+  private var localScrollMonitor: Any?
+  private var globalScrollMonitor: Any?
+  private var controls: [NSButton] = []
   private(set) var image: CGImage?
   private let thumbnail = NSImageView()
   private let dimensions = NSTextField(labelWithString: "")
@@ -82,9 +86,40 @@ final class ScrollingScreenshotPanel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
 
+  isolated deinit {
+    if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
+    if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
+  }
+
+  nonisolated static func placement(beside rectangle: NSRect, bounds: NSRect, size: NSSize) -> NSRect {
+    guard bounds.width > 0, bounds.height > 0, size.width > 0, size.height > 0 else {
+      return NSRect(origin: bounds.origin, size: .zero)
+    }
+    let size = NSSize(width: min(size.width, bounds.width), height: min(size.height, bounds.height))
+    let x = min(max(rectangle.midX - size.width / 2, bounds.minX), bounds.maxX - size.width)
+    let y = min(max(rectangle.midY - size.height / 2, bounds.minY), bounds.maxY - size.height)
+    let below = rectangle.minY - bounds.minY - size.height
+    let above = bounds.maxY - rectangle.maxY - size.height
+    let right = bounds.maxX - rectangle.maxX - size.width
+    let left = rectangle.minX - bounds.minX - size.width
+    let candidates = [
+      NSPoint(x: x, y: rectangle.minY - size.height - min(8, max(0, below))),
+      NSPoint(x: x, y: rectangle.maxY + min(8, max(0, above))),
+      NSPoint(x: rectangle.maxX + min(8, max(0, right)), y: y),
+      NSPoint(x: rectangle.minX - size.width - min(8, max(0, left)), y: y)
+    ]
+    for origin in candidates {
+      let frame = NSRect(origin: origin, size: size)
+      if bounds.contains(frame), !frame.intersects(rectangle) { return frame }
+    }
+    return NSRect(x: min(max(rectangle.maxX - size.width, bounds.minX), bounds.maxX - size.width),
+      y: min(max(rectangle.minY - size.height - 8, bounds.minY), bounds.maxY - size.height),
+      width: size.width, height: size.height)
+  }
+
   init(beside rectangle: NSRect, bounds: NSRect, level: Int) {
-    let frame = ScreenshotAnnotationWindow.toolbarFrame(
-      beside: rectangle, bounds: bounds, size: NSSize(width: 300, height: 240)
+    let frame = Self.placement(
+      beside: rectangle, bounds: bounds, size: NSSize(width: 330, height: 240)
     )
     super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     self.level = NSWindow.Level(rawValue: level)
@@ -110,7 +145,8 @@ final class ScrollingScreenshotPanel: NSPanel {
     let pin = NSButton(title: text("ScreenshotPinImage"), target: self, action: #selector(pinResult))
     let cancel = NSButton(title: text("ScreenshotCancel"), target: self, action: #selector(cancelResult))
     outputButtons = [copy, pin]
-    for button in [copy, pin, cancel] {
+    controls = [copy, pin, cancel]
+    for button in controls {
       button.bezelStyle = .rounded
       _ = button.applyGlassBezel()
     }
@@ -127,6 +163,37 @@ final class ScrollingScreenshotPanel: NSPanel {
       stack.centerYAnchor.constraint(equalTo: group.controlsView.centerYAnchor),
       stack.widthAnchor.constraint(lessThanOrEqualTo: group.controlsView.widthAnchor, constant: -24)
     ])
+    let events: NSEvent.EventTypeMask = [.scrollWheel, .mouseMoved, .leftMouseDragged]
+    localScrollMonitor = NSEvent.addLocalMonitorForEvents(matching: events) { [weak self] event in
+      if event.type == .scrollWheel { self?.onScrollActivity?() }
+      else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
+      return event
+    }
+    globalScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: events) { [weak self] event in
+      if event.type == .scrollWheel { self?.onScrollActivity?() }
+      else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
+    }
+    surface.layoutSubtreeIfNeeded()
+    updateMousePassthrough(at: NSEvent.mouseLocation)
+  }
+
+  nonisolated static func ignoresMouse(at point: NSPoint, controls: [NSRect]) -> Bool {
+    !controls.contains { $0.contains(point) }
+  }
+
+  func updateMousePassthrough(at point: NSPoint) {
+    let frames = controls.map { convertToScreen($0.convert($0.bounds, to: nil)) }
+    ignoresMouseEvents = Self.ignoresMouse(at: point, controls: frames)
+  }
+
+  override func close() {
+    if let localScrollMonitor { NSEvent.removeMonitor(localScrollMonitor) }
+    if let globalScrollMonitor { NSEvent.removeMonitor(globalScrollMonitor) }
+    localScrollMonitor = nil
+    globalScrollMonitor = nil
+    onScrollActivity = nil
+    ignoresMouseEvents = false
+    super.close()
   }
 
   func update(_ image: CGImage, width: Int, height: Int, capped: Bool) {

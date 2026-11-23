@@ -5,6 +5,80 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("Long capture backs off only after four unchanged frames and changed outcomes reset it")
+  func scrollingCadence() {
+    var cadence = ScrollingScreenshotCadence()
+    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(30)) == .milliseconds(20))
+    for _ in 0..<3 {
+      #expect(cadence.delay(after: .unchanged, elapsed: .milliseconds(30)) == .milliseconds(20))
+      #expect(!cadence.isIdle)
+    }
+    for _ in 0..<8 {
+      #expect(cadence.delay(after: .unchanged, elapsed: .milliseconds(30)) == .milliseconds(120))
+      #expect(cadence.isIdle)
+    }
+    for result: ScrollingScreenshotStitcher.AppendResult in [.appended, .unmatched, .upward, .capped, .invalid] {
+      #expect(cadence.delay(after: result, elapsed: .milliseconds(30)) == .milliseconds(20))
+      #expect(!cadence.isIdle)
+      for _ in 0..<4 { _ = cadence.delay(after: .unchanged, elapsed: .zero) }
+    }
+    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(80)) == .milliseconds(5))
+    #expect(cadence.delay(after: .unmatched, elapsed: .milliseconds(48)) == .milliseconds(5))
+    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(-10)) == .milliseconds(50))
+  }
+
+  @Test("Long capture panel prefers below, above, right, then left and stays on its visible screen")
+  func scrollingPanelPlacement() {
+    let bounds = NSRect(x: 0, y: 0, width: 1000, height: 800)
+    let size = NSSize(width: 300, height: 240)
+    let cases: [(NSRect, NSRect)] = [
+      (.init(x: 100, y: 400, width: 400, height: 200), .init(x: 150, y: 152, width: 300, height: 240)),
+      (.init(x: 100, y: 20, width: 400, height: 200), .init(x: 150, y: 228, width: 300, height: 240)),
+      (.init(x: 100, y: 560, width: 400, height: 220), .init(x: 150, y: 312, width: 300, height: 240)),
+      (.init(x: 50, y: 0, width: 500, height: 800), .init(x: 558, y: 280, width: 300, height: 240)),
+      (.init(x: 450, y: 0, width: 500, height: 800), .init(x: 142, y: 280, width: 300, height: 240)),
+      (.init(x: 0, y: 240, width: 1000, height: 560), .init(x: 350, y: 0, width: 300, height: 240))
+    ]
+    for (selection, expected) in cases {
+      let frame = ScrollingScreenshotPanel.placement(beside: selection, bounds: bounds, size: size)
+      #expect(frame == expected)
+      #expect(bounds.contains(frame))
+      #expect(!frame.intersects(selection))
+      let offset = NSPoint(x: -1200, y: 300)
+      #expect(ScrollingScreenshotPanel.placement(
+        beside: selection.offsetBy(dx: offset.x, dy: offset.y),
+        bounds: bounds.offsetBy(dx: offset.x, dy: offset.y), size: size
+      ) == expected.offsetBy(dx: offset.x, dy: offset.y))
+    }
+    let full = ScrollingScreenshotPanel.placement(beside: bounds, bounds: bounds, size: size)
+    #expect(bounds.contains(full))
+    #expect(full.intersects(bounds))
+    let tiny = NSRect(x: 40, y: 30, width: 180, height: 120)
+    #expect(ScrollingScreenshotPanel.placement(beside: tiny, bounds: tiny, size: size) == tiny)
+    #expect(ScrollingScreenshotPanel.placement(beside: bounds, bounds: .zero, size: size) == .zero)
+    #expect(ScrollingScreenshotPanel.placement(beside: bounds, bounds: bounds, size: .zero) == .zero)
+  }
+
+  @Test("Panel non-control areas pass input through without event posting and buttons remain clickable")
+  func scrollingPanelWheel() throws {
+    let panel = ScrollingScreenshotPanel(beside: .zero,
+      bounds: NSRect(x: 0, y: 0, width: 1000, height: 800), level: 10)
+    defer { panel.close() }
+    let content = try #require(panel.contentView)
+    content.layoutSubtreeIfNeeded()
+    func buttons(_ view: NSView) -> [NSButton] {
+      (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons)
+    }
+    let button = try #require(buttons(content).first)
+    let frame = panel.convertToScreen(button.convert(button.bounds, to: nil))
+    panel.updateMousePassthrough(at: NSPoint(x: frame.midX, y: frame.midY))
+    #expect(!panel.ignoresMouseEvents)
+    panel.updateMousePassthrough(at: NSPoint(x: panel.frame.midX, y: panel.frame.maxY - 40))
+    #expect(panel.ignoresMouseEvents)
+    #expect(ScrollingScreenshotPanel.ignoresMouse(at: .zero, controls: []))
+    panel.close()
+  }
+
   @Test("Overlay damage includes old and new borders, clips to bounds, and handles empty highlights")
   func overlayDirtyRect() {
     let bounds = NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -152,7 +226,6 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.allSatisfy { $0.ignoresMouseEvents && $0.selectionView.isScrolling })
     #expect(controller.windows.allSatisfy { $0.selectionView.frozen == nil && $0.annotationToolbar.isHidden })
     #expect(panel.level.rawValue > window.level.rawValue)
-    #expect(!panel.ignoresMouseEvents)
     controller.cancel()
     #expect(try await task.value == nil)
     #expect(window.scrollingPanel == nil)

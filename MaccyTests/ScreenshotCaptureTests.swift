@@ -7,6 +7,52 @@ import Testing
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Native text frames stitch exactly at point and Retina resolutions", arguments: [1, 2])
+  func scrollingRetinaText(scale: Int) async throws {
+    let width = 1120 * scale
+    let frameHeight = 800 * scale
+    let pageHeight = 1040 * scale
+    var page = [UInt8](repeating: 255, count: width * pageHeight * 4)
+    try page.withUnsafeMutableBytes { buffer in
+      let context = try #require(CGContext(data: buffer.baseAddress, width: width, height: pageHeight,
+        bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+      context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+      defer { NSGraphicsContext.restoreGraphicsState() }
+      for line in 0..<32 {
+        ("Line \(line) — Cedar branches shelter seven finches. Marker \(line * 7919)" as NSString).draw(
+          at: NSPoint(x: 24, y: 1000 - line * 32), withAttributes: [
+            .font: NSFont.monospacedSystemFont(ofSize: 20, weight: .regular), .foregroundColor: NSColor.black
+          ])
+      }
+    }
+    let processor = ScrollingScreenshotProcessor()
+    var processorMilliseconds: [Double] = []
+    var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight, maximumPixels: 100_000_000)
+    for offset in [0, 20, 60, 100, 200] {
+      let firstByte = offset * scale * width * 4
+      let bytes = Array(page[firstByte..<(firstByte + frameHeight * width * 4)])
+      let provider = try #require(CGDataProvider(data: Data(bytes) as CFData))
+      let image = try #require(CGImage(width: width, height: frameHeight, bitsPerComponent: 8,
+        bitsPerPixel: 32, bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue),
+        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+      let accepted = stitcher.append(image)
+      #expect(accepted)
+      #expect(stitcher.height == frameHeight + offset * scale)
+      #expect({ stitcher.pixels == Array(page.prefix((frameHeight + offset * scale) * width * 4)) }())
+      let started = Date()
+      let update = try await processor.append(image, refreshPreview: true, maximumPixels: 100_000_000)
+      processorMilliseconds.append(Date().timeIntervalSince(started) * 1000)
+      #expect(update.appendResult == .appended)
+      #expect(update.height == stitcher.height)
+      #expect(update.thumbnail != nil)
+    }
+    print("RETINA_PROCESSOR scale=\(scale) pixels=\(width)x\(frameHeight) milliseconds=\(processorMilliseconds)")
+  }
+
   private func scrollingFrame(_ start: Int, header: Int = 0, footer: Int = 0) -> [UInt8] {
     (0..<24).flatMap { y -> [UInt8] in
       let value = y < header ? 240 + y : y >= 24 - footer ? 250 + y - 24 : start + y - header
