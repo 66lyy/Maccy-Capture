@@ -312,7 +312,7 @@ CI assigns `CFBundleVersion` as `1100 + GITHUB_RUN_NUMBER`, followed by the run 
 For example `1142.1` and `1142.2` are different upgradable builds even when the marketing version remains `2.8.0`.
 Local developer builds default to build `1000`; `MACCY_BUILD_VERSION` can override packaged build numbers.
 Keep the workflow's build counter monotonic; do not reset it or reuse the same version for different archives.
-The unsigned legacy upstream `appcast.xml` is not used by this modified app.
+Maccy Capture only uses its release-hosted `capture-appcast.xml` and ships no local appcast.
 Clients without the new updater need one manual installation before subsequent in-app upgrades.
 
 After the bundle identifier changes, grant screen recording and any required accessibility permissions

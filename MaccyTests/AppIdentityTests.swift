@@ -63,10 +63,9 @@ struct AppIdentityTests {
     #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "CaptureIcon")
     #expect(AppIdentity.isCustomizedBuild)
     #expect(SoftwareUpdater().isAvailable)
-    #expect(
-      (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)?
-        .contains(RepositoryUpdateFeed.repository) == true
-    )
+    let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+    #expect(feedURL == "https://github.com/66lyy/Maccy-Capture/releases/latest/download/capture-appcast.xml")
+    #expect(Bundle.main.url(forResource: "appcast", withExtension: "xml") == nil)
     #expect(Bundle.main.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true)
   }
 
