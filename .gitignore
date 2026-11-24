@@ -22,3 +22,5 @@ DerivedData/
 *.provisionprofile
 .env
 .env.*
+__pycache__/
+*.pyc
