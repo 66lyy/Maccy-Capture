@@ -7,150 +7,176 @@ import Testing
 struct SoftwareUpdaterTests {
   private let feed = RepositoryUpdateFeed(repository: "fixture/capture")
 
-  @Test("Update discovery uses the pinned GitHub API without credentials, profile data or cookies")
+  private let stableTag = "maccy-capture-v2.8.0"
+  private let previewTag = "maccy-capture-v2.8.0-build1042.1"
+  private let packageName = "Maccy-Capture-2.8.0-build1042.1-abcdef123456-universal.zip"
+
+  @Test("Update discovery uses public GitHub routes without credentials, profile data or cookies")
   func requestPrivacy() {
-    let request = feed.request()
-    #expect(request.url?.absoluteString == "https://api.github.com/repos/fixture/capture/releases/latest")
-    #expect(request.url?.query == nil)
-    #expect(request.httpMethod == "GET")
-    #expect(request.httpBody == nil)
-    #expect(request.value(forHTTPHeaderField: "Cookie") == nil)
-    #expect(!request.httpShouldHandleCookies)
-    #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
-  }
-
-  @Test("A stable release resolves its tagged feed and allowed archive assets")
-  func validRelease() throws {
-    let resolved = try feed.resolve(data: releaseData(), response: response())
-    #expect(resolved.feedURL.absoluteString ==
-      "https://github.com/fixture/capture/releases/download/maccy-capture-v2.8.0/capture-appcast.xml?asset=10")
-    #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
-    #expect(!resolved.permits(URL(string: assetURL(11)), length: 199))
-    #expect(!resolved.permits(URL(string: assetURL(12)), length: 200))
-    #expect(!resolved.permits(nil, length: 200))
-  }
-
-  @Test("Preview selects the newest published complete stable or test release")
-  func previewRelease() throws {
     let preview = RepositoryUpdateFeed(repository: "fixture/capture", channel: .preview)
-    #expect(preview.request().url?.absoluteString ==
-      "https://api.github.com/repos/fixture/capture/releases?per_page=10")
-    let previewResponse = try #require(HTTPURLResponse(
-      url: preview.releaseURL, statusCode: 200, httpVersion: nil, headerFields: nil
-    ))
-    func releases(_ overrides: [[String: Any]]) throws -> Data {
-      let objects = try overrides.map {
-        var object = try #require(JSONSerialization.jsonObject(with: releaseData($0)) as? [String: Any])
-        if $0["published_at"] is NSNull { object.removeValue(forKey: "published_at") }
-        return object
-      }
-      return try JSONSerialization.data(withJSONObject: objects)
+    let requests = [feed.request(), preview.request()]
+    #expect(requests.compactMap { $0.url?.absoluteString } == [
+      "https://github.com/fixture/capture/releases/latest",
+      "https://github.com/fixture/capture/releases.atom"
+    ])
+    for request in requests {
+      #expect(request.url?.query == nil)
+      #expect(request.httpMethod == "GET")
+      #expect(request.httpBody == nil)
+      #expect(request.value(forHTTPHeaderField: "Cookie") == nil)
+      #expect(!request.httpShouldHandleCookies)
+      #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
     }
-    let test: [String: Any] = [
-      "tag_name": "maccy-capture-v2.8.1-build1042.1", "prerelease": true,
-      "published_at": "2026-11-20T07:36:57Z"
+  }
+
+  @Test("The stable redirect resolves a tag-pinned appcast and exact archive")
+  func validRelease() async throws {
+    let tags = try feed.releaseTags(data: Data(), response: response(location: tagURL(stableTag)))
+    #expect(tags == [stableTag])
+    let resolved = try await feed.resolve(tags: tags) { request in
+      try self.assetResponse(request, tag: stableTag)
+    }
+    let appcast = browserURL(stableTag, "capture-appcast.xml")
+    let archive = browserURL(stableTag, packageName)
+    #expect(resolved.feedURL == appcast)
+    #expect(resolved.downloadURL(for: archive, length: 200) == archive)
+    #expect(resolved.downloadURL(for: archive, length: 199) == nil)
+    #expect(resolved.downloadURL(for: browserURL(previewTag, packageName), length: 200) == nil)
+    #expect(resolved.downloadURL(for: URL(string: "\(archive)?token=fixture"), length: 200) == nil)
+    #expect(resolved.downloadURL(for: nil, length: 200) == nil)
+  }
+
+  @Test("The legacy enclosure is rewritten to the pinned browser ZIP before Sparkle downloads it")
+  func rewritesLegacyEnclosure() async throws {
+    let resolved = try await feed.resolve(tags: [stableTag]) { request in
+      try assetResponse(request, tag: stableTag)
+    }
+    let legacy = try #require(URL(string: "https://api.github.com/repos/fixture/capture/releases/assets/11"))
+    let archive = browserURL(stableTag, packageName)
+    #expect(resolved.downloadURL(for: legacy, length: 200) == archive)
+    let request = NSMutableURLRequest(url: legacy)
+    resolved.configureDownload(request, enclosure: legacy, length: 200)
+    #expect(request.url == archive)
+    #expect(!request.httpShouldHandleCookies)
+    #expect(request.cachePolicy == .reloadIgnoringLocalCacheData)
+
+    for variant in [
+      "https://api.github.com/repos/other/capture/releases/assets/11",
+      "https://api.github.com.evil.invalid/repos/fixture/capture/releases/assets/11",
+      "https://api.github.com/repos/fixture/capture/releases/assets/0",
+      "\(legacy)?token=fixture"
+    ] {
+      let foreign = try #require(URL(string: variant))
+      #expect(resolved.downloadURL(for: foreign, length: 200) == nil)
+      let blocked = NSMutableURLRequest(url: foreign)
+      resolved.configureDownload(blocked, enclosure: foreign, length: 200)
+      #expect(blocked.url?.absoluteString == "about:blank")
+    }
+    let invalidRequests: [(URL, UInt64)] = [(legacy, 199), (archive, 200)]
+    for (url, length) in invalidRequests {
+      let blocked = NSMutableURLRequest(url: url)
+      resolved.configureDownload(blocked, enclosure: legacy, length: length)
+      #expect(blocked.url?.absoluteString == "about:blank")
+    }
+  }
+
+  @Test("Preview selects the newest complete stable or test release from the Atom index")
+  func previewRelease() async throws {
+    let preview = RepositoryUpdateFeed(repository: "fixture/capture", channel: .preview)
+    let newer = "maccy-capture-v2.8.1"
+    let candidates = [
+      (tagURL(stableTag), "2026-11-20T07:26:36Z"),
+      (tagURL(previewTag), "2026-11-20T07:36:57Z"),
+      (tagURL(newer), "2026-11-20T08:00:00Z"),
+      (tagURL("capture-latest"), "2026-11-20T09:00:00Z"),
+      (tagURL("maccy-capture-v2.8.1-build1042.1.2.3"), "2026-11-20T09:00:00Z"),
+      ("https://github.com/other/capture/releases/tag/\(newer)", "2026-11-20T09:00:00Z"),
+      (tagURL("maccy-capture-v2.8.2"), "invalid")
     ]
-    let skipped: [[String: Any]] = [
-      ["draft": true],
-      ["tag_name": "capture-latest", "prerelease": true],
-      ["tag_name": "maccy-capture-v2.8.1-build1042.1.2.3", "prerelease": true],
-      ["assets": []],
-      ["assets": [asset(11, packageName, 200)]],
-      ["assets": [asset(10, "capture-appcast.xml", 100), asset(11, packageName, 0)]],
-      ["assets": [asset(10, "capture-appcast.xml", 100, state: "starter"), asset(11, packageName, 200)]],
-      ["assets": [asset(10, "capture-appcast.xml", 100), asset(12, "capture-appcast.xml", 100),
-                  asset(11, packageName, 200)]]
-    ]
-    let invalidNewer = skipped.map {
-      $0.merging(["published_at": "2026-11-20T08:00:00Z"]) { _, value in value }
-    }
-    let undated: [[String: Any]] = [["published_at": NSNull()], ["published_at": "invalid"]]
-    for candidates in [[[:], test], [test, [:]], invalidNewer + undated + [[:], test]] {
-      let resolved = try preview.resolve(data: releases(candidates), response: previewResponse)
-      #expect(resolved.feedURL.absoluteString ==
-        "https://github.com/fixture/capture/releases/download/maccy-capture-v2.8.1-build1042.1/capture-appcast.xml?asset=10")
-      #expect(resolved.permits(URL(string: assetURL(11)), length: 200))
-    }
-    let newerStable: [String: Any] = ["published_at": "2026-11-20T09:00:00Z"]
-    let stable = try preview.resolve(data: releases([test, newerStable]), response: previewResponse)
-    #expect(stable.feedURL.path.contains("maccy-capture-v2.8.0/"))
-    for overrides in [[], invalidNewer, undated] {
-      #expect(throws: RepositoryUpdateFeed.Failure.unavailable) {
-        _ = try preview.resolve(data: releases(overrides), response: previewResponse)
+    let previewResponse = response(200, url: preview.releaseURL)
+    for entries in [candidates, Array(candidates.reversed())] {
+      let tags = try preview.releaseTags(data: atom(entries), response: previewResponse)
+      #expect(tags == [newer, previewTag, stableTag])
+      let resolved = try await preview.resolve(tags: tags) { request in
+        if request.url == browserURL(newer, "UPDATE-METADATA.json") {
+          return (Data(), response(404, url: request.url))
+        }
+        return try assetResponse(request, tag: previewTag)
       }
+      #expect(resolved.feedURL == browserURL(previewTag, "capture-appcast.xml"))
+      let archive = browserURL(previewTag, packageName)
+      #expect(resolved.downloadURL(for: archive, length: 200) == archive)
     }
-    for data in [Data("{}".utf8), Data("invalid".utf8), Data(repeating: 32, count: 2_000_001)] {
+    let tags = try preview.releaseTags(data: atom([
+      candidates[1], (tagURL(stableTag), "2026-11-20T09:00:00Z")
+    ]), response: previewResponse)
+    #expect(tags.first == stableTag)
+
+    #expect(throws: RepositoryUpdateFeed.Failure.unavailable) {
+      _ = try preview.releaseTags(data: atom([]), response: previewResponse)
+    }
+    for data in [Data("{}".utf8), Data("<feed/>".utf8), Data(repeating: 32, count: 2_000_001)] {
       #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
-        _ = try preview.resolve(data: data, response: previewResponse)
+        _ = try preview.releaseTags(data: data, response: previewResponse)
       }
     }
-    #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
-      _ = try feed.resolve(data: releaseData(test), response: response())
-    }
   }
-
-  @Test("Replacing the appcast changes its download URL")
-  func replacedAppcast() throws {
-    let nextFeed = try feed.resolve(
-      data: releaseData(["assets": [asset(20, "capture-appcast.xml", 100), asset(11, packageName, 200)]]),
-      response: response()
-    )
-    #expect(nextFeed.feedURL.query == "asset=20")
-  }
-
 
   @Test("Failed release discovery reports update unavailability")
   func unavailableRelease() {
     for status in [401, 403, 404, 429, 500] {
       #expect(throws: RepositoryUpdateFeed.Failure.unavailable) {
-        _ = try feed.resolve(data: Data(), response: response(status))
+        _ = try feed.releaseTags(data: Data(), response: response(status))
       }
     }
   }
 
-  @Test("Wrong tags, drafts, missing feeds and duplicate assets are rejected")
-  func malformedReleases() throws {
-    let variants: [[String: Any]] = [
-      ["tag_name": "upstream-latest"],
-      ["tag_name": "maccy-capture-v2.8.0/../capture-latest"],
-      ["tag_name": "maccy-capture-v2.8.0\n"],
-      ["tag_name": "capture-latest"],
-      ["prerelease": true],
-      ["draft": true],
-      ["assets": []],
-      ["assets": [asset(10, "capture-appcast.xml", 100), asset(10, "capture-appcast.xml", 100)]],
-      ["assets": [asset(10, "capture-appcast.xml", 1_000_001), asset(11, packageName, 200)]]
-    ]
-    for override in variants {
-      #expect(throws: RepositoryUpdateFeed.Failure.self) {
-        _ = try feed.resolve(data: releaseData(override), response: response())
-      }
-    }
-  }
-
-  @Test("Release assets must belong to the configured repository and use the exact API URLs")
-  func rejectsForeignAssets() throws {
-    for url in [
-      "http://api.github.com/repos/fixture/capture/releases/assets/10",
-      "https://api.github.com.evil.invalid/repos/fixture/capture/releases/assets/10",
-      "https://api.github.com/repos/other/project/releases/assets/10",
-      "https://api.github.com/repos/fixture/capture/releases/assets/10?token=fixture",
-      "https://fixture@api.github.com/repos/fixture/capture/releases/assets/10",
-      "https://api.github.com:444/repos/fixture/capture/releases/assets/10"
+  @Test("The Stable redirect must point to a valid stable tag in the configured repository")
+  func malformedReleases() {
+    for location in [
+      nil, tagURL("upstream-latest"), tagURL("capture-latest"), tagURL(previewTag),
+      tagURL("\(stableTag)/../capture-latest"), tagURL("\(stableTag)%0A"),
+      tagURL("\(stableTag)?token=fixture"), "https://github.com/other/project/releases/tag/\(stableTag)",
+      "https://github.com.evil.invalid/fixture/capture/releases/tag/\(stableTag)",
+      "https://fixture@github.com/fixture/capture/releases/tag/\(stableTag)",
+      "https://github.com:444/fixture/capture/releases/tag/\(stableTag)",
+      "http://github.com/fixture/capture/releases/tag/\(stableTag)"
     ] {
-      var invalid = asset(10, "capture-appcast.xml", 100)
-      invalid["url"] = url
-      #expect(throws: RepositoryUpdateFeed.Failure.self) {
-        _ = try feed.resolve(
-          data: releaseData(["assets": [invalid, asset(11, packageName, 200)]]), response: response()
-        )
+      #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
+        _ = try feed.releaseTags(data: Data(), response: response(location: location))
       }
     }
-    #expect(throws: RepositoryUpdateFeed.Failure.self) {
-      let foreign = HTTPURLResponse(
-        url: URL(string: "https://fixture.invalid")!, statusCode: 200, httpVersion: nil, headerFields: nil
-      )!
-      _ = try feed.resolve(data: releaseData(), response: foreign)
+    #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
+      _ = try feed.releaseTags(data: Data(), response: response(url: URL(string: "https://fixture.invalid")))
+    }
+  }
+
+  @Test("Tagged assets reject missing feeds, unexpected redirects and malformed archive metadata")
+  func rejectsInvalidAssets() async throws {
+    for status in [404, 403] {
+      await #expect(throws: RepositoryUpdateFeed.Failure.unavailable) {
+        _ = try await feed.resolve(tags: [stableTag]) { request in
+          if request.httpMethod == "HEAD" { return (Data(), response(status, url: request.url)) }
+          return try assetResponse(request, tag: stableTag)
+        }
+      }
+    }
+    for override: [String: Any] in [
+      ["filename": "../\(packageName)"], ["length": 0], ["version": "1?fixture"],
+      ["shortVersion": "2.8.1"], ["sourceRevision": "0123456789abcdef"]
+    ] {
+      await #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
+        _ = try await feed.resolve(tags: [stableTag]) { request in
+          try assetResponse(request, tag: stableTag, override: override)
+        }
+      }
+    }
+    for destination in ["https://fixture.invalid", "https://user@release-assets.githubusercontent.com"] {
+      await #expect(throws: RepositoryUpdateFeed.Failure.invalidRelease) {
+        _ = try await feed.resolve(tags: [stableTag]) { _ in
+          (Data(), response(200, url: URL(string: destination)))
+        }
+      }
     }
   }
 
@@ -317,28 +343,32 @@ struct SoftwareUpdaterTests {
     #expect(updater.statusKey == "UpdateReleaseUnavailable")
   }
 
-  @Test("Release discovery never follows a redirect")
-  func refusesRedirects() async {
+  @Test("Discovery inspects the Stable redirect and only follows tagged asset redirects to GitHub's CDN")
+  func validatesRedirects() async {
     let session = URLSession(configuration: .ephemeral)
     defer { session.invalidateAndCancel() }
-    let task = session.dataTask(with: feed.request())
-    let response = HTTPURLResponse(
-      url: feed.releaseURL, statusCode: 302, httpVersion: nil,
-      headerFields: ["Location": "https://fixture.invalid"]
-    )!
-    let redirected: URLRequest? = await withCheckedContinuation { continuation in
-      RepositoryUpdateSession().urlSession(
-        session, task: task, willPerformHTTPRedirection: response,
-        newRequest: URLRequest(url: URL(string: "https://fixture.invalid")!)
-      ) {
-        continuation.resume(returning: $0)
+    let asset = browserURL(stableTag, "UPDATE-METADATA.json")
+    let cdn = URL(string: "https://release-assets.githubusercontent.com/asset?credential=fixture")!
+    func redirected(_ original: URLRequest, _ source: URL, _ target: URL) async -> URLRequest? {
+      let task = session.dataTask(with: original)
+      defer { task.cancel() }
+      return await withCheckedContinuation { continuation in
+        RepositoryUpdateSession().urlSession(
+          session, task: task, willPerformHTTPRedirection: response(url: source),
+          newRequest: URLRequest(url: target)
+        ) {
+          continuation.resume(returning: $0)
+        }
       }
     }
-    #expect(redirected == nil)
-    task.cancel()
+    #expect(await redirected(feed.request(), feed.releaseURL, URL(string: tagURL(stableTag))!) == nil)
+    #expect(await redirected(URLRequest(url: asset), asset, cdn)?.url == cdn)
+    #expect(await redirected(URLRequest(url: asset), cdn, cdn) == nil)
+    for foreign in ["http://release-assets.githubusercontent.com", "https://release-assets.githubusercontent.com.evil.invalid",
+                    "https://api.github.com/repos/fixture/capture/releases/assets/9"] {
+      #expect(await redirected(URLRequest(url: asset), asset, URL(string: foreign)!) == nil)
+    }
   }
-
-  private var packageName: String { "Maccy-Capture-2.8.0-abcdef123456-universal.zip" }
 
   private func makeUpdater(
     clock: CheckClock, enabled: Bool = true, hasActiveCapture: @escaping () -> Bool = { false },
@@ -382,27 +412,46 @@ struct SoftwareUpdaterTests {
     }
   }
 
-  private func assetURL(_ identifier: Int) -> String {
-    "https://api.github.com/repos/fixture/capture/releases/assets/\(identifier)"
+  private func tagURL(_ tag: String) -> String {
+    "https://github.com/fixture/capture/releases/tag/\(tag)"
   }
 
-  private func asset(_ identifier: Int, _ name: String, _ size: Int, state: String = "uploaded") -> [String: Any] {
-    [
-      "id": identifier, "name": name, "size": size, "url": assetURL(identifier),
-      "state": state, "created_at": "2026-11-20T02:07:00Z"
+  private func browserURL(_ tag: String, _ asset: String) -> URL {
+    URL(string: "https://github.com/fixture/capture/releases/download/\(tag)/\(asset)")!
+  }
+
+  private func atom(_ entries: [(String, String)]) -> Data {
+    let elements = entries.map { link, updated in
+      """
+      <entry><link rel="alternate" href="\(link)"/><updated>\(updated)</updated></entry>
+      """
+    }.joined()
+    return Data("<feed xmlns=\"http://www.w3.org/2005/Atom\">\(elements)</feed>".utf8)
+  }
+
+  private func assetResponse(
+    _ request: URLRequest, tag: String, override: [String: Any] = [:]
+  ) throws -> (Data, URLResponse) {
+    let url = try #require(request.url)
+    #expect(!request.httpShouldHandleCookies)
+    if url == browserURL(tag, "capture-appcast.xml") {
+      #expect(request.httpMethod == "HEAD")
+      return (Data(), response(200, url: url, headers: ["Content-Length": "100"]))
+    }
+    #expect(url == browserURL(tag, "UPDATE-METADATA.json"))
+    let metadata: [String: Any] = [
+      "filename": packageName, "length": 200, "shortVersion": "2.8.0",
+      "version": "1042.1", "sourceRevision": "abcdef123456abcdef123456abcdef123456abcd"
     ]
+    return (try JSONSerialization.data(withJSONObject: metadata.merging(override) { _, value in value }),
+            response(200, url: url))
   }
 
-  private func releaseData(_ override: [String: Any] = [:]) throws -> Data {
-    let release: [String: Any] = [
-      "tag_name": "maccy-capture-v2.8.0", "draft": false, "prerelease": false,
-      "published_at": "2026-11-20T07:26:36Z",
-      "assets": [asset(10, "capture-appcast.xml", 100), asset(11, packageName, 200)]
-    ]
-    return try JSONSerialization.data(withJSONObject: release.merging(override) { _, value in value })
-  }
-
-  private func response(_ status: Int = 200) -> HTTPURLResponse {
-    HTTPURLResponse(url: feed.releaseURL, statusCode: status, httpVersion: nil, headerFields: nil)!
+  private func response(
+    _ status: Int = 302, url: URL? = nil, location: String? = nil, headers: [String: String] = [:]
+  ) -> HTTPURLResponse {
+    var headers = headers
+    headers["Location"] = location
+    return HTTPURLResponse(url: url ?? feed.releaseURL, statusCode: status, httpVersion: nil, headerFields: headers)!
   }
 }

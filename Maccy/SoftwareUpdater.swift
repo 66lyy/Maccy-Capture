@@ -151,9 +151,16 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
           statusKey = "UpdateReady"
           return
         }
-        resolved = try feed.resolve(data: data, response: response)
+        let tags = try feed.releaseTags(data: data, response: response)
+        let release = try await feed.resolve(tags: tags, load: load)
+        try Task.checkCancellation()
+        if !userInitiated, hasActiveCapture() {
+          nextCheckDelay = Self.automaticCheckRetryInterval
+          statusKey = "UpdateReady"
+          return
+        }
+        resolved = release
         let updater = prepareUpdater()
-        updater.httpHeaders = ["Accept": "application/octet-stream"]
         if !isUpdaterStarted {
           try updater.start()
           isUpdaterStarted = true
@@ -201,7 +208,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   func updater(
     _ updater: SPUUpdater, shouldProceedWithUpdate updateItem: SUAppcastItem, updateCheck: SPUUpdateCheck
   ) throws {
-    guard resolved?.permits(updateItem.fileURL, length: updateItem.contentLength) == true else {
+    guard resolved?.downloadURL(for: updateItem.fileURL, length: updateItem.contentLength) != nil else {
       throw NSError(
         domain: "MaccyCaptureUpdates", code: 1,
         userInfo: [NSLocalizedDescriptionKey: text("UpdateUntrustedPackage")]
@@ -217,12 +224,11 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   func updater(
     _ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest
   ) {
-    guard resolved?.permits(item.fileURL, length: item.contentLength) == true, request.url == item.fileURL else {
+    guard let resolved else {
       request.url = URL(string: "about:blank")
       return
     }
-    request.httpShouldHandleCookies = false
-    request.cachePolicy = .reloadIgnoringLocalCacheData
+    resolved.configureDownload(request, enclosure: item.fileURL, length: item.contentLength)
   }
 
   func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool { true }
@@ -234,7 +240,6 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   func updater(
     _ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?
   ) {
-    updater.httpHeaders = nil
     resolved = nil
     statusKey = error == nil || (error as NSError?)?.code == Int(SUError.noUpdateError.rawValue)
       ? "UpdateReady" : "UpdateCheckFailed"

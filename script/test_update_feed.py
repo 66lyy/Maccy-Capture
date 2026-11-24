@@ -204,6 +204,12 @@ class UpdateFeedTests(unittest.TestCase):
         build_commands = [c for c in commands if len(c) > 2 and c[2] == tag]
         build_uploads = [c for c in build_commands if c[1] == "upload"]
         self.assertEqual(len(build_uploads), 6, "retry must skip all identical assets")
+        enclosure = ET.parse(distribution / "capture-appcast.xml").find("channel/item/enclosure")
+        uploaded_zip = json.loads(asset_store.read_text())[archive.name]
+        self.assertEqual(enclosure.get("url"),
+                         f"https://api.github.com/repos/fixture/capture/releases/assets/{uploaded_zip['id']}")
+        self.assertEqual(enclosure.get("length"), str(archive.stat().st_size))
+        self.assertEqual(enclosure.get(f"{{{SPARKLE}}}edSignature"), self.signature)
         self.assertTrue(all('--clobber' not in c for c in build_uploads))
         self.assertGreater(build_commands.index(next(c for c in build_commands if c[1] == 'edit')),
                            max(i for i, c in enumerate(build_commands) if c[1] == 'upload'))
