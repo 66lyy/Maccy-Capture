@@ -1064,6 +1064,19 @@ extension SharedStateTests {
       #expect(!history.items.contains(items[1]))
     }
 
+    @Test("Invalid stored history sizes use the minimum supported size", arguments: [0, -1, Int.min])
+    func invalidHistorySize(size: Int) throws {
+      let pinned = history.add(historyItem("pinned"))
+      history.togglePin(pinned)
+      history.add(historyItem("old"))
+      Defaults[.size] = size
+      let latest = history.add(historyItem("latest"))
+
+      #expect(history.unpinnedItems == [latest])
+      #expect(history.pinnedItems == [pinned])
+      try assertStorageCounts(items: 2, contents: 2)
+    }
+
     @Test("Pinning updates pin order")
     func pinningUpdatesPinOrder() {
       let item = history.add(historyItem("foo"))

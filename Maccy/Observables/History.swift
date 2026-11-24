@@ -251,7 +251,9 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
     // Remove exceeding items. Do this after the item is added to avoid removing something
     // if a duplicate was found as then the size already stayed the same.
-    limitHistorySize(to: item.pin == nil ? Defaults[.size] - 1 : Defaults[.size], saveToStorage: false)
+    let reservedSlots = item.pin == nil ? 1 : 0
+    let existingItemLimit = max(Defaults[.size], reservedSlots) - reservedSlots
+    limitHistorySize(to: existingItemLimit, saveToStorage: false)
 
     sessionLog[Clipboard.shared.changeCount] = item
 
