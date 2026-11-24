@@ -37,6 +37,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   private let scale: CGFloat
+  var drawsFrozenBackground = true
   private let pixelSize: CGSize?
   private let pinImmediately: Bool
   private var drag: Drag?
@@ -111,7 +112,7 @@ final class ScreenshotSelectionView: NSView {
 
   func moveHover(to point: NSPoint) {
     pointer = point
-    if canShowLoupe, let window, window.isVisible, !window.isKeyWindow {
+    if canShowLoupe, let window, window.canBecomeKey, window.isVisible, !window.isKeyWindow {
       window.makeKey()
       window.makeFirstResponder(self)
     }
@@ -703,7 +704,7 @@ final class ScreenshotSelectionView: NSView {
   override func draw(_ dirtyRect: NSRect) {
     NSColor.clear.setFill()
     bounds.fill(using: .copy)
-    if !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
+    if drawsFrozenBackground, !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
     let highlights = highlightRects
     let shade = NSBezierPath(rect: bounds)
     if let highlight = highlights.first, highlights.count == 1 { shade.appendRect(highlight) }
@@ -715,7 +716,7 @@ final class ScreenshotSelectionView: NSView {
       NSGraphicsContext.current?.cgContext.clip(to: highlights)
       NSColor.clear.setFill()
       bounds.fill(using: .copy)
-      if !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
+      if drawsFrozenBackground, !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
       NSGraphicsContext.restoreGraphicsState()
     }
     if !isScrolling {
