@@ -582,6 +582,38 @@ struct ScreenshotSelectionTests {
     #expect(bounds.contains(rectangle))
   }
 
+  @Test("A drag ignores nonfinite AppKit pointer coordinates")
+  func invalidSelectionDrag() throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    defer { view.finishInteraction() }
+    func event(_ type: NSEvent.EventType, at point: NSPoint) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+      ))
+    }
+    let invalid = NSPoint(x: CGFloat.nan, y: 120)
+    var begins = 0
+    var finished: NSRect?
+    view.onBegin = { begins += 1 }
+    view.onValidSelection = { finished = $0 }
+    view.mouseDown(with: try event(.leftMouseDown, at: invalid))
+    #expect(begins == 0)
+    view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 50, y: 50)))
+    view.mouseDragged(with: try event(.leftMouseDragged, at: NSPoint(x: 100, y: 100)))
+    let selected = try #require(view.selectedRect)
+    view.mouseMoved(with: try event(.mouseMoved, at: invalid))
+    view.mouseDragged(with: try event(.leftMouseDragged, at: invalid))
+    #expect(view.selectedRect == selected)
+    view.mouseDragged(with: try event(.leftMouseDragged, at: NSPoint(x: 150, y: 125)))
+    let expected = NSRect(x: 50, y: 50, width: 100, height: 75)
+    #expect(view.selectedRect == expected)
+    view.mouseUp(with: try event(.leftMouseUp, at: invalid))
+    #expect(finished == expected)
+  }
+
   @Test("AppKit coordinates map to capture coordinates on left and upper displays")
   func displayCoordinates() {
     let left = ScreenshotSelectionController.Display(

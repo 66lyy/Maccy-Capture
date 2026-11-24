@@ -110,6 +110,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func moveHover(to point: NSPoint) {
+    guard point.x.isFinite, point.y.isFinite else { return }
     pointer = point
     if canShowLoupe, let window, window.isVisible, !window.isKeyWindow {
       window.makeKey()
@@ -132,10 +133,9 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func mouseDown(with event: NSEvent) {
-    guard colorCopyTask == nil, canAdjustSelection?() != false else { return }
+    guard colorCopyTask == nil, canAdjustSelection?() != false, let point = pointerLocation(of: event) else { return }
     window?.makeKey()
     window?.makeFirstResponder(self)
-    let point = convert(event.locationInWindow, from: nil)
     pointer = point
     shiftHeld = event.modifierFlags.contains(.shift)
     if shiftHeld, let target = findElementWindow?(point), target.id != kCGNullWindowID {
@@ -159,13 +159,19 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func mouseDragged(with event: NSEvent) {
-    let point = convert(event.locationInWindow, from: nil)
+    guard let point = pointerLocation(of: event) else { return }
     pointer = point
     updateSelection(to: point)
   }
 
   override func mouseUp(with event: NSEvent) {
-    endSelection(at: convert(event.locationInWindow, from: nil))
+    guard let point = pointerLocation(of: event) ?? pointer else { return }
+    endSelection(at: point)
+  }
+
+  private func pointerLocation(of event: NSEvent) -> NSPoint? {
+    let point = convert(event.locationInWindow, from: nil)
+    return point.x.isFinite && point.y.isFinite ? point : nil
   }
 
   override func rightMouseDown(with event: NSEvent) {
