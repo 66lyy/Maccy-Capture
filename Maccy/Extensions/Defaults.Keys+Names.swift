@@ -67,6 +67,7 @@ nonisolated extension Defaults.Keys {
   static let screenshotColorFormat = Key<String>("screenshotColorFormat", default: "hex", suite: preferencesSuite)
   static let annotationToolOrder = Key<[Int]>("annotationToolOrder", default: [], suite: preferencesSuite)
   static let disabledAnnotationTools = Key<[Int]>("disabledAnnotationTools", default: [], suite: preferencesSuite)
+  static let toolbarGroupOrder = Key<[String]>("screenshotToolbarGroupOrder", default: [], suite: preferencesSuite)
   static let toolbarItemOrder = Key<[String]>("screenshotToolbarItemOrder", default: [], suite: preferencesSuite)
   static let disabledToolbarItems = Key<[String]>("disabledScreenshotToolbarItems", default: [], suite: preferencesSuite)
   static let formatJSON = Key<Bool>("formatJSON", default: true, suite: preferencesSuite)

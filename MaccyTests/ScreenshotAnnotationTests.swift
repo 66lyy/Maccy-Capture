@@ -1049,6 +1049,60 @@ struct ScreenshotAnnotationTests {
     #expect(Item.styleRows(order: ["bogus", "size", "size"], disabled: [], narrow: false) == [[.size, .palette, .customColor]])
   }
 
+  @Test("Toolbar groups default to the original order and drag between their measured positions")
+  func toolbarGroupReorder() throws {
+    typealias Group = ScreenshotToolbarItem.Group
+    #expect(Group.ordered([]) == [.tools, .history, .output, .style])
+    #expect(Group.ordered(["style", "bogus", "style", "output"]) == [.style, .output, .tools, .history])
+    let positions: [Group: CGFloat] = [.tools: 0, .history: 310, .output: 392, .style: 586]
+    #expect(Group.history.reordered(translation: 40, positions: positions, order: []) == nil)
+    #expect(Group.history.reordered(translation: .nan, positions: positions, order: []) == nil)
+    let forward = try #require(Group.history.reordered(translation: 90, positions: positions, order: []))
+    #expect(forward == ["tools", "output", "history", "style"])
+    let backward = try #require(Group.style.reordered(translation: -586, positions: positions, order: []))
+    #expect(backward == ["style", "tools", "history", "output"])
+  }
+
+  @Test("New editor and selection toolbars use the saved group order independently of item preferences",
+        arguments: [420.0, 450.0, 800.0])
+  func savedToolbarGroupOrder(displayWidth: CGFloat) throws {
+    let groupOrder = Defaults[.toolbarGroupOrder], itemOrder = Defaults[.toolbarItemOrder]
+    let disabledItems = Defaults[.disabledToolbarItems]
+    defer {
+      Defaults[.toolbarGroupOrder] = groupOrder
+      Defaults[.toolbarItemOrder] = itemOrder
+      Defaults[.disabledToolbarItems] = disabledItems
+    }
+    Defaults[.toolbarGroupOrder] = ["style", "output", "history", "tools"]
+    Defaults[.toolbarItemOrder] = ["copy", "redo"]
+    Defaults[.disabledToolbarItems] = ["size"]
+    let display = NSRect(x: 0, y: 0, width: displayWidth, height: 800)
+    for selection in [false, true] {
+      let window: ScreenshotAnnotationWindow
+      if selection {
+        window = ScreenshotSelectionWindow(frame: display, visibleFrame: display, scale: 1, pinImmediately: false)
+      } else {
+        window = try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
+      }
+      defer { window.close() }
+      window.showToolbar(beside: display.insetBy(dx: 50, dy: 50))
+      window.contentView?.layoutSubtreeIfNeeded()
+      let toolbar = window.annotationToolbar
+      func center(_ control: NSView) -> CGPoint {
+        control.convert(NSPoint(x: control.bounds.midX, y: control.bounds.midY), to: nil)
+      }
+      func precedes(_ first: NSView, _ second: NSView) -> Bool {
+        let a = center(first), b = center(second)
+        return abs(a.y - b.y) < 1 ? a.x < b.x : a.y > b.y
+      }
+      let tool = try #require(window.toolButtons.first)
+      let controls: [NSView] = [window.colorWell, window.copyButton, window.pinButton, window.redoButton, window.undoButton, tool]
+      #expect(controls.allSatisfy { $0.isDescendant(of: toolbar) })
+      #expect(zip(controls, controls.dropFirst()).allSatisfy { precedes($0.0, $0.1) })
+      #expect(window.styleSlider.window == nil)
+    }
+  }
+
   @Test("Row-center drag distances select the destination row")
   func toolbarReorderDistances() throws {
     let pitch = AnnotationToolSettings.rowHeight

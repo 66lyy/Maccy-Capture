@@ -44,6 +44,10 @@ struct AppearanceSettingsPane: View {
       if #available(macOS 26.0, *) {
         glass
       }
+      PreferencesGroup(title: Text("AnnotationToolsSection", tableName: "GeneralSettings"), symbol: "pencil.tip.crop.circle") {
+        AnnotationToolSettings()
+          .padding(.vertical, 10)
+      }
     }
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
       screens = NSScreen.screens
@@ -300,4 +304,207 @@ struct AppearanceSettingsPane: View {
 #Preview {
   AppearanceSettingsPane()
     .environment(\.locale, .init(identifier: "en"))
+}
+
+struct AnnotationToolSettings: View {
+  typealias Tool = ScreenshotAnnotationDocument.Tool
+  typealias Group = ScreenshotToolbarItem.Group
+
+  @Default(.annotationToolOrder) private var order
+  @Default(.disabledAnnotationTools) private var disabled
+  @Default(.toolbarGroupOrder) private var groupOrder
+  @Default(.toolbarItemOrder) private var itemOrder
+  @Default(.disabledToolbarItems) private var disabledItems
+  @State private var groupPositions: [Group: CGFloat] = [:]
+  @GestureState private var draggedGroup: Group?
+  @GestureState private var groupOffset: CGFloat = 0
+  @Namespace private var groupCoordinateSpace
+
+  static let rowHeight: CGFloat = 28
+
+  private var tools: [Tool] { Tool.toolbarTools(order: order, disabled: []) }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      ForEach(Group.ordered(groupOrder), id: \.self) { group in
+        groupRows(group)
+          .opacity(draggedGroup == group ? 0.7 : 1)
+          .offset(y: draggedGroup == group ? groupOffset : 0)
+          .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.frame(in: .named(groupCoordinateSpace)).minY
+          } action: { position in
+            groupPositions[group] = position
+          }
+          .zIndex(draggedGroup == group ? 1 : 0)
+      }
+      Text("AnnotationToolsHelp", tableName: "GeneralSettings")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .coordinateSpace(name: groupCoordinateSpace)
+  }
+
+  @ViewBuilder private func groupRows(_ group: Group) -> some View {
+    if group == .tools {
+      ReorderableToggleList(
+        header: groupHeader(group),
+        rows: tools.map { .init(id: $0.rawValue, symbol: ScreenshotAnnotationWindow.symbol(for: $0), titleKey: $0.titleKey) },
+        isOn: { !disabled.contains($0) },
+        canSwitchOff: { id in tools.filter { !disabled.contains($0.rawValue) }.count > 1 || disabled.contains(id) },
+        setOn: { id, enabled in
+          disabled.removeAll { $0 == id }
+          if !enabled { disabled.append(id) }
+        },
+        move: { id, translation in
+          if let tool = Tool(rawValue: id), let reordered = Self.reorderedTools(tool, translation: translation, order: order) {
+            order = reordered
+          }
+        }
+      )
+    } else {
+      let items = ScreenshotToolbarItem.items(in: group, order: itemOrder, disabled: [])
+      ReorderableToggleList(
+        header: groupHeader(group),
+        rows: items.map { .init(id: $0.rawValue, symbol: $0.symbol, titleKey: $0.titleKey) },
+        isOn: { !disabledItems.contains($0) },
+        canSwitchOff: { _ in true },
+        setOn: { id, enabled in
+          disabledItems.removeAll { $0 == id }
+          if !enabled { disabledItems.append(id) }
+        },
+        move: { id, translation in
+          if let item = ScreenshotToolbarItem(rawValue: id),
+             let reordered = Self.reorderedItems(item, translation: translation, order: itemOrder) {
+            itemOrder = reordered
+          }
+        }
+      )
+    }
+  }
+
+  private func groupHeader(_ group: Group) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: "line.3.horizontal.decrease")
+        .foregroundStyle(.tertiary)
+      Text(LocalizedStringKey(group.titleKey), tableName: "GeneralSettings")
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(.secondary)
+      Spacer(minLength: 0)
+    }
+    .contentShape(Rectangle())
+    .gesture(
+      DragGesture(minimumDistance: 4, coordinateSpace: .named(groupCoordinateSpace))
+        .updating($draggedGroup) { _, state, _ in state = group }
+        .updating($groupOffset) { value, state, _ in state = value.translation.height }
+        .onEnded { value in
+          if let reordered = group.reordered(translation: value.translation.height, positions: groupPositions, order: groupOrder) {
+            groupOrder = reordered
+          }
+        }
+    )
+  }
+
+  static func reorderedItems(_ item: ScreenshotToolbarItem, translation: CGFloat, order: [String]) -> [String]? {
+    guard translation.isFinite else { return nil }
+    let group = ScreenshotToolbarItem.items(in: item.group, order: order, disabled: [])
+    guard let source = group.firstIndex(of: item) else { return nil }
+    let destination = Int(min(max(CGFloat(source) + (translation / rowHeight).rounded(), 0), CGFloat(group.count - 1)))
+    guard destination != source else { return nil }
+    var reordered = group
+    reordered.remove(at: source)
+    reordered.insert(item, at: destination)
+    let others = ScreenshotToolbarItem.Group.allCases.filter { $0 != item.group }
+      .flatMap { ScreenshotToolbarItem.items(in: $0, order: order, disabled: []) }
+    return (reordered + others).map(\.rawValue)
+  }
+
+  static func reorderedTools(_ tool: Tool, translation: CGFloat, order: [Int]) -> [Int]? {
+    guard translation.isFinite else { return nil }
+    let tools = Tool.toolbarTools(order: order, disabled: [])
+    guard let source = tools.firstIndex(of: tool) else { return nil }
+    let destination = Int(min(max(CGFloat(source) + (translation / rowHeight).rounded(), 0), CGFloat(tools.count - 1)))
+    guard destination != source else { return nil }
+    let remaining = tools.filter { $0 != tool }
+    let target = remaining.indices.contains(destination) ? remaining[destination] : nil
+    return reorderedTools(["annotation-tool:\(tool.rawValue)"], before: target, order: order)
+  }
+
+  static func reorderedTools(_ items: [String], before target: Tool?, order: [Int]) -> [Int]? {
+    guard items.count == 1, let item = items.first,
+          item.hasPrefix("annotation-tool:"),
+          let rawValue = Int(item.dropFirst("annotation-tool:".count)),
+          let tool = Tool(rawValue: rawValue), tool != target else { return nil }
+    var reordered = Tool.toolbarTools(order: order, disabled: []).filter { $0 != tool }
+    if let target, let index = reordered.firstIndex(of: target) {
+      reordered.insert(tool, at: index)
+    } else {
+      reordered.append(tool)
+    }
+    return reordered.map(\.rawValue)
+  }
+}
+
+private struct ReorderableToggleList<ID: Hashable, Header: View>: View {
+  struct Row: Identifiable {
+    let id: ID
+    let symbol: String
+    let titleKey: String
+  }
+
+  let header: Header
+  let rows: [Row]
+  let isOn: (ID) -> Bool
+  let canSwitchOff: (ID) -> Bool
+  let setOn: (ID, Bool) -> Void
+  let move: (ID, CGFloat) -> Void
+
+  @GestureState private var dragged: ID?
+  @GestureState private var offset: CGFloat = 0
+  @Namespace private var dragCoordinateSpace
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      header
+      VStack(spacing: 0) {
+        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+          if index > 0 { Divider().frame(height: 1) }
+          HStack(spacing: 8) {
+            HStack(spacing: 8) {
+              Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.tertiary)
+              Image(systemName: row.symbol)
+                .frame(width: 20)
+              Text(LocalizedStringKey(row.titleKey), tableName: "GeneralSettings")
+              Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+              DragGesture(minimumDistance: 4, coordinateSpace: .named(dragCoordinateSpace))
+                .updating($dragged) { _, state, _ in state = row.id }
+                .updating($offset) { value, state, _ in state = value.translation.height }
+                .onEnded { value in move(row.id, value.translation.height) }
+            )
+            Toggle(isOn: Binding(get: { isOn(row.id) }, set: { setOn(row.id, $0) })) {
+              Text(LocalizedStringKey(row.titleKey), tableName: "GeneralSettings")
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
+            .disabled(isOn(row.id) && !canSwitchOff(row.id))
+          }
+          .frame(height: AnnotationToolSettings.rowHeight - 1)
+          .background {
+            if dragged == row.id {
+              RoundedRectangle(cornerRadius: 6).fill(Color.accentColor.opacity(0.15))
+            }
+          }
+          .offset(y: dragged == row.id ? offset : 0)
+          .zIndex(dragged == row.id ? 1 : 0)
+        }
+      }
+      .coordinateSpace(name: dragCoordinateSpace)
+    }
+  }
 }
