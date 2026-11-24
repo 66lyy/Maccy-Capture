@@ -13,7 +13,6 @@ static NSString *settingsTitle;
 static NSUncaughtExceptionHandler *previousUncaughtHandler;
 static objc_exception_preprocessor previousPreprocessor;
 static struct sigaction previousAbort;
-static struct sigaction previousTrap;
 static pthread_t layoutThread;
 static char layoutPath[PATH_MAX];
 static char layoutReport[64 * 1024];
@@ -106,7 +105,7 @@ static void FatalSignal(int signal) {
   }
   // Only POSIX calls here. Restore and redeliver so the prior disposition and
   // system crash reporter still see the fatal signal.
-  sigaction(signal, signal == SIGABRT ? &previousAbort : &previousTrap, NULL);
+  sigaction(signal, &previousAbort, NULL);
   errno = savedErrno;
   raise(signal);
 }
@@ -184,7 +183,6 @@ void InstallExceptionDiagnostics(void) {
     struct sigaction action = { .sa_handler = FatalSignal };
     sigemptyset(&action.sa_mask);
     sigaction(SIGABRT, &action, &previousAbort);
-    sigaction(SIGTRAP, &action, &previousTrap);
     previousPreprocessor = objc_setExceptionPreprocessor(ObserveThrow);
     previousUncaughtHandler = NSGetUncaughtExceptionHandler();
     NSSetUncaughtExceptionHandler(ObserveUncaught);
