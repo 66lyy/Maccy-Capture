@@ -226,6 +226,24 @@ struct AppLanguageTests {
     )
   }
 
+  @Test("Advanced settings shell examples target the running app's defaults domain")
+  func advancedSettingsShellExamples() throws {
+    let identifier = try #require(Bundle.main.bundleIdentifier)
+    var checkedExamples = 0
+    for localization in Bundle.main.localizations {
+      guard let path = Bundle.main.path(forResource: localization, ofType: "lproj"),
+            let bundle = Bundle(path: path) else { continue }
+      for key in ["TurnOffShellScript", "TurnOffNextShellScript"] {
+        let example = bundle.localizedString(forKey: key, value: nil, table: "AdvancedSettings")
+        guard !example.isEmpty && example != key else { continue }
+        #expect(example.contains(identifier), "\(localization): \(key) is missing the app's defaults domain")
+        #expect(!example.localizedCaseInsensitiveContains(AppIdentity.originalIdentifier))
+        checkedExamples += 1
+      }
+    }
+    #expect(checkedExamples > 0)
+  }
+
   @Test("The slow-scroll hint is translated in every shipped localization")
   func slowScrollHintTranslated() throws {
     let english = "Scroll more slowly"
