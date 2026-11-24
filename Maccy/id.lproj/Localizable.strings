@@ -6,7 +6,7 @@
 "clear_all" = "Bersihkan semua";
 "about" = "Mengenai";
 "quit" = "Keluar";
-"preferences" = "Pengaturan…";
+"preferences" = "Pengaturan";
 "search_placeholder" = "Ketik untuk mencari…";
 "clear_alert_message" = "Apakah Anda yakin ingin menghapus riwayat?";
 "clear_alert_comment" = "Ini tidak dapat dibatalkan.";

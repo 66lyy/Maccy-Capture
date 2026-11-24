@@ -7,7 +7,7 @@
 "clear_all" = "Slett alt";
 "about" = "Om";
 "quit" = "Avslutt";
-"preferences" = "Valg…";
+"preferences" = "Valg";
 "clear_alert_message" = "Er du sikker på at du vil tømme historikken?";
 "clear_alert_comment" = "Du kan ikke angre denne handlingen.";
 "clear_alert_cancel" = "Avbryt";

@@ -3,7 +3,7 @@
 "clear_all_tooltip" = "Odebrat všechny položky.";
 "clear_all" = "Odebrat všechny";
 "quit" = "Ukončit";
-"preferences" = "Předvolby…";
+"preferences" = "Předvolby";
 "clear_alert_message" = "Opravdu chceš vymazat historii?";
 "clear_alert_comment" = "Tuto akci nemůžeš vrátit.";
 "clear_alert_cancel" = "Zrušit";

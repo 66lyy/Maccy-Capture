@@ -7,7 +7,7 @@
 "clear_all" = "Clear all";
 "about" = "About";
 "quit" = "Quit";
-"preferences" = "Preferences…";
+"preferences" = "Preferences";
 "clear_alert_message" = "Are you sure you want to clear the history?";
 "clear_alert_comment" = "You can't undo this action.";
 "clear_alert_cancel" = "Cancel";

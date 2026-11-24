@@ -7,7 +7,7 @@
 "clear_all" = "امسح الكل";
 "about" = "عن";
 "quit" = "إغلاق";
-"preferences" = "التفضيلات…";
+"preferences" = "التفضيلات";
 "clear_alert_message" = "هل أنت متأكد أنك تريد مسح سجل التاريخ؟";
 "clear_alert_comment" = "لا يمكنك التراجع عن هذا الإجراء.";
 "clear_alert_cancel" = "إلغاء";

@@ -7,7 +7,7 @@
 "clear_all" = "Izbriši sve";
 "about" = "Informacije";
 "quit" = "Zatvori program";
-"preferences" = "Postavke …";
+"preferences" = "Postavke";
 "clear_alert_message" = "Stvarno želiš izbrisati povijest?";
 "clear_alert_comment" = "To je nepovratna radnja.";
 "clear_alert_cancel" = "Odustani";

@@ -5,7 +5,7 @@
 "clear_all" = "Neteja tots";
 "about" = "Sobre";
 "quit" = "Tanca";
-"preferences" = "Preferències…";
+"preferences" = "Preferències";
 "clear_alert_message" = "Estàs segur que vols esborrar l'històric?";
 "clear_tooltip" = "Neteja elements no fixats.\nSelecciona amb ⇧ per netejar tots els elements.";
 "clear_all_tooltip" = "Neteja tots els elements.";

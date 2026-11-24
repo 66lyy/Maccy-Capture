@@ -7,7 +7,7 @@
 "clear_all" = "Očisti sve";
 "about" = "O Aplikaciji";
 "quit" = "Zatvori";
-"preferences" = "Podešavanja…";
+"preferences" = "Podešavanja";
 "clear_alert_message" = "Da li ste sigurni?";
 "clear_alert_comment" = "Ne možeš povratiti ovu radnju.";
 "clear_alert_cancel" = "Odustani";

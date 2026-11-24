@@ -7,7 +7,7 @@
 "clear_all" = "پاککردنەوەی هەموو";
 "about" = "دەربارە";
 "quit" = "چوونە دەرەوە";
-"preferences" = "رێکخستنەکان…";
+"preferences" = "رێکخستنەکان";
 "clear_alert_message" = "دڵنیایت دەتەوێت مێژووەکە پاک بکەیتەوە؟";
 "clear_alert_comment" = "ناتوانیت ئەم کردەوەیە بگەڕێنیتەوە.";
 "clear_alert_cancel" = "هەڵوەشاندنەوە";

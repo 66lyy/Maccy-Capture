@@ -302,6 +302,18 @@ struct AppLanguageTests {
     }
   }
 
+  @Test("The history footer's Preferences label has no trailing ellipsis in any localization")
+  func preferencesLabelHasNoEllipsis() throws {
+    let localizations = Bundle.main.localizations.filter { $0 != "Base" }
+    #expect(localizations.count >= 30)
+    for localization in localizations {
+      let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
+      let bundle = try #require(Bundle(path: path))
+      let title = bundle.localizedString(forKey: "preferences", value: nil, table: nil)
+      #expect(!title.hasSuffix("…"), "\(localization): \(title)")
+    }
+  }
+
   private func withPreferences(_ body: (UserDefaults, String) -> Void) throws {
     let domain = "local.maccy.language.fixture.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: domain))

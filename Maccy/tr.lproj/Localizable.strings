@@ -7,7 +7,7 @@
 "clear_all" = "Hepsini temizle";
 "about" = "Hakkında";
 "quit" = "Çık";
-"preferences" = "Tercihler…";
+"preferences" = "Tercihler";
 "clear_alert_message" = "Geçmişi temizlemek istediğinize emin misiniz?";
 "clear_alert_comment" = "Bu işlemi geri alamazsınız.";
 "clear_alert_cancel" = "İptal";

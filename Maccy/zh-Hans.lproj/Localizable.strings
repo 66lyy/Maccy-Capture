@@ -7,7 +7,7 @@
 "clear_all" = "全部清除";
 "about" = "关于";
 "quit" = "退出";
-"preferences" = "偏好设置…";
+"preferences" = "偏好设置";
 "clear_alert_message" = "确定要清除历史记录吗？";
 "clear_alert_comment" = "无法撤消此操作。";
 "clear_alert_cancel" = "取消";

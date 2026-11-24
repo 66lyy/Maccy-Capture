@@ -7,7 +7,7 @@
 "clear_all" = "ล้างทั้งหมด";
 "about" = "เกี่ยวกับเรา";
 "quit" = "ออก";
-"preferences" = "ตั้งค่า…";
+"preferences" = "ตั้งค่า";
 "clear_alert_message" = "คุณต้องการล้างประวัติหรือไม่?";
 "clear_alert_comment" = "คุณไม่สามารถย้อนกลับการกระทำนี้ได้";
 "clear_alert_cancel" = "ยกเลิก";

@@ -7,7 +7,7 @@
 "clear_all" = "全てクリア";
 "about" = "Maccy Captureについて";
 "quit" = "終了";
-"preferences" = "設定…";
+"preferences" = "設定";
 "clear_alert_message" = "履歴をクリアしますか？";
 "clear_alert_comment" = "このアクションは元に戻すことができません。";
 "clear_alert_cancel" = "キャンセル";

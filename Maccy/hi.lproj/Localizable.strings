@@ -8,7 +8,7 @@
 "clear_alert_confirm" = "साफ़ करें";
 "search_placeholder" = "खोजने के लिए टाइप करें…";
 "clear_all_tooltip" = "सभी वस्तुओं को हटाएँ।";
-"preferences" = "विकल्प…";
+"preferences" = "विकल्प";
 "clear_tooltip" = "अनपिन की गई वस्तुओं को हटाएँ।\nसब कुछ हटाने के लिए ⇧ के साथ चयन करें।";
 "about" = "अधिक जानकारी";
 "quit" = "एप्लिकेशन बंद करें";

@@ -3,7 +3,7 @@
 "clear_all" = "Wyczyść wszystkie";
 "about" = "O aplikacji";
 "quit" = "Wyjdź";
-"preferences" = "Ustawienia…";
+"preferences" = "Ustawienia";
 "clear_alert_message" = "Czy na pewno chcesz wyczyścić historię?";
 "clear_alert_cancel" = "Anuluj";
 "clear_alert_confirm" = "Wyczyść";

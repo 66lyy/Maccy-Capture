@@ -7,7 +7,7 @@
 "clear_all" = "Tout supprimer";
 "about" = "À propos";
 "quit" = "Quitter";
-"preferences" = "Préférences…";
+"preferences" = "Préférences";
 "clear_alert_message" = "Voulez-vous vraiment effacer l'historique ?";
 "clear_alert_comment" = "Vous ne pouvez pas annuler cette action.";
 "clear_alert_cancel" = "Annuler";

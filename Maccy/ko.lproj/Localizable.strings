@@ -7,7 +7,7 @@
 "clear_all" = "모두 지우기";
 "about" = "관하여";
 "quit" = "종료";
-"preferences" = "설정…";
+"preferences" = "설정";
 "clear_alert_message" = "기록을 지우시겠습니까?";
 "clear_alert_comment" = "이 작업은 되돌릴 수 없습니다.";
 "clear_alert_cancel" = "취소";

@@ -3,7 +3,7 @@
 "clear_all" = "Notīrīt visu";
 "about" = "Par";
 "quit" = "Iziet";
-"preferences" = "Iestatījumi…";
+"preferences" = "Iestatījumi";
 "clear_alert_confirm" = "Notīrīt";
 "quit_tooltip" = "Iziet no lietotnes.";
 "clear_all_tooltip" = "Notīrīt visus vienumus.";

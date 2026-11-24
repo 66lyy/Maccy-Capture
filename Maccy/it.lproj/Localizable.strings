@@ -7,7 +7,7 @@
 "clear_all" = "Pulisci tutto";
 "about" = "Informazioni";
 "quit" = "Chiudi";
-"preferences" = "Preferenze…";
+"preferences" = "Preferenze";
 "clear_alert_message" = "Sei sicuro di voler cancellare la cronologia?";
 "clear_alert_comment" = "Questa azione non può essere annullata.";
 "clear_alert_cancel" = "Annulla";

@@ -7,7 +7,7 @@
 "clear_all" = "Очистить всё";
 "about" = "О приложении";
 "quit" = "Завершить";
-"preferences" = "Настройки…";
+"preferences" = "Настройки";
 "clear_alert_message" = "Вы дейстительно хотите очистить историю?";
 "clear_alert_comment" = "Это действие необратимо.";
 "clear_alert_cancel" = "Отмена";

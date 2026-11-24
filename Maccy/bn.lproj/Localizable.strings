@@ -4,7 +4,7 @@
 "clear_all" = "সবগুলো মুছুন";
 "about" = "সম্পর্ক";
 "quit" = "বন্ধ";
-"preferences" = "পছন্দসমূহ…";
+"preferences" = "পছন্দসমূহ";
 "clear_alert_comment" = "আপনি এই কাজটি করতে পারবেন না।";
 "clear_alert_cancel" = "বাতিল করুন";
 "clear_alert_confirm" = "মুছুন";

@@ -5,7 +5,7 @@
 "about" = "Apie";
 "quit" = "Uždaryti";
 "clear_all_tooltip" = "Išvalyti visus elementus.";
-"preferences" = "Parinktys…";
+"preferences" = "Parinktys";
 "clear_alert_message" = "Ar tikrai norite išvalyti istoriją?";
 "clear_alert_comment" = "Šio veiksmo nebus galima atšaukti.";
 "clear_alert_cancel" = "Atšaukti";

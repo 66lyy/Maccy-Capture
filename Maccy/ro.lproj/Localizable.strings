@@ -1,6 +1,6 @@
 "clear" = "Șterge";
 "clear_tooltip" = "Șterge elementele nefixate.\nSelectează cu ⇧ pentru a șterge tot.";
-"preferences" = "Configurări…";
+"preferences" = "Configurări";
 "clear_all_tooltip" = "Șterge tot.";
 "quit_tooltip" = "Închide aplicația.";
 "quit" = "Închide";

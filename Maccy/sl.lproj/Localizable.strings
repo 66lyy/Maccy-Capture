@@ -5,7 +5,7 @@
 "quit_tooltip" = "Zapri aplikacijo.";
 "clear_all" = "Izbriši vse";
 "about" = "Informacije";
-"preferences" = "Nastavitve…";
+"preferences" = "Nastavitve";
 "clear_alert_cancel" = "Prekliči";
 "clear_alert_confirm" = "Izbriši";
 "clear_tooltip" = "Počisti nepripete elemente.\nIzberite z ⇧, da počistite vse.";

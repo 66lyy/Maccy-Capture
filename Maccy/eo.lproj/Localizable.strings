@@ -7,7 +7,7 @@
 "quit_tooltip" = "Forlasi la aplikaĵon.";
 "clear" = "Forigi";
 "clear_all" = "Forigi ĉion";
-"preferences" = "Agordoj…";
+"preferences" = "Agordoj";
 "clear_alert_message" = "Ĉu vi certas, ke vi volas forigi la historion?";
 "clear_alert_comment" = "Vi ne povas malfari ĉi tiun agon.";
 "clear_alert_confirm" = "Forigi";
