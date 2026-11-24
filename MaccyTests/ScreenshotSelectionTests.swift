@@ -652,6 +652,7 @@ struct ScreenshotSelectionTests {
     #expect(presentation.map(\.wantsKeyboard) == [false, true])
     #expect(presentation.first?.window === controller.windows[1 - keyboardIndex])
     #expect(presentation.last?.window === controller.windows[keyboardIndex])
+    #expect(presentation.allSatisfy { $0.window.animationBehavior == .none })
     controller.cancel()
     #expect(try await task.value == nil)
   }
