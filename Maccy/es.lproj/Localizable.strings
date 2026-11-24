@@ -23,3 +23,5 @@
 "history_item_image_accessibility_label_no_app" = "Imagen, %d por %d";
 "history_item_image_accessibility_generic" = "Imagen";
 "toolbar_remove_paste_stack_action" = "Detener la pila para pegar";
+"check_for_updates" = "Buscar actualizaciones…";
+"check_for_updates_tooltip" = "Comprobar si hay una nueva versión de la aplicación.";

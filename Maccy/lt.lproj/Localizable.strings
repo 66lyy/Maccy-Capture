@@ -23,3 +23,5 @@
 "history_item_image_accessibility_label_no_app" = "Vaizdas, %d×%d";
 "history_item_image_accessibility_generic" = "Vaizdas";
 "toolbar_remove_paste_stack_action" = "Sustabdyti įklijavimo rietuvę";
+"check_for_updates" = "Ieškoti naujinių…";
+"check_for_updates_tooltip" = "Patikrinti, ar yra nauja programos versija.";

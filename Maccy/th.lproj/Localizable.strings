@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "รูปภาพ %d×%d";
 "history_item_image_accessibility_generic" = "รูปภาพ";
 "toolbar_remove_paste_stack_action" = "หยุดกองการวาง";
+"check_for_updates" = "ตรวจหาอัปเดต…";
+"check_for_updates_tooltip" = "ตรวจสอบว่ามีแอปพลิเคชันเวอร์ชันใหม่หรือไม่";

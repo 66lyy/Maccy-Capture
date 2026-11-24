@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "படம், %d×%d";
 "history_item_image_accessibility_generic" = "படம்";
 "toolbar_remove_paste_stack_action" = "ஒட்டுதல் அடுக்கை நிறுத்து";
+"check_for_updates" = "புதுப்பிப்புகளைச் சரிபார்க்க…";
+"check_for_updates_tooltip" = "பயன்பாட்டின் புதிய பதிப்பு உள்ளதா எனச் சரிபார்க்க.";

@@ -25,3 +25,5 @@
 "history_item_image_accessibility_label_no_app" = "ছবি, %d×%d";
 "history_item_image_accessibility_generic" = "ছবি";
 "toolbar_remove_paste_stack_action" = "পেস্ট স্ট্যাক বন্ধ করুন";
+"check_for_updates" = "আপডেট খুঁজুন…";
+"check_for_updates_tooltip" = "অ্যাপলিকেশনের নতুন সংস্করণ আছে কি না দেখুন।";

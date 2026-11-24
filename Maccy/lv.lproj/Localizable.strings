@@ -24,3 +24,5 @@
 "history_item_image_accessibility_label_no_app" = "Attēls, %d×%d";
 "history_item_image_accessibility_generic" = "Attēls";
 "toolbar_remove_paste_stack_action" = "Apturēt ielīmēšanas steku";
+"check_for_updates" = "Meklēt atjauninājumus…";
+"check_for_updates_tooltip" = "Pārbaudīt, vai ir pieejama jauna lietotnes versija.";

@@ -283,6 +283,23 @@ struct AppLanguageTests {
     }
   }
 
+  @Test("The history footer's update check is translated in every shipped localization")
+  func checkForUpdatesTranslated() throws {
+    let localizations = Bundle.main.localizations.filter { $0 != "en" && $0 != "Base" }
+    #expect(localizations.count >= 30)
+    for localization in localizations {
+      let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
+      let bundle = try #require(Bundle(path: path))
+      for (key, english) in [
+        ("check_for_updates", "Check for Updates…"),
+        ("check_for_updates_tooltip", "Check for a new version of the application.")
+      ] {
+        let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+        #expect(!value.isEmpty && value != english && value != key, "\(localization): \(key) is untranslated")
+      }
+    }
+  }
+
   private func withPreferences(_ body: (UserDefaults, String) -> Void) throws {
     let domain = "local.maccy.language.fixture.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: domain))

@@ -180,6 +180,14 @@ struct SoftwareUpdaterTests {
     }
   }
 
+  @Test("The history footer offers Check for Updates right below About")
+  func footerOffersUpdateCheck() throws {
+    let titles = Footer().items.map(\.title)
+    let about = try #require(titles.firstIndex(of: "about"))
+    #expect(titles[about + 1] == "check_for_updates")
+    #expect(titles.last == "quit")
+  }
+
   @Test("Startup checks default to enabled, respect local preferences, and stay offline during tests")
   func isolatedPreferences() throws {
     let domain = "local.maccy.updates.fixture.\(UUID().uuidString)"

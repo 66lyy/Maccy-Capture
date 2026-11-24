@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Görüntü, %d×%d";
 "history_item_image_accessibility_generic" = "Görüntü";
 "toolbar_remove_paste_stack_action" = "Yapıştırma yığınını durdur";
+"check_for_updates" = "Güncellemeleri denetle…";
+"check_for_updates_tooltip" = "Uygulamanın yeni bir sürümü olup olmadığını denetleyin.";

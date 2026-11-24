@@ -31,3 +31,5 @@
 "history_item_image_accessibility_label_no_app" = "Kép, %d×%d";
 "history_item_image_accessibility_generic" = "Kép";
 "toolbar_remove_paste_stack_action" = "Beillesztési verem leállítása";
+"check_for_updates" = "Frissítések keresése…";
+"check_for_updates_tooltip" = "Ellenőrzi, hogy elérhető-e az alkalmazás új verziója.";

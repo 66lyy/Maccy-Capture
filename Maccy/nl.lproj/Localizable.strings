@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Afbeelding, %d×%d";
 "history_item_image_accessibility_generic" = "Afbeelding";
 "toolbar_remove_paste_stack_action" = "Plakstapel stoppen";
+"check_for_updates" = "Zoek naar updates…";
+"check_for_updates_tooltip" = "Controleer of er een nieuwe versie van de app is.";

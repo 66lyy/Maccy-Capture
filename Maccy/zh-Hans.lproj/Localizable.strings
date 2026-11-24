@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "图像，%d×%d";
 "history_item_image_accessibility_generic" = "图像";
 "toolbar_remove_paste_stack_action" = "停止粘贴堆栈";
+"check_for_updates" = "检查更新…";
+"check_for_updates_tooltip" = "检查应用是否有新版本。";

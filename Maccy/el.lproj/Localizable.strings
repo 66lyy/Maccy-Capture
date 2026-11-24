@@ -27,3 +27,5 @@
 "history_item_image_accessibility_label_no_app" = "Εικόνα, %d×%d";
 "history_item_image_accessibility_generic" = "Εικόνα";
 "toolbar_remove_paste_stack_action" = "Διακοπή στοίβας επικόλλησης";
+"check_for_updates" = "Έλεγχος για ενημερώσεις…";
+"check_for_updates_tooltip" = "Έλεγξε αν υπάρχει νέα έκδοση της εφαρμογής.";

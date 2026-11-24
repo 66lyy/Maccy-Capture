@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Bild, %d×%d";
 "history_item_image_accessibility_generic" = "Bild";
 "toolbar_remove_paste_stack_action" = "Einfügestapel stoppen";
+"check_for_updates" = "Nach Updates suchen…";
+"check_for_updates_tooltip" = "Nach einer neuen Version der Anwendung suchen.";

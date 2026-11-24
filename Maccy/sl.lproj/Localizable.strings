@@ -27,3 +27,5 @@
 "history_item_image_accessibility_label_no_app" = "Slika, %d×%d";
 "history_item_image_accessibility_generic" = "Slika";
 "toolbar_remove_paste_stack_action" = "Ustavi sklad za lepljenje";
+"check_for_updates" = "Preveri posodobitve…";
+"check_for_updates_tooltip" = "Preverite, ali je na voljo nova različica aplikacije.";

@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Hình ảnh, %d×%d";
 "history_item_image_accessibility_generic" = "Hình ảnh";
 "toolbar_remove_paste_stack_action" = "Dừng ngăn xếp dán";
+"check_for_updates" = "Kiểm tra cập nhật…";
+"check_for_updates_tooltip" = "Kiểm tra xem có phiên bản mới của ứng dụng không.";
