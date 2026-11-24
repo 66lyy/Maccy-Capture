@@ -2285,6 +2285,64 @@ struct ScreenshotCaptureTests {
     #expect(try Data(contentsOf: obstruction) == data)
   }
 
+  @Test("Releasing the mouse or closing the pin cancels in-flight PNG staging", arguments: [false, true])
+  func cancelInFlightPinExport(closePin: Bool) async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (window, view) = try pinForStagingTest()
+    defer { window.close() }
+    let gate = PinExportStagingGate(root: root, pauseBeforeWrite: true)
+    defer { gate.resume.signal() }
+    var paused = gate.paused.makeAsyncIterator()
+    var observations = gate.observations.makeAsyncIterator()
+    let pending = try startPinExport(in: window, view: view, gate: gate)
+    await paused.next()
+
+    if closePin {
+      window.cancelOperation(nil)
+      #expect(!window.isVisible)
+    } else {
+      view.mouseUp(with: try pinMouseEvent(.leftMouseUp, in: window))
+    }
+    #expect(pending.isCancelled)
+    gate.resume.signal()
+    await pending.value
+
+    let observation = try #require(await observations.next())
+    #expect(observation.cancelled)
+    #expect(observation.stagedDirectories == 0)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+  }
+
+  @Test("A superseded pin export removes its already written PNG without resetting the new drag")
+  func rapidPinExports() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (window, view) = try pinForStagingTest()
+    defer { window.close() }
+    let first = PinExportStagingGate(root: root, pauseBeforeWrite: false)
+    let second = PinExportStagingGate(root: root, pauseBeforeWrite: true)
+    defer { first.resume.signal(); second.resume.signal() }
+    var firstPaused = first.paused.makeAsyncIterator()
+    var secondPaused = second.paused.makeAsyncIterator()
+    let superseded = try startPinExport(in: window, view: view, gate: first)
+    await firstPaused.next()
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).count == 1)
+
+    let latest = try startPinExport(in: window, view: view, gate: second)
+    await secondPaused.next()
+    first.resume.signal()
+    await superseded.value
+
+    #expect(superseded.isCancelled)
+    #expect(!latest.isCancelled && view.exportTask != nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    view.mouseUp(with: try pinMouseEvent(.leftMouseUp, in: window))
+    second.resume.signal()
+    await latest.value
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+  }
+
   @Test("A remapped pinned-window shortcut works without keeping its old binding")
   func remappedPinnedShortcut() throws {
     try #require(AppDelegate.isTesting)
@@ -2738,6 +2796,33 @@ struct ScreenshotCaptureTests {
     )
   }
 
+  private func pinForStagingTest() throws -> (PinnedScreenshotWindow, PinnedScreenshotImageView) {
+    let image = try #require(NSImage(data: generatedPNG()))
+    let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: visibleFrame, anchor: NSPoint(x: visibleFrame.midX, y: visibleFrame.midY)
+    )
+    let view = try #require(window.contentView?.subviews.compactMap { $0 as? PinnedScreenshotImageView }.first)
+    window.present()
+    return (window, view)
+  }
+
+  private func startPinExport(
+    in window: PinnedScreenshotWindow, view: PinnedScreenshotImageView, gate: PinExportStagingGate
+  ) throws -> Task<Void, Never> {
+    view.stageExport = gate.stage
+    view.mouseDown(with: try pinMouseEvent(.leftMouseDown, in: window))
+    view.mouseDragged(with: try pinMouseEvent(.leftMouseDragged, in: window))
+    return try #require(view.exportTask)
+  }
+
+  private func pinMouseEvent(_ type: NSEvent.EventType, in window: NSWindow) throws -> NSEvent {
+    try #require(NSEvent.mouseEvent(
+      with: type, location: NSPoint(x: type == .leftMouseDown ? 4 : 12, y: 4), modifierFlags: [.option],
+      timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+    ))
+  }
+
   private func process(_ executable: String, arguments: [String] = []) -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
@@ -2772,6 +2857,47 @@ struct ScreenshotCaptureTests {
     }
     Issue.record("Capture did not start")
     throw CancellationError()
+  }
+}
+
+nonisolated private final class PinExportStagingGate: Sendable {
+  struct Observation: Sendable {
+    let cancelled: Bool
+    let stagedDirectories: Int?
+  }
+
+  let resume = DispatchSemaphore(value: 0)
+  private let pause = AsyncStream<Void>.makeStream()
+  private let result = AsyncStream<Observation>.makeStream()
+  private let root: URL
+  private let pauseBeforeWrite: Bool
+
+  var paused: AsyncStream<Void> { pause.stream }
+  var observations: AsyncStream<Observation> { result.stream }
+
+  init(root: URL, pauseBeforeWrite: Bool) {
+    self.root = root
+    self.pauseBeforeWrite = pauseBeforeWrite
+  }
+
+  func stage(_ image: CGImage) throws -> URL {
+    defer {
+      result.continuation.yield(.init(
+        cancelled: Task.isCancelled,
+        stagedDirectories: try? FileManager.default.contentsOfDirectory(atPath: root.path).count
+      ))
+      result.continuation.finish()
+      pause.continuation.finish()
+    }
+    if pauseBeforeWrite { wait() }
+    let file = try PinnedScreenshotDragExport.stage(image, in: root)
+    if !pauseBeforeWrite { wait() }
+    return file
+  }
+
+  private func wait() {
+    pause.continuation.yield(())
+    _ = resume.wait(timeout: .now() + 10)
   }
 }
 

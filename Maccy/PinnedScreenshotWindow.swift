@@ -643,10 +643,11 @@ struct PinnedScreenshotDragGesture {
   }
 }
 
-private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
+final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
   private var exportGesture: PinnedScreenshotDragGesture?
   private var lastDragEvent: NSEvent?
-  private var exportTask: Task<Void, Never>?
+  private(set) var exportTask: Task<Void, Never>?
+  var stageExport: @Sendable (CGImage) throws -> URL = { try PinnedScreenshotDragExport.stage($0) }
   private var exportedFile: URL?
 
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -679,8 +680,14 @@ private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
     lastDragEvent = event
     guard exportTask == nil, exportGesture.crossedThreshold(with: event),
           let image, let raster = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-    exportTask = Task { [weak self] in
-      let file = await Task.detached(priority: .userInitiated) { try? PinnedScreenshotDragExport.stage(raster) }.value
+    exportTask = Task { [weak self, stageExport] in
+      guard !Task.isCancelled else { return }
+      let worker = Task.detached(priority: .userInitiated) { try? stageExport(raster) }
+      let file = await withTaskCancellationHandler {
+        await worker.value
+      } onCancel: {
+        worker.cancel()
+      }
       if Task.isCancelled {
         if let file { PinnedScreenshotDragExport.remove(file) }
         return
@@ -746,16 +753,23 @@ nonisolated enum PinnedScreenshotDragExport {
     .appendingPathComponent("MaccyCapturePinExports", isDirectory: true)
 
   static func stage(_ image: CGImage, in root: URL = root) throws -> URL {
+    try Task.checkCancellation()
     let files = FileManager.default
     try files.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     removeExpired(in: root)
+    try Task.checkCancellation()
     let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try files.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
     let file = directory.appendingPathComponent("Screenshot.png")
+    var completed = false
+    defer { if !completed { remove(file) } }
     guard let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil)
-    else { remove(file); throw CocoaError(.fileWriteUnknown) }
+    else { throw CocoaError(.fileWriteUnknown) }
     CGImageDestinationAddImage(destination, image, nil)
-    guard CGImageDestinationFinalize(destination) else { remove(file); throw CocoaError(.fileWriteUnknown) }
+    try Task.checkCancellation()
+    guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+    try Task.checkCancellation()
+    completed = true
     return file
   }
 
