@@ -190,13 +190,11 @@ Stable tag pushes and manual dispatch are not subject to this documentation filt
 The pipeline uses Xcode 26.6 on GitHub's hosted `macos-26` runner.
 It first runs the six regression suites listed below using generated images and simulated input,
 without accessing the developer's desktop, clipboard, history, or keychain.
-On this runner, Apple Swift 6.3.3's Release optimizer has been observed to crash
-in the upstream `FloatingPanel` deinitializer on both `arm64` and `x86_64`.
-Only when that compiler version is detected, the packaging script passes `-Onone`
-for both architectures.
-Other compiler versions retain the project's default optimization settings.
-This workaround may reduce application performance and is recorded in the build information.
-It does not remove features, change window lifecycles, or weaken permission checks.
+With Apple Swift 6.3.3, the Release optimizer's `EarlyPerfInliner` pass crashes
+in the synthesized `FloatingPanel` deinitializer on both `arm64` and `x86_64`.
+An explicit empty `FloatingPanel` deinitializer marked `@_optimize(none)` works around
+the crash without adding any cleanup or changing the window lifecycle. Release builds
+retain the project's whole-module `-O` optimization for the rest of the app on both architectures.
 
 After tests pass, `script/package_release.sh` builds a universal Release application
 and verifies its signature, modified bundle identifier, and `arm64` / `x86_64` architectures.

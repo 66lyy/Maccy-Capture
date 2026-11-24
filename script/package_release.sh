@@ -122,11 +122,6 @@ if [[ -n "${MACCY_BUILD_VERSION:-}" ]]; then
   BUILD_OPTIONS+=("CURRENT_PROJECT_VERSION=$MACCY_BUILD_VERSION")
 fi
 OPTIMIZATION="project default"
-if [[ "$(xcrun swiftc --version)" == *"Apple Swift version 6.3.3 "* ]]; then
-  BUILD_OPTIONS+=(SWIFT_OPTIMIZATION_LEVEL=-Onone)
-  OPTIMIZATION="-Onone for arm64 and x86_64; Swift 6.3.3 optimizer crash workaround"
-  printf 'Applying optimizer workaround for Apple Swift 6.3.3 on arm64 and x86_64.\n'
-fi
 if ! xcodebuild \
   -project "$PROJECT_ROOT/Maccy.xcodeproj" \
   -scheme Maccy \

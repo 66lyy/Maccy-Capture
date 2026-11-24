@@ -117,11 +117,10 @@ bash script/setup_local_signing.sh
 
 流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的六组回归测试，
 只使用生成图片和模拟输入，不读取开发者机器上的桌面、剪贴板、历史或钥匙串。
-已在该运行器上观察到 Apple Swift 6.3.3 的 Release 优化器在原项目
-`FloatingPanel` 析构函数内崩溃，`arm64` 与 `x86_64` 均受影响。
-打包脚本仅检测到这一编译器版本时，通过构建参数对两种架构统一使用 `-Onone`；
-其他编译器版本保留项目原有优化级别。此兼容设置可能降低应用性能，构建信息中会明确记录；
-不通过删除功能、修改窗口生命周期或降低权限检查来规避编译器问题。
+Apple Swift 6.3.3 的 Release 优化器在优化编译器自动生成的 `FloatingPanel` 析构函数时，
+会在 `EarlyPerfInliner` 阶段崩溃，`arm64` 与 `x86_64` 均受影响。
+显式定义空的 `FloatingPanel` 析构函数并标记为 `@_optimize(none)` 可规避此问题，
+不会增加清理操作或改变窗口生命周期。两种架构的 Release 构建均对应用的其余部分保留项目的全模块 `-O` 优化。
 通过后使用 `script/package_release.sh` 构建 Release 通用架构应用，检查代码签名、修改版标识
 和 `arm64` / `x86_64` 架构，然后生成：
 
