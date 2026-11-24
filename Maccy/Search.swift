@@ -91,7 +91,7 @@ class Search {
     }
   }
 
-  private let fuse = Fuse(threshold: 0.7) // threshold found by trial-and-error
+  private let fuse = Fuse(threshold: 0.7, isCaseSensitive: true) // threshold found by trial-and-error
   private let fuzzySearchLimit = 5_000
 
   func search(string: String, within: [Searchable]) -> [SearchResult] {
@@ -115,7 +115,11 @@ class Search {
   }
 
   private func fuzzySearch(string: String, within: [Searchable]) -> [SearchResult] {
-    let pattern = fuse.createPattern(from: string)
+    let patternText = string.lowercased()
+    guard patternText.count <= Int.bitWidth else {
+      return simpleSearch(string: string, within: within, options: .caseInsensitive)
+    }
+    guard let pattern = fuse.createPattern(from: patternText) else { return [] }
     let searchResults: [SearchResult] = within.compactMap { item in
       let titleMatch = fuzzySearch(for: pattern, in: item.title, of: item)
       guard let text = item.item.recognizedText, text != item.title,
@@ -128,7 +132,7 @@ class Search {
   }
 
   private func fuzzySearch(
-    for pattern: Fuse.Pattern?,
+    for pattern: Fuse.Pattern,
     in searchString: String,
     of item: Searchable,
     highlight: Bool = true
@@ -140,7 +144,13 @@ class Search {
       searchString = "\(searchString[...stopIndex])"
     }
 
-    if let fuzzyResult = fuse.search(pattern, in: searchString) {
+    let normalized = searchString.lowercased()
+    // A literal match in this suffix would make Fuse's Character-indexed match mask overrun.
+    if normalized.suffix(pattern.len - 1).range(of: pattern.text, options: .literal) != nil {
+      return SearchResult(score: 0, object: item)
+    }
+
+    if let fuzzyResult = fuse.search(pattern, in: normalized) {
       return SearchResult(
         score: fuzzyResult.score,
         object: item,

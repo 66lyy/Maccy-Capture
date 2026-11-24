@@ -129,6 +129,24 @@ extension SharedStateTests {
       #expect(search("m") == [])
     }
 
+    @Test("Fuzzy search handles a long pasted query", arguments: [Search.Mode.fuzzy, .mixed])
+    func longFuzzyQuery(mode: Search.Mode) {
+      Defaults[.searchMode] = mode
+      let query = String(repeating: "a", count: 100)
+      let match = HistoryItemDecorator(Self.historyItemWithTitle("prefix \(query) suffix"))
+
+      #expect(Search().search(string: query.uppercased(), within: [match]).map(\.object) == [match])
+      #expect(Search().search(string: query, within: items).isEmpty)
+    }
+
+    @Test("Fuzzy search handles a query matching part of an emoji character")
+    func partialEmojiFuzzyQuery() {
+      Defaults[.searchMode] = .fuzzy
+      let item = HistoryItemDecorator(Self.historyItemWithTitle("👩‍👧‍👦"))
+
+      #expect(Search().search(string: "\u{200d}👧", within: [item]).map(\.object) == [item])
+    }
+
     @Test("Fuzzy search")
     func fuzzySearch() { // swiftlint:disable:this function_body_length
       Defaults[.searchMode] = Search.Mode.fuzzy
