@@ -150,6 +150,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     disableUnusedGlobalHotkeys()
 
     if !Self.isTesting {
+      Task.detached(priority: .utility) { PinnedScreenshotDragExport.removeExpired() }
       KeyboardShortcuts.onKeyUp(for: .screenshot) {
         ScreenshotCapture.shared.captureMainDisplay()
       }

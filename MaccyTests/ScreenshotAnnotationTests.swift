@@ -1584,6 +1584,37 @@ struct ScreenshotAnnotationTests {
     #expect(window.contentView?.subviews.contains { $0 is NSButton } == false)
   }
 
+  @Test("Pin drag exports applied annotations as flattened PNG pixels even at a smaller display size")
+  func pinnedExportFlattensAnnotation() throws {
+    let image = try fixture()
+    image.size = NSSize(width: 120, height: 80)
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: NSRect(x: 0, y: 0, width: 1000, height: 800),
+      anchor: NSPoint(x: 500, y: 400)
+    )
+    defer { window.close() }
+    let document = try #require(ScreenshotAnnotationDocument(image: image))
+    #expect(document.append(.init(
+      tool: .redact, points: [NSPoint(x: 20, y: 20), NSPoint(x: 180, y: 100)], color: .red
+    )))
+    let rendered = try #require(document.renderedImage())
+    window.replaceImage(NSImage(cgImage: rendered, size: image.size))
+    let view = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
+    let raster = try #require(view.image?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let file = try PinnedScreenshotDragExport.stage(raster, in: root)
+
+    let exported = try #require(NSBitmapImageRep(data: Data(contentsOf: file)))
+    #expect(exported.pixelsWide == 240 && exported.pixelsHigh == 160)
+    let mark = try color(exported, x: 40, y: 119)
+    #expect(mark.redComponent > 0.9 && mark.greenComponent < 0.2 && mark.blueComponent < 0.2)
+    #expect(mark.alphaComponent > 0.999)
+    let unmarked = try color(exported, x: 200, y: 119)
+    #expect(unmarked.redComponent > 0.9 && unmarked.greenComponent > 0.9 && unmarked.blueComponent > 0.9)
+  }
+
   @Test("Mosaic pixelates the covered region and keeps text under it from being dragged out")
   func mosaicPixelates() throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))

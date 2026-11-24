@@ -2084,6 +2084,30 @@ struct ScreenshotCaptureTests {
     if let other { #expect(other.isVisible && other.thumbnailStack == nil) }
   }
 
+  @Test("Only Option at mouse-down selects pin export, and export requires at least four points of movement")
+  func pinnedExportGesture() throws {
+    let origin = NSPoint(x: 10, y: 20)
+    func event(
+      _ type: NSEvent.EventType, at point: NSPoint, flags: NSEvent.ModifierFlags = [], clicks: Int = 1
+    ) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: point, modifierFlags: flags, timestamp: 0,
+        windowNumber: 0, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+      ))
+    }
+    let plain = try event(.leftMouseDown, at: origin)
+    let doubleClick = try event(.leftMouseDown, at: origin, clicks: 2)
+    let option = try event(.leftMouseDown, at: origin, flags: [.option])
+    #expect(PinnedScreenshotDragGesture.action(for: plain) == .move)
+    #expect(PinnedScreenshotDragGesture.action(for: doubleClick) == .close)
+    #expect(PinnedScreenshotDragGesture.action(for: option) == .export)
+    let gesture = PinnedScreenshotDragGesture(origin: option.locationInWindow)
+    let tiny = try event(.leftMouseDragged, at: NSPoint(x: 13, y: 22), flags: [.option])
+    let released = try event(.leftMouseDragged, at: NSPoint(x: 14, y: 20))
+    #expect(!gesture.crossedThreshold(with: tiny))
+    #expect(gesture.crossedThreshold(with: released))
+  }
+
   @Test("Pin drag stages a real PNG file at the source pixel size and cleans up on cancellation")
   func pinnedFileExport() throws {
     let root = try temporaryDirectory()
@@ -2091,13 +2115,62 @@ struct ScreenshotCaptureTests {
     let source = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
     let file = try PinnedScreenshotDragExport.stage(source, in: root)
     let secondFile = try PinnedScreenshotDragExport.stage(source, in: root)
-    let result = try #require(NSBitmapImageRep(data: Data(contentsOf: file)))
+    let data = try Data(contentsOf: file)
+    let result = try #require(NSBitmapImageRep(data: data))
     #expect(file != secondFile && file.pathExtension == "png")
     #expect(result.pixelsWide == source.width && result.pixelsHigh == source.height)
     #expect((file as NSURL).writableTypes(for: .general).contains(.fileURL))
-    PinnedScreenshotDragExport.remove(file)
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    try #require(pasteboard.writeObjects([file as NSURL]))
+    #expect(pasteboard.string(forType: .fileURL).flatMap(URL.init(string:)) == file)
+    let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+    #expect(urls == [file])
+    let filenames = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    #expect(pasteboard.propertyList(forType: filenames) as? [String] == [file.path])
+
+    PinnedScreenshotDragExport.finish(file, copied: false)
+    PinnedScreenshotDragExport.finish(secondFile, copied: true)
     #expect(!FileManager.default.fileExists(atPath: file.path))
     #expect(FileManager.default.fileExists(atPath: secondFile.path))
+    #expect(try Data(contentsOf: secondFile) == data)
+  }
+
+  @Test("Pruning removes stale export directories without deleting recent exports or unrelated folders")
+  func pinnedFileExportPruning() throws {
+    let root = try temporaryDirectory()
+    let files = FileManager.default
+    defer { try? files.removeItem(at: root) }
+    let source = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let expired = try PinnedScreenshotDragExport.stage(source, in: root)
+    let recent = try PinnedScreenshotDragExport.stage(source, in: root)
+    let unrelated = root.appendingPathComponent("unrelated", isDirectory: true)
+    try files.createDirectory(at: unrelated, withIntermediateDirectories: false)
+    let old = Date(timeIntervalSinceNow: -172_800)
+    for directory in [expired.deletingLastPathComponent(), unrelated] {
+      try files.setAttributes([.modificationDate: old], ofItemAtPath: directory.path)
+    }
+
+    PinnedScreenshotDragExport.removeExpired(in: root)
+
+    #expect(!files.fileExists(atPath: expired.deletingLastPathComponent().path))
+    #expect(files.fileExists(atPath: recent.path))
+    #expect(files.fileExists(atPath: unrelated.path))
+  }
+
+  @Test("Pin export fails without leaving a staged file when the export root is not writable as a directory")
+  func pinnedFileExportFailure() throws {
+    let root = try temporaryDirectory()
+    let files = FileManager.default
+    defer { try? files.removeItem(at: root) }
+    let obstruction = root.appendingPathComponent("obstruction")
+    let data = try generatedPNG()
+    try data.write(to: obstruction)
+    let source = try #require(NSBitmapImageRep(data: data)?.cgImage)
+
+    #expect(throws: (any Error).self) { try PinnedScreenshotDragExport.stage(source, in: obstruction) }
+    #expect(try files.contentsOfDirectory(atPath: root.path) == ["obstruction"])
+    #expect(try Data(contentsOf: obstruction) == data)
   }
 
   @Test("A remapped pinned-window shortcut works without keeping its old binding")
