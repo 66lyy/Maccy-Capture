@@ -120,8 +120,10 @@ and the current display's visible area.
 Zoom changes only the display size; it does not resample the source image or rewrite the clipboard.
 Multiple pins on the same display automatically form one thumbnail stack at the bottom-right.
 Scroll over the card (or use arrow keys when focused) to browse currently pinned images.
-Click the expand button to keep that pin open separately. A lone remaining pin restores its previous size.
-Click-through pins stay outside the stack.
+Click the expand button to keep that pin separate until it closes, even when more pins are added.
+A lone remaining pin restores its previous size. Click-through pins stay outside the stack.
+Turn off **Automatically stack pinned screenshots** in General settings to restore existing stacks
+and leave new pins at full size. Turning it back on resumes stacking the next time you pin.
 
 Drag a pin or thumbnail onto an app that accepts files to attach a full-resolution PNG without
 changing the clipboard. Double-click to open the editor; use Crop to drag out the area to keep,

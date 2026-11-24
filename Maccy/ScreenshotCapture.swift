@@ -294,11 +294,20 @@ final class ScreenshotCapture {
     pinnedWindows[identifier] = window
     let popup = AppState.shared.popup
     if !popup.isClosed() { popup.close() }
+    guard Defaults[.automaticPinStackingEnabled] else {
+      window.present()
+      return
+    }
     let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     let stack = pinnedStacks[displayID] ?? PinnedScreenshotStack()
     pinnedStacks[displayID] = stack
     let candidates = pinnedWindows.values.filter { $0 !== window && $0.screen?.frame == screen.frame }
     stack.add(window, alongside: candidates, visibleFrame: screen.visibleFrame)
+  }
+
+  func restorePinnedStacks() {
+    for stack in pinnedStacks.values { stack.restoreAll() }
+    pinnedStacks.removeAll()
   }
 
   private func closeAllPinnedImages() {

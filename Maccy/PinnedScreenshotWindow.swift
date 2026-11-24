@@ -9,6 +9,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   var onAnnotate: ((NSImage) -> Void)?
   var onClickThroughChange: (() -> Void)?
   weak var thumbnailStack: PinnedScreenshotStack?
+  private(set) var keepsOpenSeparately = false
 
   nonisolated static let minimumOpacity: CGFloat = 0.1
 
@@ -192,8 +193,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     imageView.toolTip = Self.localized("ScreenshotZoomHelp")
   }
 
-  @objc private func restoreFromThumbnail() {
-    thumbnailStack?.detach(self)
+  @objc func restoreFromThumbnail() {
+    guard let thumbnailStack else { return }
+    keepsOpenSeparately = true
+    thumbnailStack.detach(self)
   }
 
   override func scrollWheel(with event: NSEvent) {
@@ -470,7 +473,8 @@ final class PinnedScreenshotStack {
 
   func add(_ pin: PinnedScreenshotWindow, alongside candidates: [PinnedScreenshotWindow], visibleFrame: NSRect) {
     self.visibleFrame = visibleFrame
-    for candidate in candidates + [pin] where candidate.thumbnailStack == nil && !candidate.isClickThrough {
+    for candidate in candidates + [pin]
+    where candidate.thumbnailStack == nil && !candidate.isClickThrough && !candidate.keepsOpenSeparately {
       pins.append(candidate)
       candidate.thumbnailStack = self
     }
@@ -487,6 +491,18 @@ final class PinnedScreenshotStack {
   func detach(_ pin: PinnedScreenshotWindow) {
     remove(pin)
     pin.restoreExpandedPresentation()
+  }
+
+  func restoreAll() {
+    let previousPins = pins
+    pins.removeAll()
+    visiblePin = nil
+    scrollDistance = 0
+    pagedInGesture = false
+    for pin in previousPins {
+      pin.thumbnailStack = nil
+      pin.restoreExpandedPresentation()
+    }
   }
 
   func remove(_ pin: PinnedScreenshotWindow) {

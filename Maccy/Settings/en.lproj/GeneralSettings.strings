@@ -134,6 +134,7 @@
 "ScreenshotSelectionPinInstructions" = "Drag to select · Release to pin · Esc cancels";
 "ScreenshotClipboardHint" = "Float an image already on the clipboard, without taking a new screenshot.";
 "ScreenshotSound" = "Play a sound after a successful capture";
+"ScreenshotAutoStackPins" = "Automatically stack pinned screenshots";
 "ScreenshotSuccess" = "Screenshot copied";
 "ScreenshotSavedLocally" = "Added to local clipboard history";
 "ScreenshotDismissPreview" = "Dismiss screenshot preview";

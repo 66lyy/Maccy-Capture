@@ -92,6 +92,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
 
+    Task {
+      for await enabled in Defaults.updates(.automaticPinStackingEnabled, initial: false) where !enabled {
+        ScreenshotCapture.shared.restorePinnedStacks()
+      }
+    }
+
     statusItemVisibilityObserver = observe(\.statusItem.isVisible, options: .new) { _, change in
       if let newValue = change.newValue, Defaults[.showInStatusBar] != newValue {
         Defaults[.showInStatusBar] = newValue

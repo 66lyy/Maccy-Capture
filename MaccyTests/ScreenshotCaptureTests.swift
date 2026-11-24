@@ -1904,6 +1904,72 @@ struct ScreenshotCaptureTests {
     #expect(second.isVisible && second.thumbnailStack == nil)
   }
 
+  @Test("Explicitly expanded pins stay separate when later pins are added")
+  func expandedPinStaysSeparate() {
+    let first = pinnedZoomWindow()
+    let second = pinnedZoomWindow()
+    let third = pinnedZoomWindow()
+    let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let stack = PinnedScreenshotStack()
+    let original = second.frame
+    defer { third.close(); second.close(); first.close() }
+
+    stack.add(first, alongside: [], visibleFrame: screen)
+    stack.add(second, alongside: [first], visibleFrame: screen)
+    second.restoreFromThumbnail()
+    #expect(second.keepsOpenSeparately && second.frame == original)
+    #expect(first.isVisible && !first.keepsOpenSeparately)
+
+    stack.add(third, alongside: [first, second], visibleFrame: screen)
+    #expect(second.isVisible && second.thumbnailStack == nil && second.frame == original)
+    #expect(stack.pins.count == 2 && stack.visiblePin === third && !first.isVisible)
+  }
+
+  @Test("Disabling automatic stacking restores existing pins and leaves new pins full size")
+  func automaticPinStackingPreference() async throws {
+    try #require(AppDelegate.isTesting)
+    let key = Defaults.Keys.automaticPinStackingEnabled
+    #expect(key.defaultValue)
+    let previousValue = Defaults[key]
+    let controller = ScreenshotCapture.shared
+    var windows: [PinnedScreenshotWindow] = []
+    defer {
+      windows.reversed().forEach { $0.close() }
+      Defaults[key] = previousValue
+    }
+    let screen = try #require(NSScreen.main?.visibleFrame)
+    let data = try generatedPNG()
+    func pin(at offset: CGFloat) throws -> (PinnedScreenshotWindow, NSRect) {
+      let image = try #require(NSImage(data: data))
+      let frame = NSRect(x: (screen.midX + offset).rounded(), y: screen.midY.rounded(), width: 160, height: 160)
+      controller.pinImage(image, imageFrame: frame)
+      let window = try #require(NSApp.windows.compactMap { $0 as? PinnedScreenshotWindow }.first { $0.image === image })
+      windows.append(window)
+      return (window, frame)
+    }
+
+    Defaults[key] = true
+    let (first, firstFrame) = try pin(at: -240)
+    let (second, secondFrame) = try pin(at: -60)
+    #expect(!first.isVisible && second.isVisible && second.thumbnailStack != nil)
+
+    Defaults[key] = false
+    let deadline = ContinuousClock.now + .seconds(2)
+    while second.thumbnailStack != nil && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let (third, thirdFrame) = try pin(at: 120)
+    for (window, frame) in [(first, firstFrame), (second, secondFrame), (third, thirdFrame)] {
+      #expect(window.isVisible && window.thumbnailStack == nil)
+      #expect(window.frame == frame)
+    }
+
+    Defaults[key] = true
+    let (fourth, _) = try pin(at: 240)
+    #expect(fourth.thumbnailStack?.pins.count == 4 && fourth.isVisible)
+    #expect(!first.isVisible && !second.isVisible && !third.isVisible)
+  }
+
   @Test("Double-click opens annotation on a pin without closing it")
   func doubleClickEditsPin() throws {
     let image = try #require(NSImage(data: generatedPNG()))

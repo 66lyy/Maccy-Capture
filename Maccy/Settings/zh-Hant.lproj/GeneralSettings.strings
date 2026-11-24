@@ -72,6 +72,7 @@
 "ScreenshotSelectionPinInstructions" = "拖曳框選 · 放開即貼圖 · Esc 取消";
 "ScreenshotClipboardHint" = "將剪貼簿中已有的圖片懸浮顯示，不會重新截圖。";
 "ScreenshotSound" = "截圖成功時播放提示音";
+"ScreenshotAutoStackPins" = "自動堆疊截圖貼圖";
 "ScreenshotSuccess" = "截圖已複製";
 "ScreenshotSavedLocally" = "已加入本機剪貼簿歷史記錄";
 "ScreenshotDismissPreview" = "收起截圖預覽";

@@ -74,6 +74,12 @@ struct GeneralSettingsPane: View {
         option(.screenshotRemoveWindowShadow, "ScreenshotRemoveWindowShadow")
         Divider()
         option(.screenshotWindowBackdrop, "ScreenshotWindowBackdrop")
+        Divider()
+        option(.automaticPinStackingEnabled, Text(verbatim: String(
+          localized: "ScreenshotAutoStackPins",
+          defaultValue: "Automatically stack pinned screenshots",
+          table: "GeneralSettings"
+        )))
       }
 
       PreferencesGroup(title: Text("AnnotationToolsSection", tableName: "GeneralSettings"), symbol: "pencil.tip.crop.circle") {
@@ -91,13 +97,17 @@ struct GeneralSettingsPane: View {
   }
 
   private func option(_ key: Defaults.Key<Bool>, _ title: LocalizedStringKey) -> some View {
-    PreferencesRow(title: Text(title, tableName: "GeneralSettings")) {
+    option(key, Text(title, tableName: "GeneralSettings"))
+  }
+
+  private func option(_ key: Defaults.Key<Bool>, _ title: Text) -> some View {
+    PreferencesRow(title: title) {
       Defaults.Toggle(key: key) {
-        Text(title, tableName: "GeneralSettings")
+        title
       }
       .toggleStyle(.switch)
       .labelsHidden()
-      .accessibilityLabel(Text(title, tableName: "GeneralSettings"))
+      .accessibilityLabel(title)
     }
   }
 
