@@ -1,7 +1,9 @@
 import AppKit
 import Testing
 import Defaults
+import Logging
 import SwiftData
+import os
 @testable import Maccy
 
 extension SharedStateTests {
@@ -607,6 +609,63 @@ extension SharedStateTests {
     private final class SaveCounts {
       var attempted = 0
       var completed = 0
+    }
+
+    @Test("History mutations report a read-only storage failure",
+          arguments: ["trimming history", "deleting a history item", "clearing history"])
+    func historyStorageSaveFailureIsLogged(operation: String) async throws {
+      let storage = Storage.shared
+      let originalContainer = storage.container
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let url = directory.appendingPathComponent("History.sqlite")
+      do {
+        let writable = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(url: url))
+        let item = historyItem("stored", persisted: false)
+        writable.mainContext.insert(item)
+        try writable.mainContext.save()
+      }
+      storage.container = try ModelContainer(
+        for: HistoryItem.self, configurations: ModelConfiguration(url: url, allowsSave: false)
+      )
+      storage.context.autosaveEnabled = false
+      defer {
+        storage.context.rollback()
+        storage.container = originalContainer
+      }
+
+      let log = HistoryErrorLog()
+      let history = History(logger: Logging.Logger(label: "HistoryTests") { _ in log })
+      if operation == "trimming history" {
+        Defaults[.size] = 0
+        try await history.load()
+      } else {
+        try await history.load()
+        let row = try #require(history.firstUnpinnedItem)
+        if operation == "deleting a history item" {
+          history.delete(row)
+        } else {
+          history.clear()
+        }
+      }
+
+      #expect(log.errors.withLock { $0.contains { $0.contains(operation) } })
+    }
+
+    private struct HistoryErrorLog: LogHandler {
+      let errors = OSAllocatedUnfairLock(initialState: [String]())
+      var logLevel = Logging.Logger.Level.error
+      var metadata: Logging.Logger.Metadata = [:]
+
+      subscript(metadataKey key: String) -> Logging.Logger.Metadata.Value? {
+        get { metadata[key] }
+        set { metadata[key] = newValue }
+      }
+
+      func log(event: LogEvent) {
+        errors.withLock { $0.append(event.message.description) }
+      }
     }
 
     @Test("Vision indexes delivered screenshots without changing their title or clipboard contents",

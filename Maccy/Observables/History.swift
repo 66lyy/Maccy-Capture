@@ -12,7 +12,7 @@ import SwiftData
 @Observable
 class History: ItemsContainer { // swiftlint:disable:this type_body_length
   static let shared = History()
-  let logger = Logger(label: "org.p0deje.Maccy")
+  let logger: Logger
 
   var pasteStack: PasteStack?
 
@@ -101,11 +101,13 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   init(
     ocrCoordinator: HistoryOCRCoordinator = HistoryOCRCoordinator(),
+    logger: Logger = Logger(label: "org.p0deje.Maccy"),
     notifyNewItem: @escaping (String, NSSound?) -> Void = { title, sound in
       Task { Notifier.notify(body: title, sound: sound) }
     }
   ) {
     self.ocrCoordinator = ocrCoordinator
+    self.logger = logger
     self.notifyNewItem = notifyNewItem
     #if DEBUG
     guard !Self.isRunningUnitTests else { return }
@@ -161,7 +163,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     if !exceedingItems.isEmpty {
       exceedingItems.forEach { deleteFromStorage($0) }
       Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
+      saveHistoryChanges(after: "trimming history")
     }
     let decorators = retainedItems.map { HistoryItemDecorator($0) }
     pinManager.load(from: decorators)
@@ -272,7 +274,16 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  private func withLogging(_ msg: String, _ block: () throws -> Void) rethrows {
+  private func saveHistoryChanges(after operation: String) {
+    do {
+      try Storage.shared.context.save()
+    } catch {
+      logger.error("Failed to save history after \(operation): \(String(reflecting: error))")
+    }
+  }
+
+  @MainActor
+  private func withLogging(_ msg: String, _ block: () -> Void) {
     func dataCounts() -> String {
       let historyItemCount = try? Storage.shared.context.fetchCount(FetchDescriptor<HistoryItem>())
       let historyContentCount = try? Storage.shared.context.fetchCount(FetchDescriptor<HistoryItemContent>())
@@ -280,7 +291,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     }
 
     logger.info("\(msg) Before: \(dataCounts())")
-    try? block()
+    block()
     logger.info("\(msg) After: \(dataCounts())")
   }
 
@@ -296,18 +307,23 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       filteredUnpinnedItems.removeAll()
       updateSessionLog(removing: { $0.pin == nil })
 
-      try? Storage.shared.context.transaction {
-        try? Storage.shared.context.delete(
-          model: HistoryItem.self,
-          where: #Predicate { $0.pin == nil }
-        )
-        try? Storage.shared.context.delete(
-          model: HistoryItemContent.self,
-          where: #Predicate { $0.item?.pin == nil }
-        )
+      let context = Storage.shared.context
+      do {
+        try context.transaction {
+          try context.delete(
+            model: HistoryItem.self,
+            where: #Predicate { $0.pin == nil }
+          )
+          try context.delete(
+            model: HistoryItemContent.self,
+            where: #Predicate { $0.item?.pin == nil }
+          )
+        }
+      } catch {
+        logger.error("Failed while clearing history: \(String(reflecting: error))")
       }
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
+      context.processPendingChanges()
+      saveHistoryChanges(after: "clearing history")
     }
 
     Clipboard.shared.clear()
@@ -345,7 +361,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
         logger.error("Failed to clear storage: \(String(reflecting: error))")
       }
       Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
+      saveHistoryChanges(after: "clearing all history")
     }
 
     Clipboard.shared.clear()
@@ -364,7 +380,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       deleteFromStorage(item.item)
       Storage.shared.context.processPendingChanges()
       if saveToStorage {
-        try? Storage.shared.context.save()
+        saveHistoryChanges(after: "deleting a history item")
       }
     }
 
