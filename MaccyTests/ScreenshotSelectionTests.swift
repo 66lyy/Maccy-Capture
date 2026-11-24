@@ -914,6 +914,19 @@ struct ScreenshotSelectionTests {
     #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "\t", 48, .option)) == nil)
   }
 
+  @Test("The color picker ignores invalid numeric key input and still copies the selected format",
+        arguments: [String(Int.min), "-1", "0", "6", "01", "+1", "12"])
+  func colorPickerIgnoresInvalidNumericKey(_ key: String) throws {
+    let view = try colorPickerView()
+    defer { view.finishInteraction() }
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    #expect(try view.handleColorShortcut(colorKey(.keyDown, "c", 8, .shift), to: pasteboard))
+    #expect(try view.handleColorShortcut(colorKey(.keyDown, key, 23), to: pasteboard))
+    #expect(try view.handleColorShortcut(colorKey(.keyUp, "c", 8, .shift), to: pasteboard))
+    #expect(pasteboard.string(forType: .string) == "rgb(4, 160, 255)")
+  }
+
   @Test("Each color format produces text that pastes into CSS or Swift")
   func colorFormats() {
     let color = ScreenshotPixelLoupe.Color(red: 4, green: 160, blue: 255)

@@ -286,7 +286,8 @@ final class ScreenshotSelectionView: NSView {
     let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
     guard modifiers.isEmpty || modifiers == .shift else { return nil }
     let formats = ScreenshotPixelLoupe.ColorFormat.allCases
-    if let digit = event.charactersIgnoringModifiers.flatMap(Int.init), formats.indices.contains(digit - 1) {
+    if let key = event.charactersIgnoringModifiers, key.utf8.count == 1,
+       let digit = Int(key), (1...formats.count).contains(digit) {
       return formats[digit - 1]
     }
     guard event.keyCode == 49 || event.keyCode == 48, let index = formats.firstIndex(of: format) else { return nil }
