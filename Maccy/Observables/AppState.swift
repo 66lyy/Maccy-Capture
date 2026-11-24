@@ -17,8 +17,10 @@ class AppState: Sendable {
   var preview: SlideoutController
 
   var isEditingItem: Bool = false
+  var isSavingHistoryImage = false
   var suppressPopupAutoClose: Bool {
-    return navigator.isDragAndDropInProgress || isEditingItem || ScreenshotCapture.shared.isCapturing
+    return navigator.isDragAndDropInProgress || isEditingItem || isSavingHistoryImage
+      || ScreenshotCapture.shared.isCapturing
   }
 
   var searchVisible: Bool {

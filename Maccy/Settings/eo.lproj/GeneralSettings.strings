@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Aldoni fonon al la fenestro";
 "ScreenshotWindowCascadeHint" = "Alklaku kun ⇧ por aldoni aŭ forigi fenestrojn";
 "ScreenshotColorFormatHint" = "Tenu C · Spaco por ŝanĝi";
+"sc_cycleSearchTag" = "Alterni serĉfiltrilon";
+"HistoryImageCopyOCR" = "Kopii rekonitan tekston sen formatado";
+"HistoryImageRepin" = "Realpingli al la ekrano";
+"HistoryImageSaveFile" = "Konservi kiel dosieron";

@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Ablakháttér hozzáadása";
 "ScreenshotWindowCascadeHint" = "Ablakok hozzáadása vagy eltávolítása ⇧-kattintással";
 "ScreenshotColorFormatHint" = "Tartsa lenyomva a C-t · Szóköz vált";
+"sc_cycleSearchTag" = "Keresési szűrő váltása";
+"HistoryImageCopyOCR" = "Felismert szöveg másolása formázás nélkül";
+"HistoryImageRepin" = "Újbóli kitűzés a képernyőre";
+"HistoryImageSaveFile" = "Mentés fájlként";

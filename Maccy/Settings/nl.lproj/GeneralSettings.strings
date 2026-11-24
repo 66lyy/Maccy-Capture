@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Achtergrond aan venster toevoegen";
 "ScreenshotWindowCascadeHint" = "⇧-klik om vensters toe te voegen of te verwijderen";
 "ScreenshotColorFormatHint" = "Houd C ingedrukt · Spatie wisselt";
+"sc_cycleSearchTag" = "Wissel van zoekfilter";
+"HistoryImageCopyOCR" = "Kopieer herkende tekst zonder opmaak";
+"HistoryImageRepin" = "Opnieuw vastmaken aan het scherm";
+"HistoryImageSaveFile" = "Bewaar als bestand";

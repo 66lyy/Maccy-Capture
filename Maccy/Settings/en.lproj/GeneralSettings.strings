@@ -212,3 +212,7 @@
 "ScreenshotWindowBackdrop" = "Add a window backdrop";
 "ScreenshotWindowCascadeHint" = "⇧-click to add or remove windows";
 "ScreenshotColorFormatHint" = "Hold C · Space to switch";
+"sc_cycleSearchTag" = "Cycle search filter";
+"HistoryImageCopyOCR" = "Copy OCR as plain text";
+"HistoryImageRepin" = "Pin to screen again";
+"HistoryImageSaveFile" = "Save as file";

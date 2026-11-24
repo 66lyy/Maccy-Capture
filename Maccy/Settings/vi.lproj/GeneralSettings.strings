@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Thêm nền cho cửa sổ";
 "ScreenshotWindowCascadeHint" = "Giữ ⇧ và bấm để thêm hoặc bỏ cửa sổ";
 "ScreenshotColorFormatHint" = "Giữ C · Space để đổi";
+"sc_cycleSearchTag" = "Chuyển bộ lọc tìm kiếm";
+"HistoryImageCopyOCR" = "Sao chép chữ nhận dạng dưới dạng văn bản thuần túy";
+"HistoryImageRepin" = "Ghim lại lên màn hình";
+"HistoryImageSaveFile" = "Lưu thành tệp";

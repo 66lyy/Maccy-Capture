@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Legg til bakgrunn for vinduet";
 "ScreenshotWindowCascadeHint" = "Klikk med ⇧ for å legge til eller fjerne vinduer";
 "ScreenshotColorFormatHint" = "Hold C · Mellomrom bytter";
+"sc_cycleSearchTag" = "Bytt søkefilter";
+"HistoryImageCopyOCR" = "Kopier gjenkjent tekst uten formatering";
+"HistoryImageRepin" = "Fest til skjermen på nytt";
+"HistoryImageSaveFile" = "Lagre som fil";

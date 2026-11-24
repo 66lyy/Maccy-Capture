@@ -213,3 +213,7 @@
 "ScreenshotWindowBackdrop" = "添加窗口美化背景";
 "ScreenshotWindowCascadeHint" = "按住 ⇧ 点击以添加或移除窗口";
 "ScreenshotColorFormatHint" = "按住 C · 空格切换格式";
+"sc_cycleSearchTag" = "切换搜索标签";
+"HistoryImageCopyOCR" = "复制纯文本 OCR";
+"HistoryImageRepin" = "重新钉在屏幕上";
+"HistoryImageSaveFile" = "保存为文件";

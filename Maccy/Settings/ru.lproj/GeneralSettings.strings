@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Добавить фон окна";
 "ScreenshotWindowCascadeHint" = "Нажмите с ⇧, чтобы добавить или убрать окна";
 "ScreenshotColorFormatHint" = "Удерживайте C · Пробел — формат";
+"sc_cycleSearchTag" = "Переключить фильтр поиска";
+"HistoryImageCopyOCR" = "Копировать распознанный текст без форматирования";
+"HistoryImageRepin" = "Снова закрепить на экране";
+"HistoryImageSaveFile" = "Сохранить в файл";

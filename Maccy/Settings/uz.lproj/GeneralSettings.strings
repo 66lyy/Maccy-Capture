@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Oynaga fon qo‘shish";
 "ScreenshotWindowCascadeHint" = "Oynalarni qo‘shish yoki olib tashlash uchun ⇧ bilan bosing";
 "ScreenshotColorFormatHint" = "C ni bosib turing · Boʻshliq almashtiradi";
+"sc_cycleSearchTag" = "Qidiruv filtrini almashtirish";
+"HistoryImageCopyOCR" = "Tanilgan matnni oddiy matn sifatida nusxalash";
+"HistoryImageRepin" = "Ekranga qayta mahkamlash";
+"HistoryImageSaveFile" = "Fayl sifatida saqlash";

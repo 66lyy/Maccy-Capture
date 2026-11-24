@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Dodaj tło okna";
 "ScreenshotWindowCascadeHint" = "Kliknij z ⇧, aby dodać lub usunąć okna";
 "ScreenshotColorFormatHint" = "Przytrzymaj C · Spacja zmienia";
+"sc_cycleSearchTag" = "Przełącz filtr wyszukiwania";
+"HistoryImageCopyOCR" = "Skopiuj rozpoznany tekst bez formatowania";
+"HistoryImageRepin" = "Przypnij ponownie do ekranu";
+"HistoryImageSaveFile" = "Zapisz jako plik";

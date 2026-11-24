@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Дадаць фон акна";
 "ScreenshotWindowCascadeHint" = "Націсніце з ⇧, каб дадаць ці выдаліць вокны";
 "ScreenshotColorFormatHint" = "Утрымлівайце C · Прабел — фармат";
+"sc_cycleSearchTag" = "Пераключыць фільтр пошуку";
+"HistoryImageCopyOCR" = "Скапіяваць распазнаны тэкст без фарматавання";
+"HistoryImageRepin" = "Замацаваць на экране зноў";
+"HistoryImageSaveFile" = "Захаваць у файл";

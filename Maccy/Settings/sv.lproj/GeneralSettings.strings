@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Lägg till fönsterbakgrund";
 "ScreenshotWindowCascadeHint" = "Klicka med ⇧ för att lägga till eller ta bort fönster";
 "ScreenshotColorFormatHint" = "Håll C · Mellanslag byter";
+"sc_cycleSearchTag" = "Växla sökfilter";
+"HistoryImageCopyOCR" = "Kopiera igenkänd text utan formatering";
+"HistoryImageRepin" = "Fäst på skärmen igen";
+"HistoryImageSaveFile" = "Spara som fil";

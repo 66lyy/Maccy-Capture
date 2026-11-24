@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Dodaj pozadinu prozora";
 "ScreenshotWindowCascadeHint" = "Kliknite uz ⇧ za dodavanje ili uklanjanje prozora";
 "ScreenshotColorFormatHint" = "Držite C · Razmak mijenja";
+"sc_cycleSearchTag" = "Promijeni filter pretrage";
+"HistoryImageCopyOCR" = "Kopiraj prepoznati tekst bez formatiranja";
+"HistoryImageRepin" = "Ponovo pričvrsti na ekran";
+"HistoryImageSaveFile" = "Sačuvaj kao datoteku";

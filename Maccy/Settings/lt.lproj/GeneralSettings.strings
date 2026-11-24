@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Pridėti lango foną";
 "ScreenshotWindowCascadeHint" = "Spustelėkite laikydami ⇧, kad pridėtumėte arba pašalintumėte langus";
 "ScreenshotColorFormatHint" = "Laikykite C · Tarpas perjungia";
+"sc_cycleSearchTag" = "Keisti paieškos filtrą";
+"HistoryImageCopyOCR" = "Kopijuoti atpažintą tekstą be formatavimo";
+"HistoryImageRepin" = "Vėl prisegti prie ekrano";
+"HistoryImageSaveFile" = "Išsaugoti kaip failą";

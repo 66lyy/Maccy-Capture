@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Adaugă un fundal ferestrei";
 "ScreenshotWindowCascadeHint" = "Clic cu ⇧ pentru a adăuga sau elimina ferestre";
 "ScreenshotColorFormatHint" = "Țineți C · Spațiu comută";
+"sc_cycleSearchTag" = "Schimbă filtrul de căutare";
+"HistoryImageCopyOCR" = "Copiază textul recunoscut fără formatare";
+"HistoryImageRepin" = "Fixează din nou pe ecran";
+"HistoryImageSaveFile" = "Salvează ca fișier";

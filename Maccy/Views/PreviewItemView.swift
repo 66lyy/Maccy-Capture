@@ -1,7 +1,9 @@
 import AppKit
 import Defaults
+import ImageIO
 import KeyboardShortcuts
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct PreviewItemView: View {
   private static let largeTextThreshold = 1_000
@@ -68,51 +70,11 @@ struct PreviewItemView: View {
     }
   }
 
-  @ViewBuilder
-  func previewImage(content: () -> some View) -> some View {
-    content()
-      .aspectRatio(contentMode: .fit)
-      .clipShape(.rect(cornerRadius: 5))
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if item.hasImage {
-        AsyncView<NSImage?, _, _>(id: item.id) {
-          return await item.asyncGetPreviewImage()
-        } content: { image in
-          if let image = image {
-            previewImage {
-              Image(nsImage: image)
-                .resizable()
-            }
-          } else {
-            previewImage {
-              ZStack {
-                Color.gray.opacity(0.3)
-                  .frame(
-                    idealWidth: HistoryItemDecorator.previewImageSize.width,
-                    idealHeight: HistoryItemDecorator.previewImageSize.height
-                  )
-                Image(systemName: "photo.badge.exclamationmark")
-                  .symbolRenderingMode(.multicolor)
-                  .frame(alignment: .center)
-              }
-            }
-          }
-        } placeholder: {
-          previewImage {
-            ZStack {
-              Color.gray.opacity(0.3)
-                .frame(
-                  idealWidth: HistoryItemDecorator.previewImageSize.width,
-                  idealHeight: HistoryItemDecorator.previewImageSize.height
-                )
-              ProgressView()
-                .frame(alignment: .center)
-            }
-          }
-        }
+        HistoryImagePreview(item: item)
+          .id(item.id)
       } else {
         textPreview
           .task(id: jsonTaskID) {
@@ -188,6 +150,145 @@ struct PreviewItemView: View {
       }
     }
     .controlSize(.small)
+  }
+}
+
+struct HistoryImagePreview: View {
+  let item: HistoryItemDecorator
+
+  @Environment(AppState.self) private var appState
+  @State private var ocrTask: Task<Void, Never>?
+  @State private var status: String?
+  @State private var isSaving = false
+
+  var body: some View {
+    AsyncView<NSImage?, _, _>(id: item.id) {
+      await item.asyncGetPreviewImage()
+    } content: { image in
+      if let image {
+        Image(nsImage: image)
+          .resizable()
+          .scaledToFit()
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .overlay(alignment: .bottomTrailing) {
+            actions.padding(8)
+          }
+      } else {
+        Image(systemName: "photo.badge.exclamationmark")
+          .symbolRenderingMode(.multicolor)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    } placeholder: {
+      ProgressView()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 10))
+    .clipShape(.rect(cornerRadius: 10))
+    .padding(.bottom, 6)
+    .onDisappear { ocrTask?.cancel() }
+  }
+
+  private var actions: some View {
+    VStack(alignment: .trailing, spacing: 4) {
+      if let status {
+        Text(status)
+          .font(.caption)
+          .padding(.vertical, 4)
+          .padding(.horizontal, 8)
+          .background(.regularMaterial, in: .capsule)
+      }
+
+      HStack(spacing: 2) {
+        action("HistoryImageCopyOCR", symbol: "text.viewfinder", perform: copyText)
+          .disabled(ocrTask != nil)
+        action("HistoryImageRepin", symbol: "pin", perform: pin)
+        action("HistoryImageSaveFile", symbol: "square.and.arrow.down", perform: save)
+          .disabled(isSaving)
+      }
+      .padding(3)
+      .background(.regularMaterial, in: .capsule)
+      .shadow(color: .black.opacity(0.20), radius: 4, y: 2)
+    }
+  }
+
+  private func localized(_ key: String) -> String {
+    NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+
+  private func action(_ key: String, symbol: String, perform: @escaping () -> Void) -> some View {
+    let title = localized(key)
+    return Button(action: perform) {
+      Image(systemName: symbol)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.borderless)
+    .help(title)
+    .accessibilityLabel(title)
+  }
+
+  private func copyText() {
+    guard let input = item.item.textRecognitionInput else { return }
+    status = nil
+    ocrTask = Task {
+      defer { ocrTask = nil }
+      var text = item.item.recognizedText
+      if text == nil {
+        text = await TextRecognition.recognizeClipboardImage(imageData: input.data, fileURL: input.fileURL)
+      }
+      guard !Task.isCancelled else { return }
+      guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        status = localized("AnnotationNoText")
+        return
+      }
+      Clipboard.shared.copyInMaccy(text)
+      status = localized("AnnotationTextCopied")
+    }
+  }
+
+  private func pin() {
+    guard let image = item.item.image, image.isValid else { return }
+    ScreenshotCapture.shared.pinImage(image)
+  }
+
+  private func save() {
+    guard let window = appState.preview.nswindow, window.attachedSheet == nil,
+          let input = item.item.textRecognitionInput else { return }
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.png]
+    panel.nameFieldStringValue = "Screenshot.png"
+    panel.level = max(panel.level, window.level)
+    isSaving = true
+    status = nil
+    appState.isSavingHistoryImage = true
+    panel.beginSheetModal(for: window) { response in
+      appState.isSavingHistoryImage = false
+      guard response == .OK, let url = panel.url else {
+        isSaving = false
+        return
+      }
+      Task {
+        let saved = await Task.detached(priority: .userInitiated) {
+          do {
+            guard let source = input.data ?? input.fileURL.flatMap({ try? Data(contentsOf: $0) }),
+                  let png = Self.pngData(from: source) else { return false }
+            try png.write(to: url, options: .atomic)
+            return true
+          } catch {
+            return false
+          }
+        }.value
+        isSaving = false
+        if !saved { status = localized("AnnotationOutputFailedShort") }
+      }
+    }
+  }
+
+  nonisolated static func pngData(from data: Data) -> Data? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+    if CGImageSourceGetType(source) as String? == UTType.png.identifier { return data }
+    return ScreenshotAnnotationDocument.RenderSnapshot.pngData(image)
   }
 }
 

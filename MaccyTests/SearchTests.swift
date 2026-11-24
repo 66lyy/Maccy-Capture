@@ -34,6 +34,46 @@ extension SharedStateTests {
       #expect(result.ranges.isEmpty)
     }
 
+    @Test("Image tags restrict all search modes while keeping OCR matches", arguments: Search.Mode.allCases)
+    func imageTag(mode: Search.Mode) {
+      Defaults[.searchMode] = mode
+      let item = HistoryItem(contents: [HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue,
+                                                           value: Data([1]))])
+      item.title = "Screenshot"
+      item.recognizedText = "Quartz Harbor"
+      let screenshot = HistoryItemDecorator(item)
+      let candidates = [HistoryItemDecorator(Self.historyItemWithTitle("Quartz Harbor")), screenshot]
+      let search = Search()
+      #expect(search.search(string: "#IMAGE", within: candidates).map(\.object) == [screenshot])
+      let result = search.search(string: " #image  Quartz Harbor", within: candidates)
+      #expect(result.map(\.object) == [screenshot])
+      #expect(result.first?.ranges.isEmpty == true)
+      #expect(search.search(string: "#image no-match", within: candidates).isEmpty)
+    }
+
+    @Test("Code tags narrow text results and leave unknown tags literal")
+    func codeTag() {
+      Defaults[.searchMode] = .exact
+      let code = HistoryItemDecorator(Self.historyItemWithTitle("func greet() {}"))
+      let prose = HistoryItemDecorator(Self.historyItemWithTitle("Please greet the team"))
+      let literal = HistoryItemDecorator(Self.historyItemWithTitle("#imageable"))
+      let candidates = [prose, code, literal]
+      let search = Search()
+      #expect(search.search(string: "#code greet", within: candidates).map(\.object) == [code])
+      #expect(search.search(string: "#imageable", within: candidates).map(\.object) == [literal])
+      #expect(search.search(string: "greet", within: candidates).map(\.object) == [prose, code])
+    }
+
+    @Test("Cycling filters preserves the text query")
+    func cycleTags() {
+      let imageQuery = Search.Query("harbor  view ").cyclingTag
+      #expect(imageQuery == "#image harbor  view ")
+      let codeQuery = Search.Query(imageQuery).cyclingTag
+      #expect(codeQuery == "#code harbor  view ")
+      #expect(Search.Query(codeQuery).cyclingTag == "harbor  view ")
+      #expect(Search.Query("").cyclingTag == "#image ")
+    }
+
     @Test("Simple search")
     func simpleSearch() { // swiftlint:disable:this function_body_length
       Defaults[.searchMode] = Search.Mode.exact

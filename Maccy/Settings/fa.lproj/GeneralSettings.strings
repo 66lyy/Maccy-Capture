@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "افزودن پس‌زمینهٔ پنجره";
 "ScreenshotWindowCascadeHint" = "برای افزودن یا حذف پنجره‌ها با ⇧ کلیک کنید";
 "ScreenshotColorFormatHint" = "C را نگه دارید · فاصله برای تغییر";
+"sc_cycleSearchTag" = "تغییر فیلتر جستجو";
+"HistoryImageCopyOCR" = "کپی متن تشخیص‌داده‌شده بدون قالب‌بندی";
+"HistoryImageRepin" = "سنجاق کردن دوباره به صفحه";
+"HistoryImageSaveFile" = "ذخیره به‌عنوان فایل";

@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "ウインドウに背景を追加";
 "ScreenshotWindowCascadeHint" = "⇧ キーを押しながらクリックしてウインドウを追加・解除";
 "ScreenshotColorFormatHint" = "C を長押し · スペースで切替";
+"sc_cycleSearchTag" = "検索フィルタを切り替える";
+"HistoryImageCopyOCR" = "認識した文字をプレーンテキストでコピー";
+"HistoryImageRepin" = "画面に再度ピン留めする";
+"HistoryImageSaveFile" = "ファイルとして保存";

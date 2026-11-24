@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "சாளரப் பின்னணியைச் சேர்";
 "ScreenshotWindowCascadeHint" = "சாளரங்களைச் சேர்க்க அல்லது நீக்க ⇧ அழுத்திக் கிளிக் செய்யவும்";
 "ScreenshotColorFormatHint" = "C-ஐ அழுத்திப் பிடிக்கவும் · Space மாற்றும்";
+"sc_cycleSearchTag" = "தேடல் வடிகட்டியை மாற்று";
+"HistoryImageCopyOCR" = "அடையாளம் கண்ட உரையை வெற்று உரையாக நகலெடு";
+"HistoryImageRepin" = "மீண்டும் திரையில் பொருத்து";
+"HistoryImageSaveFile" = "கோப்பாகச் சேமி";

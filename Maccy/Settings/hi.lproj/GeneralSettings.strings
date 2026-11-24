@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "विंडो की पृष्ठभूमि जोड़ें";
 "ScreenshotWindowCascadeHint" = "विंडो जोड़ने या हटाने के लिए ⇧ दबाकर क्लिक करें";
 "ScreenshotColorFormatHint" = "C दबाए रखें · स्पेस से बदलें";
+"sc_cycleSearchTag" = "खोज फ़िल्टर बदलें";
+"HistoryImageCopyOCR" = "पहचाने गए टेक्स्ट को सादे टेक्स्ट के रूप में कॉपी करें";
+"HistoryImageRepin" = "स्क्रीन पर फिर से पिन करें";
+"HistoryImageSaveFile" = "फ़ाइल के रूप में सहेजें";

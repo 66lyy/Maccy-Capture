@@ -24,3 +24,7 @@
 "ScreenshotWindowBackdrop" = "Lisää ikkunalle tausta";
 "ScreenshotWindowCascadeHint" = "Lisää tai poista ikkunoita ⇧-klikkauksella";
 "ScreenshotColorFormatHint" = "Pidä C pohjassa · Välilyönti vaihtaa";
+"sc_cycleSearchTag" = "Vaihda hakusuodatinta";
+"HistoryImageCopyOCR" = "Kopioi tunnistettu teksti ilman muotoilua";
+"HistoryImageRepin" = "Kiinnitä uudelleen näytölle";
+"HistoryImageSaveFile" = "Tallenna tiedostoksi";

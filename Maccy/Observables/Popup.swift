@@ -22,6 +22,7 @@ class Popup {
   static let verticalPadding: CGFloat = 5
   static let horizontalPadding: CGFloat = 5
   static let minimumPreviewHeight: CGFloat = 150
+  static let minimumImagePreviewHeight: CGFloat = 380
 
   // Radius used for items inset by the padding. Ensures they visually have the same curvature
   // as the menu.
@@ -100,7 +101,8 @@ class Popup {
     var minHeight = self.minimumHeight
     // If the preview is non-empty make sure the window accomodates for it to be visible.
     if AppState.shared.preview.state.isOpen && AppState.shared.navigator.leadSelection != nil {
-      minHeight = max(minHeight, Self.minimumPreviewHeight)
+      let imageSelected = AppState.shared.navigator.leadHistoryItem?.hasImage == true
+      minHeight = max(minHeight, imageSelected ? Self.minimumImagePreviewHeight : Self.minimumPreviewHeight)
     }
     minHeight = max(headerHeight + Self.verticalPadding, minHeight)
 
@@ -120,7 +122,7 @@ class Popup {
   }
 
   private func handleFirstKeyDown() {
-    guard !AppState.shared.isEditingItem else { return }
+    guard !AppState.shared.isEditingItem, !AppState.shared.isSavingHistoryImage else { return }
 
     if isClosed() {
       open(height: height)
@@ -134,7 +136,7 @@ class Popup {
   }
 
   private func handleEvent(_ event: NSEvent) -> NSEvent? {
-    guard !AppState.shared.isEditingItem else { return event }
+    guard !AppState.shared.isEditingItem, !AppState.shared.isSavingHistoryImage else { return event }
 
     switch event.type {
     case .keyDown:

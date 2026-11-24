@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Fensterhintergrund hinzufügen";
 "ScreenshotWindowCascadeHint" = "⇧-Klick: Fenster hinzufügen oder entfernen";
 "ScreenshotColorFormatHint" = "C halten · Leertaste wechselt";
+"sc_cycleSearchTag" = "Suchfilter wechseln";
+"HistoryImageCopyOCR" = "Erkannten Text unformatiert kopieren";
+"HistoryImageRepin" = "Erneut am Bildschirm anheften";
+"HistoryImageSaveFile" = "Als Datei sichern";

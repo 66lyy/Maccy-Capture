@@ -26,6 +26,7 @@ enum ShortcutScope: Hashable {
 
 enum ScopedShortcut: String, CaseIterable {
   case clearHistory, clearHistoryAll, clearSearch, deleteSearchCharacter, deleteSearchWord
+  case cycleSearchTag
   case nextItem, previousItem, firstItem, lastItem, selectItem, openPreferences, closeHistory, saveHistoryEdit
   case copyCapture, copyCaptureWithCommand, pinCapture, closeCapture, closeCaptureWindow
   case annotateSelection, selectParent, selectChild
@@ -48,6 +49,7 @@ enum ScopedShortcut: String, CaseIterable {
     case .clearHistory: .init(.delete, modifiers: [.command, .option])
     case .clearHistoryAll: .init(.delete, modifiers: [.command, .option, .shift])
     case .clearSearch: .init(.u, modifiers: [.control])
+    case .cycleSearchTag: .init(.t, modifiers: [.command, .shift])
     case .deleteSearchCharacter: .init(.h, modifiers: [.control])
     case .deleteSearchWord: .init(.w, modifiers: [.control])
     case .nextItem: .init(.downArrow)
@@ -77,6 +79,8 @@ enum ScopedShortcut: String, CaseIterable {
     case .clearHistory: String(localized: "sc_clearHistory", defaultValue: "Clear unpinned history", table: "GeneralSettings")
     case .clearHistoryAll: String(localized: "sc_clearHistoryAll", defaultValue: "Clear all history", table: "GeneralSettings")
     case .clearSearch: String(localized: "sc_clearSearch", defaultValue: "Clear search", table: "GeneralSettings")
+    case .cycleSearchTag:
+      String(localized: "sc_cycleSearchTag", defaultValue: "Cycle search filter", table: "GeneralSettings")
     case .deleteSearchCharacter:
       String(localized: "sc_deleteSearchCharacter", defaultValue: "Delete search character", table: "GeneralSettings")
     case .deleteSearchWord:

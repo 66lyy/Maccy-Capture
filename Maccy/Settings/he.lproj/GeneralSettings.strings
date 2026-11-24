@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "הוספת רקע לחלון";
 "ScreenshotWindowCascadeHint" = "לחיצה עם ⇧ מוסיפה או מסירה חלונות";
 "ScreenshotColorFormatHint" = "החזיקו C · רווח להחלפה";
+"sc_cycleSearchTag" = "החלפת מסנן חיפוש";
+"HistoryImageCopyOCR" = "העתקת הטקסט שזוהה ללא עיצוב";
+"HistoryImageRepin" = "הצמדה מחדש למסך";
+"HistoryImageSaveFile" = "שמירה כקובץ";

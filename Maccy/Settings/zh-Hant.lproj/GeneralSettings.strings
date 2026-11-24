@@ -131,3 +131,7 @@
 "ScreenshotWindowBackdrop" = "加入視窗美化背景";
 "ScreenshotWindowCascadeHint" = "按住 ⇧ 點一下以加入或移除視窗";
 "ScreenshotColorFormatHint" = "按住 C · 空白鍵切換格式";
+"sc_cycleSearchTag" = "切換搜尋標籤";
+"HistoryImageCopyOCR" = "複製 OCR 純文字";
+"HistoryImageRepin" = "重新釘選至螢幕";
+"HistoryImageSaveFile" = "儲存為檔案";

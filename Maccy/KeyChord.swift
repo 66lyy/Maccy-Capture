@@ -23,6 +23,7 @@ enum KeyChord: CaseIterable {
   case clearHistory
   case clearHistoryAll
   case clearSearch
+  case cycleSearchTag
   case deleteCurrentItem
   case deleteOneCharFromSearch
   case deleteLastWordFromSearch
@@ -44,6 +45,7 @@ enum KeyChord: CaseIterable {
 
   private static let historyBindings: [(ScopedShortcut, Self)] = [
     (.clearHistory, .clearHistory), (.clearHistoryAll, .clearHistoryAll), (.clearSearch, .clearSearch),
+    (.cycleSearchTag, .cycleSearchTag),
     (.deleteSearchCharacter, .deleteOneCharFromSearch), (.deleteSearchWord, .deleteLastWordFromSearch),
     (.nextItem, .moveToNext), (.previousItem, .moveToPrevious), (.firstItem, .moveToFirst),
     (.lastItem, .moveToLast), (.selectItem, .selectCurrentItem),

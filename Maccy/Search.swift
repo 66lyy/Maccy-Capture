@@ -33,10 +33,71 @@ class Search {
 
   typealias Searchable = HistoryItemDecorator
 
+  enum Tag: String, CaseIterable {
+    case image
+    case code
+
+    private static let codePattern = [
+      #"^\s*(?:func|def|function|fn)\s+\w+\s*\("#,
+      #"^\s*(?:const|let|var|val)\s+\w+[^\n=]*="#,
+      #"^\s*(?:class|struct|enum)\s+\w+[^\n]*[{:]"#,
+      #"^\s*#include\s*[<"]"#,
+      #"^\s*<(?:\?xml|!DOCTYPE|html\b)"#,
+      #"^\s*select\b[^\n]+\bfrom\b"#
+    ].joined(separator: "|")
+
+    func matches(_ item: Searchable) -> Bool {
+      switch self {
+      case .image:
+        return item.item.textRecognitionInput != nil
+      case .code:
+        guard let text = item.item.text else { return false }
+        return Self.looksLikeCode(text)
+      }
+    }
+
+    private static func looksLikeCode(_ text: String) -> Bool {
+      let sample = String(text.prefix(4096)).trimmingCharacters(in: .whitespacesAndNewlines)
+      if sample.hasPrefix("```") || sample.hasPrefix("#!") { return true }
+      if JSONFormatter.looksLikeContainer(sample),
+         (try? JSONSerialization.jsonObject(with: Data(sample.utf8))) != nil { return true }
+      return sample.range(
+        of: "(?im)" + codePattern,
+        options: .regularExpression
+      ) != nil
+    }
+  }
+
+  struct Query {
+    let tag: Tag?
+    let text: String
+
+    init(_ query: String) {
+      if let token = query.split(maxSplits: 1, whereSeparator: \.isWhitespace).first,
+         token.first == "#", let filter = Tag(rawValue: token.dropFirst().lowercased()) {
+        tag = filter
+        text = String(query[token.endIndex...].drop(while: \.isWhitespace))
+      } else {
+        tag = nil
+        text = query
+      }
+    }
+
+    var cyclingTag: String {
+      let tags = Tag.allCases
+      let nextIndex = tag.flatMap { tags.firstIndex(of: $0) }.map { $0 + 1 } ?? 0
+      guard nextIndex < tags.count else { return text }
+      return "#\(tags[nextIndex].rawValue) \(text)"
+    }
+  }
+
   private let fuse = Fuse(threshold: 0.7) // threshold found by trial-and-error
   private let fuzzySearchLimit = 5_000
 
   func search(string: String, within: [Searchable]) -> [SearchResult] {
+    let query = Query(string)
+    let string = query.text
+    let within = query.tag.map { tag in within.filter(tag.matches) } ?? within
     guard !string.isEmpty else {
       return within.map { SearchResult(object: $0) }
     }

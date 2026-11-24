@@ -58,6 +58,10 @@ struct KeyHandlingView<Content: View>: View {
         case .clearSearch:
           searchQuery = ""
           return .handled
+        case .cycleSearchTag:
+          searchFocused = true
+          searchQuery = Search.Query(searchQuery).cyclingTag
+          return .handled
         case .deleteCurrentItem:
           if appState.navigator.pasteStackSelected {
             appState.removePasteStack()

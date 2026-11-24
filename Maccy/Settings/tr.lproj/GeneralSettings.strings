@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Pencereye arka plan ekle";
 "ScreenshotWindowCascadeHint" = "Pencere eklemek veya kaldırmak için ⇧ ile tıklayın";
 "ScreenshotColorFormatHint" = "C'yi basılı tutun · Boşluk değiştirir";
+"sc_cycleSearchTag" = "Arama filtresini değiştir";
+"HistoryImageCopyOCR" = "Tanınan metni düz metin olarak kopyala";
+"HistoryImageRepin" = "Ekrana yeniden sabitle";
+"HistoryImageSaveFile" = "Dosya olarak kaydet";

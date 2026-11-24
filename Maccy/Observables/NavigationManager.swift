@@ -49,6 +49,9 @@ class NavigationManager { // swiftlint:disable:this type_body_length
       }
 
       let preview = AppState.shared.preview
+      if preview.state.isOpen && (oldValue?.hasImage == true) != (leadHistoryItem?.hasImage == true) {
+        AppState.shared.popup.needsResize = true
+      }
       if leadHistoryItem != nil {
         preview.resetAutoOpenSuppression()
         preview.startAutoOpen()

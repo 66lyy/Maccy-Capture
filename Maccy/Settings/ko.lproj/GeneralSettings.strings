@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "윈도우 배경 추가";
 "ScreenshotWindowCascadeHint" = "⇧를 누른 채 클릭하여 윈도우 추가 또는 제거";
 "ScreenshotColorFormatHint" = "C 누른 채 · Space로 전환";
+"sc_cycleSearchTag" = "검색 필터 전환";
+"HistoryImageCopyOCR" = "인식된 텍스트를 일반 텍스트로 복사";
+"HistoryImageRepin" = "화면에 다시 고정";
+"HistoryImageSaveFile" = "파일로 저장";

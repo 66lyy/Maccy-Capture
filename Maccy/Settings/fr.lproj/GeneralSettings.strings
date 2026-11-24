@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Ajouter un fond à la fenêtre";
 "ScreenshotWindowCascadeHint" = "Cliquez avec ⇧ pour ajouter ou retirer des fenêtres";
 "ScreenshotColorFormatHint" = "Maintenir C · Espace pour changer";
+"sc_cycleSearchTag" = "Changer de filtre de recherche";
+"HistoryImageCopyOCR" = "Copier le texte reconnu sans mise en forme";
+"HistoryImageRepin" = "Réépingler à l’écran";
+"HistoryImageSaveFile" = "Enregistrer dans un fichier";

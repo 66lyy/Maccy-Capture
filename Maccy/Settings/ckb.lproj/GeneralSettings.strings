@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "پاشبنەما بۆ پەنجەرە زیاد بکە";
 "ScreenshotWindowCascadeHint" = "بۆ زیادکردن یان لابردنی پەنجەرە ⇧ بگرە و کلیک بکە";
 "ScreenshotColorFormatHint" = "C ڕابگرە · بۆشایی بۆ گۆڕین";
+"sc_cycleSearchTag" = "گۆڕینی پاڵێوەری گەڕان";
+"HistoryImageCopyOCR" = "لەبەرگرتنەوەی دەقی ناسراو بەبێ شێواز";
+"HistoryImageRepin" = "دووبارە لکاندن بە شاشەوە";
+"HistoryImageSaveFile" = "پاشەکەوتکردن وەک پەڕگە";

@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Afegeix un fons a la finestra";
 "ScreenshotWindowCascadeHint" = "Fes clic amb ⇧ per afegir o treure finestres";
 "ScreenshotColorFormatHint" = "Mantén C · Espai per canviar";
+"sc_cycleSearchTag" = "Canvia el filtre de cerca";
+"HistoryImageCopyOCR" = "Copia el text reconegut sense format";
+"HistoryImageRepin" = "Torna a fixar a la pantalla";
+"HistoryImageSaveFile" = "Desa com a fitxer";

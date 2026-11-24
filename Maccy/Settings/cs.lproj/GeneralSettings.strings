@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Přidat pozadí okna";
 "ScreenshotWindowCascadeHint" = "Kliknutím s ⇧ přidáte nebo odeberete okna";
 "ScreenshotColorFormatHint" = "Držte C · Mezerník přepíná";
+"sc_cycleSearchTag" = "Přepnout filtr hledání";
+"HistoryImageCopyOCR" = "Zkopírovat rozpoznaný text bez formátování";
+"HistoryImageRepin" = "Znovu připnout na obrazovku";
+"HistoryImageSaveFile" = "Uložit jako soubor";

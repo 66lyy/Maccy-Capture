@@ -69,6 +69,19 @@ private let objectReplacementTitleCases: [(input: String, title: String)] = [
 extension SharedStateTests {
   @MainActor
   struct HistoryItemTests {
+    @Test("History image export preserves PNG data and the original color image dimensions")
+    func historyImageExport() throws {
+      let image = textImage("History image export")
+      let tiff = try #require(image.tiffRepresentation)
+      let original = try #require(NSBitmapImageRep(data: tiff))
+      let png = try #require(HistoryImagePreview.pngData(from: tiff))
+      let exported = try #require(NSBitmapImageRep(data: png))
+      #expect(exported.pixelsWide == original.pixelsWide)
+      #expect(exported.pixelsHigh == original.pixelsHigh)
+      #expect(HistoryImagePreview.pngData(from: png) == png)
+      #expect(HistoryImagePreview.pngData(from: Data([1])) == nil)
+    }
+
     @Test("Pre-index history migrates and remains searchable by title")
     func preIndexHistoryMigration() throws {
       let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

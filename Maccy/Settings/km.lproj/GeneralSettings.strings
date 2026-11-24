@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "បន្ថែមផ្ទៃខាងក្រោយបង្អួច";
 "ScreenshotWindowCascadeHint" = "ចុចដោយសង្កត់ ⇧ ដើម្បីបន្ថែម ឬដកបង្អួច";
 "ScreenshotColorFormatHint" = "សង្កត់ C · Space ដើម្បីប្ដូរ";
+"sc_cycleSearchTag" = "ប្ដូរតម្រងស្វែងរក";
+"HistoryImageCopyOCR" = "ចម្លងអត្ថបទដែលស្គាល់ជាអត្ថបទធម្មតា";
+"HistoryImageRepin" = "ខ្ទាស់លើអេក្រង់ម្ដងទៀត";
+"HistoryImageSaveFile" = "រក្សាទុកជាឯកសារ";

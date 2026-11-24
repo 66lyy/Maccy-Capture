@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "إضافة خلفية للنافذة";
 "ScreenshotWindowCascadeHint" = "⇧ مع النقر لإضافة نوافذ أو إزالتها";
 "ScreenshotColorFormatHint" = "اضغط مطولًا على C · المسافة للتبديل";
+"sc_cycleSearchTag" = "تبديل مرشح البحث";
+"HistoryImageCopyOCR" = "نسخ النص المستخرج كنص عادي";
+"HistoryImageRepin" = "إعادة التثبيت على الشاشة";
+"HistoryImageSaveFile" = "حفظ كملف";

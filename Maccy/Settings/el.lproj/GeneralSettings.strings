@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Προσθήκη φόντου παραθύρου";
 "ScreenshotWindowCascadeHint" = "Κάντε κλικ με ⇧ για προσθήκη ή αφαίρεση παραθύρων";
 "ScreenshotColorFormatHint" = "Κρατήστε το C · Διάστημα για αλλαγή";
+"sc_cycleSearchTag" = "Εναλλαγή φίλτρου αναζήτησης";
+"HistoryImageCopyOCR" = "Αντιγραφή αναγνωρισμένου κειμένου χωρίς μορφοποίηση";
+"HistoryImageRepin" = "Καρφίτσωμα ξανά στην οθόνη";
+"HistoryImageSaveFile" = "Αποθήκευση ως αρχείο";

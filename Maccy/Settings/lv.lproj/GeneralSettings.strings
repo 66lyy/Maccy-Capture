@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "Pievienot logam fonu";
 "ScreenshotWindowCascadeHint" = "Klikšķiniet, turot ⇧, lai pievienotu vai noņemtu logus";
 "ScreenshotColorFormatHint" = "Turiet C · Atstarpe pārslēdz";
+"sc_cycleSearchTag" = "Pārslēgt meklēšanas filtru";
+"HistoryImageCopyOCR" = "Kopēt atpazīto tekstu bez formatējuma";
+"HistoryImageRepin" = "Atkal piespraust ekrānam";
+"HistoryImageSaveFile" = "Saglabāt kā failu";

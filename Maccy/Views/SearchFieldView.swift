@@ -23,6 +23,20 @@ struct SearchFieldView: View {
           appState.select(flags: .currentModifierFlags)
         }
 
+      Button {
+        query = Search.Query(query).cyclingTag
+      } label: {
+        Image(systemName: "number")
+          .font(.system(size: 12, weight: .medium))
+          .frame(width: 18, height: 22)
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(Search.Query(query).tag == nil ? Color.secondary : Color.accentColor)
+      .accessibilityLabel(Text(ScopedShortcut.cycleSearchTag.title))
+      .help([ScopedShortcut.cycleSearchTag.title, "#image", "#code",
+             ScopedShortcut.cycleSearchTag.current?.description].compactMap { $0 }.joined(separator: " · "))
+
       if !query.isEmpty {
         Button {
           query = ""

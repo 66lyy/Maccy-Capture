@@ -45,3 +45,7 @@
 "ScreenshotWindowBackdrop" = "เพิ่มพื้นหลังให้หน้าต่าง";
 "ScreenshotWindowCascadeHint" = "กด ⇧ ค้างไว้แล้วคลิกเพื่อเพิ่มหรือนำหน้าต่างออก";
 "ScreenshotColorFormatHint" = "กด C ค้างไว้ · Space เพื่อสลับ";
+"sc_cycleSearchTag" = "สลับตัวกรองการค้นหา";
+"HistoryImageCopyOCR" = "คัดลอกข้อความที่อ่านได้เป็นข้อความล้วน";
+"HistoryImageRepin" = "ปักหมุดบนหน้าจออีกครั้ง";
+"HistoryImageSaveFile" = "บันทึกเป็นไฟล์";
