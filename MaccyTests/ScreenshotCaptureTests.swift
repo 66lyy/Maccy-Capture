@@ -1781,6 +1781,73 @@ struct ScreenshotCaptureTests {
     #expect(frame == capture)
   }
 
+  @Test("A capture pin from a disconnected display opens on the remaining screen")
+  func capturePinFromDisconnectedDisplay() {
+    let capture = NSRect(x: -640, y: 400, width: 320, height: 160)
+    let remainingScreen = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let frame = PinnedScreenshotWindow.initialFrame(
+      imageSize: capture.size, visibleFrame: remainingScreen,
+      anchor: NSPoint(x: capture.midX, y: capture.midY), captureFrame: capture
+    )
+    #expect(frame == NSRect(x: 0, y: 400, width: 320, height: 160))
+  }
+
+  @Test("A lost pin moves to the nearest remaining display")
+  func lostPinUsesNearestDisplay() {
+    let main = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let secondary = NSRect(x: -800, y: -100, width: 800, height: 600)
+    let pin = NSRect(x: -1280, y: 300, width: 320, height: 160)
+    let recovered = PinnedScreenshotWindow.reachableFrame(pin, in: [main, secondary])
+    #expect(recovered == NSRect(x: -800, y: 300, width: 320, height: 160))
+    #expect(PinnedScreenshotWindow.reachableFrame(pin, in: []) == pin)
+  }
+
+  @Test("Pins with only a sliver visible are recovered without moving reachable pins")
+  func partiallyVisiblePins() {
+    let main = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let secondary = NSRect(x: -800, y: -100, width: 800, height: 600)
+    let sliver = NSRect(x: 795, y: 200, width: 320, height: 160)
+    #expect(PinnedScreenshotWindow.reachableFrame(sliver, in: [main, secondary])
+      == NSRect(x: 480, y: 200, width: 320, height: 160))
+    for pin in [
+      NSRect(x: 100, y: 100, width: 320, height: 160),
+      NSRect(x: -700, y: -50, width: 320, height: 160),
+      NSRect(x: 700, y: 200, width: 320, height: 160)
+    ] {
+      #expect(PinnedScreenshotWindow.reachableFrame(pin, in: [main, secondary]) == pin)
+    }
+  }
+
+  @Test("A pin too large for the remaining display shrinks without changing its aspect ratio")
+  func oversizedPinOnRemainingDisplay() {
+    let screen = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let pin = NSRect(x: -1400, y: 500, width: 1600, height: 800)
+    #expect(PinnedScreenshotWindow.reachableFrame(pin, in: [screen])
+      == NSRect(x: 0, y: 250, width: 800, height: 400))
+  }
+
+  @Test("A screen change recovers open pins and their saved expanded frames", arguments: [false, true])
+  func screenChangeRecoversOpenPin(thumbnail: Bool) throws {
+    let screens = NSScreen.screens.map(\.visibleFrame)
+    let rightEdge = try #require(screens.map(\.maxX).max())
+    let pin = pinnedZoomWindow()
+    defer { pin.close() }
+    pin.present()
+    pin.setFrameOrigin(NSPoint(x: rightEdge + 200, y: pin.frame.minY))
+    let lostFrame = pin.frame
+    if thumbnail { pin.showThumbnail(in: lostFrame, page: 1, total: 2) }
+    try #require(!screens.contains { $0.intersects(lostFrame) })
+    try #require(pin.frame == lostFrame && pin.editingFrame == lostFrame)
+
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+
+    #expect(pin.isVisible && screens.contains { $0.contains(pin.frame) })
+    #expect(screens.contains { $0.contains(pin.editingFrame) })
+    if thumbnail { pin.restoreExpandedPresentation() }
+    #expect(screens.contains { $0.contains(pin.frame) })
+    #expect(pin.frame.size == lostFrame.size)
+  }
+
   @Test("Clipboard pins use representation point size rather than bitmap pixels")
   func clipboardPinPointSize() throws {
     let bitmap = try #require(NSBitmapImageRep(data: generatedPNG()))
@@ -1906,8 +1973,8 @@ struct ScreenshotCaptureTests {
     let first = pinnedZoomWindow()
     let second = pinnedZoomWindow(size: NSSize(width: 300, height: 200))
     let third = pinnedZoomWindow(size: NSSize(width: 400, height: 100))
-    let stack = PinnedScreenshotStack()
     let screen = NSRect(x: -900, y: -600, width: 900, height: 600)
+    let stack = PinnedScreenshotStack(visibleFrames: { [screen] })
     let original = first.frame
     first.alphaValue = 0.45
     defer { third.close(); second.close(); first.close() }
@@ -1962,6 +2029,27 @@ struct ScreenshotCaptureTests {
     #expect(stack.visiblePin === second && second.frame == movedFrame)
     second.restoreFromThumbnail()
     #expect(first.isVisible && first.thumbnailStack == nil && first.frame == original)
+  }
+
+  @Test("Stack paging does not reuse a moved thumbnail's origin on a disconnected display")
+  func thumbnailStackPagingAfterDisplayRemoval() {
+    let first = pinnedZoomWindow()
+    let second = pinnedZoomWindow()
+    let originalScreen = NSRect(x: -900, y: -600, width: 900, height: 600)
+    let remainingScreen = NSRect(x: 0, y: 50, width: 800, height: 600)
+    var screens = [originalScreen, remainingScreen]
+    let stack = PinnedScreenshotStack(visibleFrames: { screens })
+    defer { second.close(); first.close() }
+
+    stack.add(first, alongside: [], visibleFrame: originalScreen)
+    stack.add(second, alongside: [first], visibleFrame: originalScreen)
+    second.setFrameOrigin(NSPoint(x: -500, y: -300))
+    #expect(originalScreen.contains(second.frame))
+    screens = [remainingScreen]
+
+    stack.step(by: -1, from: second)
+
+    #expect(first.isVisible && remainingScreen.contains(first.frame))
   }
 
   @Test("Click-through restores a pin and keeps it out of subsequent thumbnail stacks")

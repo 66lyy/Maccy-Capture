@@ -147,6 +147,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     imageView.menu = menu
     contentView = container
     initialFirstResponder = imageView
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(screenParametersDidChange(_:)),
+      name: NSApplication.didChangeScreenParametersNotification, object: nil
+    )
   }
 
   override var canBecomeKey: Bool { isRequestingKeyboardFocus || isKeyWindow }
@@ -184,10 +188,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     self.expandedPresentation = nil
     backgroundColor = .clear
     alphaValue = expandedPresentation.opacity
-    contentAspectRatio = image.size
-    contentMinSize = Self.minimumSize(for: image.size, in: expandedPresentation.frame)
-    setFrame(expandedPresentation.frame, display: true)
-    imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
+    setExpandedFrame(Self.reachableFrame(expandedPresentation.frame, in: NSScreen.screens.map(\.visibleFrame)))
     thumbnailControls.isHidden = true
     pageLabel.isHidden = true
     imageView.toolTip = Self.localized("ScreenshotZoomHelp")
@@ -267,6 +268,9 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     imageView.cancelPendingExport()
+    NotificationCenter.default.removeObserver(
+      self, name: NSApplication.didChangeScreenParametersNotification, object: nil
+    )
     thumbnailStack?.remove(self)
     closeClickThroughControls()
     onAnnotate = nil
@@ -281,22 +285,41 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     guard replacement.isValid, replacement.size.width > 0, replacement.size.height > 0 else { return }
     let oldFrame = editingFrame
     let displayScale = min(oldFrame.width / replacement.size.width, oldFrame.height / replacement.size.height)
-    let newFrame = NSRect(
+    let replacementFrame = NSRect(
       x: oldFrame.midX - replacement.size.width * displayScale / 2,
       y: oldFrame.midY - replacement.size.height * displayScale / 2,
       width: replacement.size.width * displayScale,
       height: replacement.size.height * displayScale
     )
+    let newFrame = Self.reachableFrame(replacementFrame, in: NSScreen.screens.map(\.visibleFrame))
     image = replacement
     imageView.image = replacement
     if let expandedPresentation {
       self.expandedPresentation = (newFrame, expandedPresentation.opacity)
     } else {
-      contentAspectRatio = replacement.size
-      contentMinSize = Self.minimumSize(for: replacement.size, in: newFrame)
-      setFrame(newFrame, display: true)
-      imageScale = displayScale
+      setExpandedFrame(newFrame)
     }
+  }
+
+  private func setExpandedFrame(_ frame: NSRect) {
+    contentAspectRatio = image.size
+    contentMinSize = Self.minimumSize(for: image.size, in: frame)
+    setFrame(frame, display: true)
+    imageScale = min(self.frame.width / image.size.width, self.frame.height / image.size.height)
+  }
+
+  @objc private func screenParametersDidChange(_ notification: Notification) {
+    let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+    let reachable = Self.reachableFrame(frame, in: visibleFrames)
+    if let expandedPresentation {
+      self.expandedPresentation = (
+        Self.reachableFrame(expandedPresentation.frame, in: visibleFrames), expandedPresentation.opacity
+      )
+      if reachable != frame { setFrame(reachable, display: true) }
+    } else if reachable != frame {
+      setExpandedFrame(reachable)
+    }
+    positionClickThroughControls()
   }
 
   @objc func annotateImage() {
@@ -318,11 +341,38 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     return NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
   }
 
+  nonisolated static func reachableFrame(_ frame: NSRect, in visibleFrames: [NSRect]) -> NSRect {
+    guard !frame.isEmpty else { return frame }
+    let screens = visibleFrames.filter { !$0.isEmpty }
+    let grabWidth = min(40, frame.width)
+    let grabHeight = min(40, frame.height)
+    if screens.contains(where: { screen in
+      let intersection = screen.intersection(frame)
+      return frame.width <= screen.width && frame.height <= screen.height
+        && intersection.width >= grabWidth && intersection.height >= grabHeight
+    }) { return frame }
+
+    func distance(to screen: NSRect) -> CGFloat {
+      let dx = max(screen.minX - frame.midX, 0, frame.midX - screen.maxX)
+      let dy = max(screen.minY - frame.midY, 0, frame.midY - screen.maxY)
+      return hypot(dx, dy)
+    }
+    guard let screen = screens.min(by: { distance(to: $0) < distance(to: $1) }) else { return frame }
+    let scale = min(1, screen.width / frame.width, screen.height / frame.height)
+    let size = NSSize(width: frame.width * scale, height: frame.height * scale)
+    return NSRect(
+      x: max(screen.minX, min(frame.minX, screen.maxX - size.width)),
+      y: max(screen.minY, min(frame.minY, screen.maxY - size.height)),
+      width: size.width,
+      height: size.height
+    )
+  }
+
   nonisolated static func initialFrame(
     imageSize: NSSize, visibleFrame: NSRect, anchor: NSPoint, captureFrame: NSRect? = nil
   ) -> NSRect {
     if let captureFrame, captureFrame.width <= visibleFrame.width, captureFrame.height <= visibleFrame.height {
-      return captureFrame
+      return reachableFrame(captureFrame, in: [visibleFrame])
     }
     guard imageSize.width.isFinite, imageSize.height.isFinite,
           imageSize.width > 0, imageSize.height > 0,
@@ -471,6 +521,11 @@ final class PinnedScreenshotStack {
   private var visibleFrame: NSRect = .zero
   private var scrollDistance: CGFloat = 0
   private var pagedInGesture = false
+  private let visibleFrames: () -> [NSRect]
+
+  init(visibleFrames: @escaping () -> [NSRect] = { NSScreen.screens.map(\.visibleFrame) }) {
+    self.visibleFrames = visibleFrames
+  }
 
   func add(_ pin: PinnedScreenshotWindow, alongside candidates: [PinnedScreenshotWindow], visibleFrame: NSRect) {
     self.visibleFrame = visibleFrame
@@ -554,7 +609,8 @@ final class PinnedScreenshotStack {
     if let visiblePin { frame.origin = visiblePin.frame.origin }
     for other in pins where other !== pin && other.isVisible { other.orderOut(nil) }
     visiblePin = pin
-    pin.showThumbnail(in: frame, page: index + 1, total: pins.count)
+    let reachable = PinnedScreenshotWindow.reachableFrame(frame, in: visibleFrames())
+    pin.showThumbnail(in: reachable, page: index + 1, total: pins.count)
   }
 
   static func thumbnailFrame(in visibleFrame: NSRect) -> NSRect {
