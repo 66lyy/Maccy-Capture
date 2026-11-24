@@ -226,6 +226,17 @@ struct AppLanguageTests {
     )
   }
 
+  @Test("The status item accessibility label uses the app's display name in every shipped locale")
+  func statusItemAccessibilityName() throws {
+    let displayName = try #require(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+    for localization in Bundle.main.localizations where localization != "Base" {
+      let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
+      let bundle = try #require(Bundle(path: path))
+      let label = bundle.localizedString(forKey: "status_item_accessibility_label", value: nil, table: nil)
+      #expect(label.hasPrefix("\(displayName) — "), "\(localization): \(label)")
+    }
+  }
+
   @Test("Advanced settings shell examples target the running app's defaults domain")
   func advancedSettingsShellExamples() throws {
     let identifier = try #require(Bundle.main.bundleIdentifier)
