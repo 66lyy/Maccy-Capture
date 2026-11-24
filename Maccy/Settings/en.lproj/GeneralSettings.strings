@@ -163,7 +163,7 @@
 "ScreenshotTimedOut" = "The capture timed out and was cancelled. You can start another capture.";
 "ScreenshotClipboardWriteFailed" = "The screenshot could not be copied to the clipboard. Please try again.";
 "ScreenshotHistorySaveWarningTitle" = "Screenshot Copied, History Save Failed";
-"ScreenshotHistorySaveWarning" = "The screenshot is on your clipboard. Maccy encountered an error while saving to local history. If the image is missing from history, you can paste it into another app to save it.";
+"ScreenshotHistorySaveWarning" = "The screenshot is on your clipboard. Maccy Capture encountered an error while saving to local history. If the image is missing from history, you can paste it into another app to save it.";
 "LaunchAtLogin" = "Launch at login";
 "CheckForUpdates" = "Check for updates automatically";
 "CheckNow" = "Check now";

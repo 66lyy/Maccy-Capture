@@ -70,6 +70,23 @@ struct AppIdentityTests {
     #expect(Bundle.main.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true)
   }
 
+  @Test("The About panel links to Maccy Capture and preserves contributor credit")
+  func aboutLinks() {
+    let credits = About().credits
+    var links: [String: String] = [:]
+    credits.enumerateAttribute(.link, in: NSRange(location: 0, length: credits.length)) { value, range, _ in
+      if let url = value as? String {
+        links[credits.attributedSubstring(from: range).string] = url
+      }
+    }
+    #expect(links == [
+      "Releases": "https://github.com/66lyy/Maccy-Capture/releases",
+      "GitHub": "https://github.com/66lyy/Maccy-Capture",
+      "Issues": "https://github.com/66lyy/Maccy-Capture/issues",
+      "Sasha Koss": "https://koss.nocorp.me"
+    ])
+  }
+
   @Test("The app and default menu item use the capture artwork")
   func captureArtwork() throws {
     let iconURL = try #require(Bundle.main.url(forResource: "CaptureIcon", withExtension: "icns"))

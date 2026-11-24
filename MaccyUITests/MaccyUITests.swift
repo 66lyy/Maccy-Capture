@@ -84,6 +84,7 @@ class MaccyUITests: XCTestCase {
 
   func testPopupWithHotkey() throws {
     popUpWithHotkey()
+    assertExists(app.staticTexts["Maccy Capture"])
     assertExists(items[copy1])
     assertExists(items[copy2])
   }
