@@ -6,6 +6,14 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotAnnotationTests {
+  @Test("Number marks reject overflowing text before calculating the next number")
+  func auditNumberLimits() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    #expect(!document.append(.init(tool: .number, points: [.zero], text: String(Int.max))))
+    #expect(document.append(.init(tool: .number, points: [.zero], text: "999999")))
+    #expect(document.nextNumber == 1_000_000)
+  }
+
   @Test("Undo during an active drag does not leave a stale annotation index")
   func auditUndoDuringDrag() throws {
     let window = try editor()

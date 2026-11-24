@@ -6,6 +6,47 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("Long screenshot editor clamps extreme drags and keeps mosaic and crop ranges valid")
+  func auditScrollingEditorDrags() throws {
+    let context = try #require(CGContext(
+      data: nil, width: 32, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    let image = try #require(context.makeImage())
+    let panel = ScrollingScreenshotPanel(
+      beside: .zero, bounds: NSRect(x: 0, y: 0, width: 1000, height: 800), level: 10
+    )
+    defer { panel.close() }
+    panel.showEditor(image, width: 32, height: 64, frame: NSRect(x: 20, y: 20, width: 330, height: 410))
+    func scrollViews(_ view: NSView) -> [NSScrollView] {
+      (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+    }
+    let content = try #require(panel.contentView)
+    let editor = try #require(scrollViews(content).first?.documentView)
+    func event(_ type: NSEvent.EventType, _ point: NSPoint) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: editor.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+        windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+      ))
+    }
+    editor.mouseDown(with: try event(.leftMouseDown, NSPoint(x: editor.bounds.midX, y: 42)))
+    for point in [NSPoint(x: CGFloat.nan, y: 45), NSPoint(x: CGFloat.infinity, y: 45),
+                  NSPoint(x: -100_000, y: 100_000)] {
+      editor.mouseDragged(with: try event(.leftMouseDragged, point))
+    }
+    editor.mouseUp(with: try event(.leftMouseUp, .zero))
+    let mosaic = try #require(panel.edit)
+    #expect(!mosaic.cells.isEmpty)
+    #expect(mosaic.cells.allSatisfy { $0.x >= 0 && $0.y >= 0 &&
+      $0.x * mosaic.blockSize < mosaic.width && $0.y * mosaic.blockSize < mosaic.height })
+    editor.mouseDown(with: try event(.leftMouseDown, NSPoint(x: editor.bounds.midX - 16, y: 10)))
+    editor.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: editor.bounds.midX, y: CGFloat.nan)))
+    editor.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: editor.bounds.midX, y: 26)))
+    editor.mouseUp(with: try event(.leftMouseUp, .zero))
+    let cropped = try #require(panel.edit)
+    #expect(!cropped.rows.isEmpty && cropped.rows.lowerBound > 0 && cropped.rows.upperBound == 64)
+  }
+
   @Test("Long capture backs off only after four unchanged frames and changed outcomes reset it")
   func scrollingCadence() {
     var cadence = ScrollingScreenshotCadence()
