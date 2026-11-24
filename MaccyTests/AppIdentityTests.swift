@@ -5,6 +5,33 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AppIdentityTests {
+  @Test("Exception diagnostics describe windows without exposing their private titles or user-info values")
+  func exceptionReportPrivacy() {
+    let window = NSWindow(
+      contentRect: NSRect(x: 20, y: 30, width: 160, height: 100),
+      styleMask: [.titled], backing: .buffered, defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.title = "Private title sentinel"
+    defer { window.close() }
+
+    let exception = NSException(
+      name: .internalInconsistencyException, reason: "Layout failed for \(window.title)",
+      userInfo: ["DiagnosticKey": "Private value sentinel"]
+    )
+    let frame = "AppKit __NSWindowGetDisplayCycleObserverForLayout_block_invoke"
+    let report = ExceptionDiagnosticText(exception, [frame])
+    #expect(report.contains("Exception: NSInternalInconsistencyException"))
+    #expect(report.contains("Reason: Layout failed for [redacted]"))
+    #expect(report.contains("DiagnosticKey"))
+    #expect(report.contains("NSWindow title=[redacted] frame="))
+    #expect(report.contains("visible=no key=no contentView="))
+    #expect(report.contains(frame))
+    #expect(!report.contains("Private title sentinel"))
+    #expect(!report.contains("Private value sentinel"))
+    #expect(ExceptionDiagnosticText(exception, []).contains("Reason: [redacted outside window layout]"))
+  }
+
   @Test("An existing screen recording grant never opens a request dialog")
   func existingGrant() {
     var requests = 0

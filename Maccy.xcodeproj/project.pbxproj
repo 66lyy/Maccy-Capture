@@ -23,6 +23,7 @@
 		B9ACD419E2F67A01C5D84013 /* LanguageSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */; };
 		B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */; };
 		B9ACD419E2F67A01C5D83F11 /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */; };
+		D97A404AD50147B884795D11 /* ExceptionDiagnostics.m in Sources */ = {isa = PBXBuildFile; fileRef = D97A404AD50147B884795D12 /* ExceptionDiagnostics.m */; };
 		B9ACD419E2F67A01C5D83F13 /* ScreenCapturePermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */; };
 		B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */; };
 		0ABDD5122BB47F1E0054963B /* NSWorkspace+ApplicationName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */; };
@@ -242,6 +243,8 @@
 		B9ACD419E2F67A01C5D84014 /* LanguageSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageSettingsView.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageTests.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
+		D97A404AD50147B884795D12 /* ExceptionDiagnostics.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExceptionDiagnostics.m; sourceTree = "<group>"; };
+		D97A404AD50147B884795D13 /* ExceptionDiagnostics.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExceptionDiagnostics.h; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCapturePermission.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentityTests.swift; sourceTree = "<group>"; };
 		088F4DA628BECBC40003AD19 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -956,6 +959,8 @@
 				DA6D98E12AEABE03008A77CE /* Accessibility.swift */,
 				DAEE38461E3DBEB100DD2966 /* AppDelegate.swift */,
 				B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */,
+				D97A404AD50147B884795D13 /* ExceptionDiagnostics.h */,
+				D97A404AD50147B884795D12 /* ExceptionDiagnostics.m */,
 				F1404A720000000000000002 /* JSONFormatter.swift */,
 				B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */,
 				B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */,
@@ -1301,6 +1306,7 @@
 				2F5C8A01001A0F9D00BEEF00 /* ScreenshotCapture.swift in Sources */,
 				A601FB1D645F0D91D796D9CE /* ScreenshotCaptureSession.swift in Sources */,
 				B9ACD419E2F67A01C5D83F11 /* AppIdentity.swift in Sources */,
+				D97A404AD50147B884795D11 /* ExceptionDiagnostics.m in Sources */,
 				F1404A720000000000000001 /* JSONFormatter.swift in Sources */,
 				B9ACD419E2F67A01C5D84011 /* AppLanguage.swift in Sources */,
 				B9ACD419E2F67A01C5D85001 /* ScreenshotAnnotationDocument.swift in Sources */,
@@ -1967,6 +1973,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = CaptureIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Maccy/Maccy.entitlements;
+				SWIFT_OBJC_BRIDGING_HEADER = Maccy/ExceptionDiagnostics.h;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
@@ -2002,6 +2009,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = CaptureIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Maccy/Maccy.entitlements;
+				SWIFT_OBJC_BRIDGING_HEADER = Maccy/ExceptionDiagnostics.h;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
