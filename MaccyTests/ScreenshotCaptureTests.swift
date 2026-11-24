@@ -173,6 +173,66 @@ struct ScreenshotCaptureTests {
     #expect(try scrollingImagePixels(cropped) == Array(expected[retained]))
   }
 
+  @Test("Mapped raster rows match in-memory rows with odd widths and padded source strides",
+        arguments: [1, 3, 899, 1001])
+  func scrollingMappedRasterParity(width: Int) throws {
+    let input = try scrollingPaddedRaster(width: width, height: 37)
+    try #require(input.bytesPerRow > width * 4)
+    var inMemory = ScrollingScreenshotStitcher(width: width, height: input.height, maximumPixels: width * input.height)
+    let accepted = inMemory.append(input)
+    try #require(accepted)
+    var mapped = inMemory
+    let rows = 3..<34
+    let reference = try #require(try inMemory.takeImage(rows: rows))
+    let actual = try #require(try mapped.takeImage(rows: rows, fileBacked: true))
+    try #require(actual.width == width && actual.height == rows.count)
+    #expect(actual.bytesPerRow == width * 4)
+    let source = try scrollingImagePixels(input)
+    let expected = Array(source[(rows.lowerBound * width * 4)..<(rows.upperBound * width * 4)])
+    let referenceMatches = try scrollingImagePixels(reference) == expected
+    let mappedMatches = try scrollingImagePixels(actual) == expected
+    #expect(referenceMatches)
+    #expect(mappedMatches)
+  }
+
+  @Test("Long PNG export above the disk-backing cutoff decodes to the same RGBA as in-memory assembly")
+  func scrollingMappedPNGParity() async throws {
+    let width = 2049, height = 8192
+    let pixelCount = width * height
+    try #require(pixelCount > 16 * 1024 * 1024)
+    let input = try scrollingPaddedRaster(width: width, height: height)
+    var inMemory = ScrollingScreenshotStitcher(width: width, height: height, maximumPixels: pixelCount + width)
+    let accepted = inMemory.append(input)
+    try #require(accepted)
+    let reference = try #require(try inMemory.takeImage(rows: 0..<height))
+    let expected = try scrollingImagePixels(reference)
+
+    let processor = ScrollingScreenshotProcessor()
+    let update = try await processor.append(input, refreshPreview: false, maximumPixels: pixelCount + width)
+    try #require(update.width == width && update.height == height)
+    let output = try #require(try await processor.export())
+    let decoded = try ScreenshotCaptureSession.ValidatedImage.validate(output.data).image
+    for image in [output.image, decoded] {
+      try #require(image.width == width && image.height == height)
+      let matches = try scrollingImagePixels(image) == expected
+      #expect(matches)
+    }
+  }
+
+  private func scrollingPaddedRaster(width: Int, height: Int) throws -> CGImage {
+    let context = try #require(CGContext(data: nil, width: width, height: height,
+      bitsPerComponent: 8, bytesPerRow: (width * 4 + 63) / 64 * 64, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+    for row in 0..<height {
+      let green = CGFloat(row % 251) / 250
+      context.setFillColor(red: 1, green: green, blue: 0, alpha: 1)
+      context.fill(CGRect(x: 0, y: row, width: width, height: 1))
+      context.setFillColor(red: 0, green: green, blue: 1, alpha: 1)
+      context.fill(CGRect(x: width / 2, y: row, width: width - width / 2, height: 1))
+    }
+    return try #require(context.makeImage())
+  }
+
   @Test("Static corner replacement retains exact pixels across short and tall edge overlays",
         arguments: [3, 24, 80, 140])
   func scrollingCornerReplacementDepth(depth: Int) throws {
@@ -729,6 +789,14 @@ struct ScreenshotCaptureTests {
       #expect(update.thumbnail != nil)
     }
     print("RETINA_PROCESSOR scale=\(scale) pixels=\(width)x\(frameHeight) milliseconds=\(processorMilliseconds)")
+    try #require(stitcher.chunks.count > 1)
+    let rows = 3..<(stitcher.height - 5)
+    var mapped = stitcher
+    let reference = try #require(try stitcher.takeImage(rows: rows))
+    let actual = try #require(try mapped.takeImage(rows: rows, fileBacked: true))
+    try #require(actual.width == reference.width && actual.height == reference.height)
+    let matches = try scrollingImagePixels(actual) == scrollingImagePixels(reference)
+    #expect(matches)
   }
 
   private func scrollingFrame(_ start: Int, header: Int = 0, footer: Int = 0) -> [UInt8] {
