@@ -671,61 +671,6 @@ struct ScreenshotSelectionTests {
     #expect(controller.windows.isEmpty)
   }
 
-  @Test("The F1 diagnostic is off for missing, zero and unknown settings")
-  func jitterProbeDefaults() throws {
-    let suite = "ScreenshotJitterProbeTests-\(UUID())"
-    let defaults = try #require(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
-    let key = "MaccyCaptureJitterProbe"
-    #expect(ScreenshotSelectionController.JitterProbe.read(from: defaults) == .off)
-    for value in [0, 1, 6, 7] {
-      defaults.set(value, forKey: key)
-      #expect(ScreenshotSelectionController.JitterProbe.read(from: defaults).rawValue == (value == 7 ? 0 : value))
-    }
-  }
-
-  @Test("Each F1 diagnostic mode changes only its selected startup behavior", arguments: [0, 1, 2, 3, 4, 5, 6])
-  func jitterProbePresentation(mode: Int) async throws {
-    let probe = try #require(ScreenshotSelectionController.JitterProbe(rawValue: mode))
-    let image = try colorPickerImage()
-    var freezes = 0
-    var requestsKey: Bool?
-    var initialAlpha: CGFloat?
-    let controller = ScreenshotSelectionController(
-      displays: { [Self.displays[0]] }, presentWindow: { window, wantsKeyboard in
-        requestsKey = wantsKeyboard
-        initialAlpha = window.alphaValue
-      }, freezeDisplays: { _ in
-        freezes += 1
-        return [image]
-      }, listWindows: { [] }
-    )
-    defer { controller.cancel() }
-    let task = Task { try await controller.select(pinImmediately: false, jitterProbe: probe) }
-    try await waitForSelection(controller)
-    let window = try #require(controller.windows.first)
-    let overlayLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
-    #expect(window.animationBehavior == .none)
-    #expect(window.frame == Self.displays[0].frame)
-    #expect(requestsKey == (mode != 1))
-    #expect(window.canBecomeKey == (mode != 1))
-    #expect(window.level == (mode == 2 ? .floating : overlayLevel))
-    #expect(window.collectionBehavior == (mode == 3
-      ? [.canJoinAllSpaces] : [.canJoinAllSpaces, .fullScreenAuxiliary, .canJoinAllApplications]))
-    #expect(window.selectionView.drawsFrozenBackground == (mode != 4))
-    #expect(initialAlpha == (mode == 5 ? 0 : 1))
-    #expect(freezes == (mode == 6 ? 0 : 1))
-    #expect((window.selectionView.frozen == nil) == (mode == 6))
-    if mode == 5 {
-      for _ in 0..<100 where window.alphaValue == 0 {
-        try await Task.sleep(for: .milliseconds(5))
-      }
-      #expect(window.alphaValue == 1)
-    }
-    controller.cancel()
-    #expect(try await task.value == nil)
-  }
-
   @Test("One click on a drawing tool starts editing in the same selection window")
   func editInSelection() async throws {
     let controller = controller()

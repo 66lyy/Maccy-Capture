@@ -5,7 +5,6 @@ import CoreGraphics
 final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
   var onCancel: (() -> Void)?
   let selectionView: ScreenshotSelectionView
-  private let probe: ScreenshotSelectionController.JitterProbe
   let allowsLongScreenshot: Bool
   var onLongScreenshot: (() -> Void)?
   var longScreenshotButton: NSButton?
@@ -18,24 +17,17 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
 
   init(
     frame: NSRect, visibleFrame: NSRect, scale: CGFloat, pinImmediately: Bool,
-    frozen: CGImage? = nil, pixelSize: CGSize? = nil, probe: ScreenshotSelectionController.JitterProbe = .off
+    frozen: CGImage? = nil, pixelSize: CGSize? = nil
   ) {
-    self.probe = probe
     allowsLongScreenshot = !pinImmediately
     selectionView = ScreenshotSelectionView(
       frame: NSRect(origin: .zero, size: frame.size), scale: scale, pinImmediately: pinImmediately, pixelSize: pixelSize
     )
     selectionView.setFrozenImage(frozen)
-    if probe == .liveBackground { selectionView.drawsFrozenBackground = false }
     super.init(display: frame, visibleFrame: visibleFrame, deferToolbar: true)
     animationBehavior = .none
-    if probe != .floatingLevel { level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow))) }
-    if probe == .allSpacesOnly {
-      collectionBehavior = [.canJoinAllSpaces]
-    } else {
-      collectionBehavior.insert(.canJoinAllApplications)
-    }
-    if probe == .delayedReveal { alphaValue = 0 }
+    level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
+    collectionBehavior.insert(.canJoinAllApplications)
     ignoresMouseEvents = false
     contentView = selectionView
     initialFirstResponder = selectionView
@@ -47,8 +39,6 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     }
     selectionView.onChooseDrawingTool = { [weak self] in self?.chooseTool(.arrow) }
   }
-
-  override var canBecomeKey: Bool { probe != .noKey && super.canBecomeKey }
 
   override func complete(_ action: OutputAction) {
     if canvas != nil {

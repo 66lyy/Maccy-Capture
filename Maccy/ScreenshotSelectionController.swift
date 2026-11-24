@@ -5,15 +5,6 @@ import Defaults
 
 @MainActor
 final class ScreenshotSelectionController {
-  // Temporary diagnostic for the F1 startup shrink.
-  enum JitterProbe: Int {
-    case off = 0, noKey, floatingLevel, allSpacesOnly, liveBackground, delayedReveal, skipCapture
-
-    static func read(from defaults: UserDefaults = .standard) -> Self {
-      Self(rawValue: defaults.integer(forKey: "MaccyCaptureJitterProbe")) ?? .off
-    }
-  }
-
   struct Display: Sendable {
     let frame: NSRect
     let captureFrame: NSRect
@@ -143,12 +134,9 @@ final class ScreenshotSelectionController {
     self.makeScrollMonitor = makeScrollMonitor
   }
 
-  func select(
-    pinImmediately: Bool, timeout: Duration = .seconds(120), jitterProbe: JitterProbe = .read()
-  ) async throws -> Selection? {
+  func select(pinImmediately: Bool, timeout: Duration = .seconds(120)) async throws -> Selection? {
     guard !isSelecting, !isFreezing else { throw ScreenshotCaptureSession.Failure.alreadyCapturing }
     try Task.checkCancellation()
-    let probe = pinImmediately ? .off : jitterProbe
     let availableDisplays = displays()
     guard !availableDisplays.isEmpty else { throw ScreenshotCaptureSession.Failure.captureFailed }
     isFreezing = true
@@ -156,17 +144,11 @@ final class ScreenshotSelectionController {
       listWindows()
     }.value
     let removeWindowShadow = Defaults[.screenshotRemoveWindowShadow]
-    let frozen: [CGImage?]
-    let snapshots: [CGWindowID: ScreenshotCaptureSession.WindowLayer]
-    if probe == .skipCapture {
-      (frozen, snapshots) = ([], [:])
-    } else {
-      async let frozenDisplays = freezeDisplays(availableDisplays)
-      async let popupSnapshots = ScreenshotCaptureSession.snapshotPopups(
-        frozenWindows, on: availableDisplays, removeShadow: removeWindowShadow
-      )
-      (frozen, snapshots) = await (frozenDisplays, popupSnapshots)
-    }
+    async let frozenDisplays = freezeDisplays(availableDisplays)
+    async let popupSnapshots = ScreenshotCaptureSession.snapshotPopups(
+      frozenWindows, on: availableDisplays, removeShadow: removeWindowShadow
+    )
+    let (frozen, snapshots) = await (frozenDisplays, popupSnapshots)
     isFreezing = false
     try Task.checkCancellation()
     guard Display.sameLayout(availableDisplays, displays()) else { return nil }
@@ -177,7 +159,7 @@ final class ScreenshotSelectionController {
         windows = availableDisplays.enumerated().map { index, display in
           makeWindow(
             display: display, frozen: index < frozen.count ? frozen[index] : nil, frozenWindows: frozenWindows,
-            snapshots: snapshots, pinImmediately: pinImmediately, removeWindowShadow: removeWindowShadow, probe: probe
+            snapshots: snapshots, pinImmediately: pinImmediately, removeWindowShadow: removeWindowShadow
           )
         }
         monitorEscape()
@@ -200,13 +182,7 @@ final class ScreenshotSelectionController {
         let pointer = pointerLocation()
         if let keyWindow = windows.first(where: { $0.frame.contains(pointer) }) ?? windows.first {
           for window in windows where window !== keyWindow { presentWindow(window, false) }
-          presentWindow(keyWindow, probe != .noKey)
-          if probe == .delayedReveal {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50)) { [weak self, weak keyWindow] in
-              guard let self, let keyWindow, windows.contains(where: { $0 === keyWindow }) else { return }
-              windows.forEach { $0.alphaValue = 1 }
-            }
-          }
+          presentWindow(keyWindow, true)
           if keyWindow.frame.contains(pointer) {
             keyWindow.selectionView.moveHover(to: NSPoint(
               x: pointer.x - keyWindow.frame.minX, y: pointer.y - keyWindow.frame.minY
@@ -270,12 +246,11 @@ final class ScreenshotSelectionController {
 
   private func makeWindow(
     display: Display, frozen: CGImage?, frozenWindows: [ScreenshotElementDetection.Window],
-    snapshots: [CGWindowID: ScreenshotCaptureSession.WindowLayer], pinImmediately: Bool, removeWindowShadow: Bool,
-    probe: JitterProbe
+    snapshots: [CGWindowID: ScreenshotCaptureSession.WindowLayer], pinImmediately: Bool, removeWindowShadow: Bool
   ) -> ScreenshotSelectionWindow {
     let window = ScreenshotSelectionWindow(
       frame: display.frame, visibleFrame: display.visibleFrame ?? display.frame,
-      scale: display.scale, pinImmediately: pinImmediately, frozen: frozen, pixelSize: display.pixelSize, probe: probe
+      scale: display.scale, pinImmediately: pinImmediately, frozen: frozen, pixelSize: display.pixelSize
     )
     window.onCancel = { [weak self, weak window] in self?.finish(nil, closingWindow: window) }
     window.selectionView.movePointer = { point in
