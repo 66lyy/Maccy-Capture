@@ -1,3 +1,5 @@
+"ScreenshotLongFinishScrolling" = "Finish Scrolling";
+"ScreenshotLongEditHint" = "Drag handles to crop. Paint on the image to pixelate.";
 "ScreenshotLongSlowScroll" = "Too fast, slow down";
 "ScreenshotLongLostTrack" = "Lost track, scroll back up a little";
 "Title" = "General";

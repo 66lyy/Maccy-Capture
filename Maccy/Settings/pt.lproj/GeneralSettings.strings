@@ -1,3 +1,5 @@
+"ScreenshotLongFinishScrolling" = "Terminar deslocamento";
+"ScreenshotLongEditHint" = "Arraste as pegas para recortar. Pinte sobre a imagem para pixelizar.";
 "ScreenshotLongLostTrack" = "Perdeu-se o seguimento, deslize um pouco para cima";
 "ScreenshotLongSlowScroll" = "Deslize mais devagar";
 "LaunchAtLogin" = "Iniciar no login";

@@ -774,9 +774,11 @@ extension ScrollingScreenshotStitcher {
 
   private nonisolated var outputColorSpace: CGColorSpace { sourceColorSpace ?? CGColorSpaceCreateDeviceRGB() }
 
-  nonisolated var image: CGImage? {
+  nonisolated var image: CGImage? { image(rows: 0..<height) }
+
+  nonisolated func image(rows: Range<Int>) -> CGImage? {
     guard !chunks.isEmpty else { return nil }
-    let storage = Unmanaged.passRetained(ImageBytes(chunks))
+    let storage = Unmanaged.passRetained(ImageBytes(chunks, byteOffset: rows.lowerBound * width * 4))
     var callbacks = CGDataProviderDirectCallbacks(
       version: 0, getBytePointer: nil, releaseBytePointer: nil,
       getBytesAtPosition: { info, buffer, position, count in
@@ -787,26 +789,28 @@ extension ScrollingScreenshotStitcher {
         if let info { Unmanaged<ImageBytes>.fromOpaque(info).release() }
       }
     )
-    guard let provider = CGDataProvider(directInfo: storage.toOpaque(), size: Int64(width * height * 4),
+    guard let provider = CGDataProvider(directInfo: storage.toOpaque(), size: Int64(width * rows.count * 4),
       callbacks: &callbacks) else {
       storage.release()
       return nil
     }
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-    let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+    let image = CGImage(width: width, height: rows.count, bitsPerComponent: 8, bitsPerPixel: 32,
       bytesPerRow: width * 4, space: outputColorSpace,
       bitmapInfo: CGBitmapInfo(rawValue: format),
       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     if imageWidth == width { return image }
-    return image?.cropping(to: CGRect(x: outputPixelColumns.lowerBound, y: 0, width: imageWidth, height: height))
+    return image?.cropping(to: CGRect(x: outputPixelColumns.lowerBound, y: 0, width: imageWidth, height: rows.count))
   }
 
   nonisolated private final class ImageBytes {
     let chunks: [[UInt8]]
     let ends: [Int]
+    let byteOffset: Int
 
-    init(_ chunks: [[UInt8]]) {
+    init(_ chunks: [[UInt8]], byteOffset: Int = 0) {
       self.chunks = chunks
+      self.byteOffset = byteOffset
       var end = 0
       ends = chunks.map {
         end += $0.count
@@ -816,6 +820,7 @@ extension ScrollingScreenshotStitcher {
 
     func read(_ buffer: UnsafeMutableRawPointer, offset: Int, count: Int) -> Int {
       guard offset >= 0, count > 0 else { return 0 }
+      let offset = offset + byteOffset
       var low = 0
       var high = ends.count
       while low < high {
@@ -839,11 +844,13 @@ extension ScrollingScreenshotStitcher {
     }
   }
 
-  nonisolated func thumbnail(maximumWidth: Int = 264, maximumHeight: Int = 120) -> CGImage? {
-    guard !chunks.isEmpty, maximumWidth > 0, maximumHeight > 0 else { return nil }
-    let scale = min(1, Double(maximumWidth) / Double(imageWidth), Double(maximumHeight) / Double(height))
+  nonisolated func thumbnail(maximumWidth: Int = 264, maximumHeight: Int = 120,
+                             rows: Range<Int>? = nil) -> CGImage? {
+    let rows = rows ?? 0..<height
+    guard !chunks.isEmpty, !rows.isEmpty, maximumWidth > 0, maximumHeight > 0 else { return nil }
+    let scale = min(1, Double(maximumWidth) / Double(imageWidth), Double(maximumHeight) / Double(rows.count))
     let thumbnailWidth = max(1, Int(Double(imageWidth) * scale))
-    let thumbnailHeight = max(1, Int(Double(height) * scale))
+    let thumbnailHeight = max(1, Int(Double(rows.count) * scale))
     let colorSpace = outputColorSpace
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     guard let context = CGContext(data: nil, width: thumbnailWidth, height: thumbnailHeight,
@@ -852,26 +859,111 @@ extension ScrollingScreenshotStitcher {
     context.interpolationQuality = .low
     var row = 0
     for chunk in chunks {
-      let rows = chunk.count / (width * 4)
+      let chunkStart = row
+      let chunkHeight = chunk.count / (width * 4)
+      row += chunkHeight
+      guard let overlap = (chunkStart..<row).overlap(with: rows) else { continue }
       let drawn = chunk.withUnsafeBytes { buffer -> Bool in
         guard let provider = CGDataProvider(dataInfo: nil, data: buffer.baseAddress!, size: buffer.count,
           releaseData: { _, _, _ in }),
-          let source = CGImage(width: width, height: rows, bitsPerComponent: 8, bitsPerPixel: 32,
+          let source = CGImage(width: width, height: chunkHeight, bitsPerComponent: 8, bitsPerPixel: 32,
             bytesPerRow: width * 4, space: colorSpace,
             bitmapInfo: CGBitmapInfo(rawValue: format), provider: provider, decode: nil,
             shouldInterpolate: false, intent: .defaultIntent) else { return false }
-        let top = Double(row) * Double(thumbnailHeight) / Double(height)
-        let bottom = Double(row + rows) * Double(thumbnailHeight) / Double(height)
-        guard let cropped = source.cropping(to: CGRect(x: outputPixelColumns.lowerBound, y: 0,
-          width: imageWidth, height: rows)) else { return false }
+        let top = Double(overlap.lowerBound - rows.lowerBound) * Double(thumbnailHeight) / Double(rows.count)
+        let bottom = Double(overlap.upperBound - rows.lowerBound) * Double(thumbnailHeight) / Double(rows.count)
+        guard let cropped = source.cropping(to: CGRect(x: outputPixelColumns.lowerBound,
+          y: overlap.lowerBound - chunkStart, width: imageWidth, height: overlap.count)) else { return false }
         context.draw(cropped, in: CGRect(x: 0, y: Double(thumbnailHeight) - bottom,
           width: Double(thumbnailWidth), height: bottom - top))
         return true
       }
       guard drawn else { return nil }
-      row += rows
     }
     return context.makeImage()
+  }
+
+  nonisolated mutating func applyMosaic(_ edit: ScrollingScreenshotEdit) throws {
+    guard !edit.cells.isEmpty else { return }
+    let stride = width * 4
+    let columnOffset = outputPixelColumns.lowerBound
+    let sources = ImageBytes(chunks)
+    let groups = Dictionary(grouping: edit.cells, by: \.y).sorted { $0.key < $1.key }
+    var chunkIndex = 0
+    for (tileRow, cells) in groups {
+      try Task.checkCancellation()
+      let firstRow = tileRow * edit.blockSize
+      let tileRows = firstRow..<min(height, firstRow + edit.blockSize)
+      guard let visibleRows = tileRows.overlap(with: edit.rows) else { continue }
+      let fills = cells.map { cell in
+        let firstColumn = cell.x * edit.blockSize
+        let columns = (firstColumn + columnOffset)..<(min(imageWidth, firstColumn + edit.blockSize) + columnOffset)
+        var sums = SIMD4<UInt64>.zero
+        var bytes = [UInt8](repeating: 0, count: columns.count * 4)
+        for row in tileRows {
+          bytes.withUnsafeMutableBytes { buffer in
+            _ = sources.read(buffer.baseAddress!, offset: row * stride + columns.lowerBound * 4, count: buffer.count)
+          }
+          for pixel in Swift.stride(from: 0, to: bytes.count, by: 4) {
+            sums &+= SIMD4(UInt64(bytes[pixel]), UInt64(bytes[pixel + 1]),
+                          UInt64(bytes[pixel + 2]), UInt64(bytes[pixel + 3]))
+          }
+        }
+        let count = UInt64(tileRows.count * columns.count)
+        return (columns, SIMD4<UInt8>(truncatingIfNeeded: sums / count))
+      }
+      for row in visibleRows {
+        let offset = row * stride
+        while sources.ends[chunkIndex] <= offset { chunkIndex += 1 }
+        let localOffset = offset - (chunkIndex == 0 ? 0 : sources.ends[chunkIndex - 1])
+        chunks[chunkIndex].withUnsafeMutableBytes { buffer in
+          for (columns, color) in fills {
+            for column in columns { buffer.storeBytes(of: color, toByteOffset: localOffset + column * 4, as: SIMD4<UInt8>.self) }
+          }
+        }
+      }
+    }
+  }
+}
+
+private extension Range<Int> {
+  nonisolated func overlap(with other: Range<Int>) -> Range<Int>? {
+    overlaps(other) ? clamped(to: other) : nil
+  }
+}
+
+nonisolated struct ScrollingScreenshotEdit: Sendable {
+  struct Cell: Hashable, Sendable { let x: Int; let y: Int }
+
+  let width: Int
+  let height: Int
+  let blockSize: Int
+  private(set) var rows: Range<Int>
+  private(set) var cells: Set<Cell> = []
+
+  init(width: Int, height: Int, blockSize: Int) {
+    self.width = width
+    self.height = height
+    self.blockSize = max(1, blockSize)
+    rows = 0..<height
+  }
+
+  mutating func crop(at fraction: CGFloat, top: Bool) {
+    let row = Int((min(1, max(0, fraction)) * CGFloat(height)).rounded())
+    rows = top ? min(row, rows.upperBound - 1)..<rows.upperBound
+      : rows.lowerBound..<max(row, rows.lowerBound + 1)
+  }
+
+  mutating func paint(_ normalizedRect: CGRect) {
+    let rect = normalizedRect.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+    guard !rect.isEmpty else { return }
+    let x = Int(rect.minX * CGFloat(width)) / blockSize
+    let y = Int(rect.minY * CGFloat(height)) / blockSize
+    let lastX = (Int(ceil(rect.maxX * CGFloat(width))) - 1) / blockSize
+    let lastY = (Int(ceil(rect.maxY * CGFloat(height))) - 1) / blockSize
+    for row in y...lastY {
+      for column in x...lastX { cells.insert(Cell(x: column, y: row)) }
+    }
   }
 }
 
@@ -935,10 +1027,26 @@ actor ScrollingScreenshotProcessor {
       matchedShift: stitcher!.matchedShift, maximumMatchableShift: stitcher!.maximumMatchableShift)
   }
 
-  func export(includePreview: Bool = false) throws -> Output? {
+  func editingPreview() throws -> Update? {
     try Task.checkCancellation()
-    guard let image = stitcher?.image else { return nil }
-    let preview = includePreview ? stitcher?.thumbnail(maximumWidth: 440, maximumHeight: 300) : nil
+    guard let stitcher, let thumbnail = stitcher.thumbnail(maximumHeight: 4096) else { return nil }
+    return Update(thumbnail: thumbnail, width: stitcher.imageWidth, height: stitcher.height,
+      capReached: stitcher.capReached, showSlowScrollHint: false, warning: .normal,
+      appendResult: stitcher.appendResult, matchedShift: stitcher.matchedShift,
+      maximumMatchableShift: stitcher.maximumMatchableShift)
+  }
+
+  func export(includePreview: Bool = false, edit: ScrollingScreenshotEdit? = nil) throws -> Output? {
+    try Task.checkCancellation()
+    guard let rows = stitcher.map({ 0..<$0.height }) else { return nil }
+    if let edit {
+      guard edit.width == stitcher?.imageWidth, edit.height == rows.count else { return nil }
+      try stitcher?.applyMosaic(edit)
+    }
+    let outputRows = edit?.rows ?? rows
+    guard let image = stitcher?.image(rows: outputRows) else { return nil }
+    let preview = includePreview
+      ? stitcher?.thumbnail(maximumWidth: 440, maximumHeight: 300, rows: outputRows) : nil
     stitcher = nil
     guard let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return nil }
     try Task.checkCancellation()

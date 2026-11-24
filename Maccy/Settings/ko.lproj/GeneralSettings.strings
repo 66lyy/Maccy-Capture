@@ -1,3 +1,5 @@
+"ScreenshotLongFinishScrolling" = "스크롤 완료";
+"ScreenshotLongEditHint" = "핸들을 끌어 자릅니다. 이미지에 칠해 모자이크를 적용합니다.";
 "ScreenshotLongLostTrack" = "연결을 놓쳤습니다. 조금 위로 스크롤하세요";
 "ScreenshotLongSlowScroll" = "더 천천히 스크롤하세요";
 "Title" = "일반";

@@ -114,12 +114,21 @@ final class ScrollingScreenshotActivityMonitor {
 @MainActor
 final class ScrollingScreenshotPanel: NSPanel {
   var onFinish: ((Bool) -> Void)?
+  var onEdit: (() -> Void)?
   var onCancel: (() -> Void)?
   var onScrollActivity: (() -> Void)?
   private let activityMonitor: ScrollingScreenshotActivityMonitor
   private var controls: [NSButton] = []
   private(set) var image: CGImage?
   private let thumbnail = NSImageView()
+  private let editorScroll = NSScrollView()
+  private let editor = ScrollingScreenshotEditView()
+  private let preview = NSView()
+  private var previewHeight: NSLayoutConstraint?
+  private var editButton: NSButton?
+  private var undoButton: NSButton?
+  private var editing = false
+  var edit: ScrollingScreenshotEdit? { editor.edit }
   private let dimensions = NSTextField(labelWithString: "")
   private let hint = NSTextField(wrappingLabelWithString: "")
   private let warningIcon = NSImageView()
@@ -179,8 +188,18 @@ final class ScrollingScreenshotPanel: NSPanel {
     surface.controlsView.addSubview(group)
     contentView = surface
     thumbnail.imageScaling = .scaleProportionallyUpOrDown
-    thumbnail.heightAnchor.constraint(equalToConstant: 120).isActive = true
-    thumbnail.widthAnchor.constraint(equalToConstant: 264).isActive = true
+    previewHeight = preview.heightAnchor.constraint(equalToConstant: 120)
+    previewHeight?.isActive = true
+    preview.widthAnchor.constraint(equalToConstant: 264).isActive = true
+    for view in [thumbnail, editorScroll] {
+      view.frame = preview.bounds
+      view.autoresizingMask = [.width, .height]
+      preview.addSubview(view)
+    }
+    editorScroll.hasVerticalScroller = true
+    editorScroll.drawsBackground = false
+    editorScroll.documentView = editor
+    editorScroll.isHidden = true
     dimensions.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
     hint.stringValue = text("ScreenshotLongHint")
     hint.font = .systemFont(ofSize: 12)
@@ -198,15 +217,25 @@ final class ScrollingScreenshotPanel: NSPanel {
     let pin = NSButton(title: text("ScreenshotPinImage"), target: self, action: #selector(pinResult))
     let cancel = NSButton(title: text("ScreenshotCancel"), target: self, action: #selector(cancelResult))
     outputButtons = [copy, pin]
-    controls = [copy, pin, cancel]
+    let edit = NSButton(title: text("ScreenshotLongFinishScrolling"), target: self, action: #selector(beginEditing))
+    let undo = NSButton(title: text("AnnotationUndo"), target: self, action: #selector(undoEdit))
+    editButton = edit
+    undoButton = undo
+    controls = [copy, pin, cancel, edit]
     for button in controls {
       button.bezelStyle = .rounded
       _ = button.applyGlassBezel()
     }
     outputButtons.forEach { $0.isEnabled = false }
+    edit.isEnabled = false
+    undo.isHidden = true
+    undo.bezelStyle = .rounded
+    _ = undo.applyGlassBezel()
     let actions = NSStackView(views: [copy, pin, cancel])
     actions.spacing = 8
-    let stack = NSStackView(views: [thumbnail, dimensions, hintLine, actions])
+    let editLine = NSStackView(views: [dimensions, edit, undo])
+    editLine.spacing = 8
+    let stack = NSStackView(views: [preview, editLine, hintLine, actions])
     stack.orientation = .vertical
     stack.spacing = 8
     stack.translatesAutoresizingMaskIntoConstraints = false
@@ -216,6 +245,11 @@ final class ScrollingScreenshotPanel: NSPanel {
       stack.centerYAnchor.constraint(equalTo: group.controlsView.centerYAnchor),
       stack.widthAnchor.constraint(lessThanOrEqualTo: group.controlsView.widthAnchor, constant: -24)
     ])
+    editor.onChange = { [weak self] in
+      guard let self, let edit = self.editor.edit else { return }
+      dimensions.stringValue = "\(edit.width) × \(edit.rows.count) px"
+      undoButton?.isEnabled = self.editor.canUndo
+    }
     let notifications = NotificationCenter.default
     notifications.addObserver(self, selector: #selector(pauseScrollMonitoring(_:)),
                               name: NSApplication.didHideNotification, object: nil)
@@ -224,7 +258,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   }
 
   private func startMonitoringScrollEvents() {
-    guard isVisible, !isMonitoringScrollEvents else { return }
+    guard isVisible, !editing, !isMonitoringScrollEvents else { return }
     activityMonitor.start { [weak self] event in
       if event.type == .scrollWheel { self?.onScrollActivity?() }
       else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
@@ -278,6 +312,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   override func close() {
     stopMonitoringScrollEvents()
     onScrollActivity = nil
+    onEdit = nil
     ignoresMouseEvents = false
     super.close()
   }
@@ -289,6 +324,7 @@ final class ScrollingScreenshotPanel: NSPanel {
     thumbnail.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     dimensions.stringValue = "\(width) × \(height) px"
     outputButtons.forEach { $0.isEnabled = true }
+    editButton?.isEnabled = true
     updateHint(capped: capped, showSlowScrollHint: false)
   }
 
@@ -297,6 +333,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   }
 
   func updateHint(capped: Bool, warning: ScrollingScreenshotHintState.Warning) {
+    guard !editing else { return }
     hint.stringValue = text(capped ? "ScreenshotLongLimit"
       : warning == .lostTrack ? "ScreenshotLongLostTrack"
       : warning == .tooFast ? "ScreenshotLongSlowScroll" : "ScreenshotLongHint")
@@ -308,6 +345,36 @@ final class ScrollingScreenshotPanel: NSPanel {
     contentView?.layer?.borderWidth = warns ? 2 : 0
     contentView?.layer?.borderColor = NSColor.systemOrange.cgColor
   }
+
+  @objc private func beginEditing() {
+    guard !editing, image != nil, let onEdit else { return }
+    updateHint(capped: false, warning: .normal)
+    editing = true
+    stopMonitoringScrollEvents()
+    ignoresMouseEvents = false
+    editButton?.isEnabled = false
+    outputButtons.forEach { $0.isEnabled = false }
+    onEdit()
+  }
+
+  func showEditor(_ image: CGImage, width: Int, height: Int, frame: NSRect) {
+    let instructions = text("ScreenshotLongEditHint")
+    hint.stringValue = instructions
+    previewHeight?.constant += frame.height - self.frame.height
+    setFrame(frame, display: true)
+    thumbnail.isHidden = true
+    editorScroll.isHidden = false
+    editButton?.isHidden = true
+    undoButton?.isHidden = false
+    contentView?.layoutSubtreeIfNeeded()
+    editor.setAccessibilityLabel(instructions)
+    editor.load(image, width: width, height: height, viewport: editorScroll.contentSize)
+    editorScroll.contentView.scroll(to: .zero)
+    editorScroll.reflectScrolledClipView(editorScroll.contentView)
+    outputButtons.forEach { $0.isEnabled = true }
+  }
+
+  @objc private func undoEdit() { editor.undo() }
 
   override func keyDown(with event: NSEvent) {
     if !handleKey(event) { super.keyDown(with: event) }
@@ -325,9 +392,11 @@ final class ScrollingScreenshotPanel: NSPanel {
       cancelResult()
     } else if ((event.keyCode == 36 || event.keyCode == 76) && modifiers.isEmpty)
                 || (key == "c" && modifiers == .command) {
-      if image != nil { copyResult() }
+      if outputButtons.first?.isEnabled == true { copyResult() }
     } else if key == "p" && modifiers.isEmpty {
-      if image != nil { pinResult() }
+      if outputButtons.last?.isEnabled == true { pinResult() }
+    } else if key == "z" && modifiers == .command && editing {
+      undoEdit()
     } else { return false }
     return true
   }
@@ -338,5 +407,157 @@ final class ScrollingScreenshotPanel: NSPanel {
 
   private func text(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+}
+
+@MainActor
+private final class ScrollingScreenshotEditView: NSView {
+  private enum Drag { case top, bottom, mosaic }
+
+  private(set) var edit: ScrollingScreenshotEdit?
+  var onChange: (() -> Void)?
+  var canUndo: Bool { !undoStack.isEmpty }
+  private var thumbnail: CGImage?
+  private var displayImage: NSImage?
+  private var tiles: [ScrollingScreenshotEdit.Cell: NSImage] = [:]
+  private var imageRect = NSRect.zero
+  private var drag: Drag?
+  private var dragStart: ScrollingScreenshotEdit?
+  private var previousPoint = NSPoint.zero
+  private var cropOffset: CGFloat = 0
+  private var undoStack: [ScrollingScreenshotEdit] = []
+  override var isFlipped: Bool { true }
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+  func load(_ image: CGImage, width: Int, height: Int, viewport: NSSize) {
+    thumbnail = image
+    displayImage = NSImage(cgImage: image, size: .zero)
+    let scale = min(1, max(1, viewport.width - 24) / CGFloat(width), 16_384 / CGFloat(height))
+    let displayWidth = CGFloat(width) * scale
+    let displayHeight = CGFloat(height) * scale
+    imageRect = NSRect(x: (viewport.width - displayWidth) / 2, y: 10, width: displayWidth, height: displayHeight)
+    frame.size = NSSize(width: viewport.width, height: max(viewport.height, imageRect.maxY + 10))
+    edit = ScrollingScreenshotEdit(width: width, height: height, blockSize: max(6, Int(8 / scale)))
+    onChange?()
+    needsDisplay = true
+  }
+
+  private func position(of row: Int) -> CGFloat {
+    imageRect.minY + CGFloat(row) * imageRect.height / CGFloat(edit?.height ?? 1)
+  }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard let edit else { return }
+    displayImage?.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1,
+      respectFlipped: true, hints: nil)
+    for cell in edit.cells {
+      let x = CGFloat(cell.x * edit.blockSize) * imageRect.width / CGFloat(edit.width)
+      let y = position(of: cell.y * edit.blockSize)
+      let rect = NSRect(x: imageRect.minX + x, y: y,
+        width: CGFloat(edit.blockSize) * imageRect.width / CGFloat(edit.width),
+        height: CGFloat(edit.blockSize) * imageRect.height / CGFloat(edit.height)).intersection(imageRect)
+      guard dirtyRect.intersects(rect), let tile = tile(for: cell, rect: rect) else { continue }
+      tile.draw(in: rect, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
+    }
+    let top = position(of: edit.rows.lowerBound)
+    let bottom = position(of: edit.rows.upperBound)
+    NSColor.black.withAlphaComponent(0.6).setFill()
+    NSRect(x: imageRect.minX, y: imageRect.minY, width: imageRect.width, height: top - imageRect.minY).fill()
+    NSRect(x: imageRect.minX, y: bottom, width: imageRect.width, height: imageRect.maxY - bottom).fill()
+    for (edge, y) in [(Drag.top, top), (.bottom, bottom)] {
+      NSColor.controlAccentColor.setFill()
+      NSRect(x: imageRect.minX, y: y - 1, width: imageRect.width, height: 2).fill()
+      let center = handleCenter(edge)
+      NSBezierPath(roundedRect: NSRect(x: center.x - 12, y: center.y - 4, width: 24, height: 8),
+        xRadius: 4, yRadius: 4).fill()
+      NSColor.white.setFill()
+      NSRect(x: center.x - 6, y: center.y - 1, width: 12, height: 2).fill()
+    }
+  }
+
+  private func handleCenter(_ edge: Drag) -> NSPoint {
+    guard let edit else { return .zero }
+    let top = edge == .top
+    return NSPoint(x: imageRect.midX + (top ? -16 : 16),
+      y: position(of: top ? edit.rows.lowerBound : edit.rows.upperBound))
+  }
+
+  private func tile(for cell: ScrollingScreenshotEdit.Cell, rect: NSRect) -> NSImage? {
+    if let tile = tiles[cell] { return tile }
+    guard let thumbnail else { return nil }
+    let x = CGFloat(thumbnail.width) / imageRect.width
+    let y = CGFloat(thumbnail.height) / imageRect.height
+    let sample = NSRect(x: (rect.minX - imageRect.minX) * x, y: (imageRect.maxY - rect.maxY) * y,
+      width: rect.width * x, height: rect.height * y)
+    guard let pixel = ScreenshotAnnotationDocument.pixelated(thumbnail, in: sample,
+      blockSize: max(sample.width, sample.height).rounded(.up) + 2) else { return nil }
+    let tile = NSImage(cgImage: pixel, size: .zero)
+    tiles[cell] = tile
+    return tile
+  }
+
+  override func mouseDown(with event: NSEvent) {
+    guard let edit else { return }
+    let point = convert(event.locationInWindow, from: nil)
+    let handles = [Drag.top, .bottom].map { edge in (edge, handleCenter(edge)) }
+    if let (edge, center) = handles.first(where: {
+      abs(point.x - $0.1.x) <= 14 && abs(point.y - $0.1.y) <= 7
+    }) {
+      drag = edge
+      cropOffset = point.y - center.y
+    } else if imageRect.contains(point) {
+      drag = .mosaic
+      previousPoint = point
+    } else { return }
+    dragStart = edit
+    if drag == .mosaic { applyDrag(at: point) }
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard drag != nil else { return }
+    autoscroll(with: event)
+    applyDrag(at: convert(event.locationInWindow, from: nil))
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    guard let original = dragStart, let edit else { return }
+    if original.rows != edit.rows || original.cells != edit.cells {
+      undoStack.append(original)
+    }
+    drag = nil
+    dragStart = nil
+    onChange?()
+  }
+
+  private func applyDrag(at point: NSPoint) {
+    guard let drag, var edit else { return }
+    switch drag {
+    case .top, .bottom:
+      edit.crop(at: (point.y - cropOffset - imageRect.minY) / imageRect.height, top: drag == .top)
+    case .mosaic:
+      let point = NSPoint(x: min(imageRect.maxX, max(imageRect.minX, point.x)),
+        y: min(imageRect.maxY, max(imageRect.minY, point.y)))
+      let dx = point.x - previousPoint.x
+      let dy = point.y - previousPoint.y
+      let steps = max(1, Int(ceil(hypot(dx, dy) / 4)))
+      for step in 1...steps {
+        let progress = CGFloat(step) / CGFloat(steps)
+        let x = previousPoint.x + dx * progress - imageRect.minX
+        let y = previousPoint.y + dy * progress - imageRect.minY
+        edit.paint(NSRect(x: (x - 10) / imageRect.width, y: (y - 10) / imageRect.height,
+          width: 20 / imageRect.width, height: 20 / imageRect.height))
+      }
+      previousPoint = point
+    }
+    self.edit = edit
+    onChange?()
+    needsDisplay = true
+  }
+
+  func undo() {
+    guard drag == nil, let previous = undoStack.popLast() else { return }
+    edit = previous
+    onChange?()
+    needsDisplay = true
   }
 }

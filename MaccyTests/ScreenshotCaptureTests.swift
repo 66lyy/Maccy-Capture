@@ -1269,6 +1269,58 @@ struct ScreenshotCaptureTests {
     #expect(try await processor.export() == nil)
   }
 
+  @Test("Long screenshot crop handles map top-down to full-resolution rows and cannot cross")
+  func scrollingCropMapping() {
+    var edit = ScrollingScreenshotEdit(width: 700, height: 941, blockSize: 20)
+    edit.crop(at: 5.0 / 120, top: true)
+    edit.crop(at: 111.0 / 120, top: false)
+    #expect(edit.rows == 39..<870)
+    edit.crop(at: -1, top: false)
+    #expect(edit.rows == 39..<40)
+    edit.crop(at: 2, top: true)
+    #expect(edit.rows == 39..<40)
+    edit.crop(at: 2, top: false)
+    edit.crop(at: -1, top: true)
+    #expect(edit.rows == 0..<941)
+  }
+
+  @Test("Edited PNG and thumbnail share the trimmed rows and mosaic across a chunk boundary")
+  func scrollingEditedExport() async throws {
+    let processor = ScrollingScreenshotProcessor()
+    for offset in [0, 6] {
+      var frame = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+      frame.append(rgba: scrollingFrame(offset))
+      let image = try #require(frame.image)
+      _ = try await processor.append(image, refreshPreview: false, maximumPixels: 800)
+    }
+    let editing = try #require(try await processor.editingPreview())
+    #expect(editing.width == 8 && editing.height == 30)
+    var edit = ScrollingScreenshotEdit(width: 8, height: 30, blockSize: 5)
+    edit.crop(at: 3.0 / 30, top: true)
+    edit.crop(at: 27.0 / 30, top: false)
+    edit.paint(CGRect(x: 6.0 / 8, y: 23.0 / 30, width: 1.0 / 8, height: 1.0 / 30))
+    #expect(edit.cells == [.init(x: 1, y: 4)])
+
+    let output = try #require(try await processor.export(includePreview: true, edit: edit))
+    let decoded = try ScreenshotCaptureSession.ValidatedImage.validate(output.data).image
+    let thumbnail = try #require(output.preview)
+    let original = scrollingFrame(0) + scrollingFrame(6).suffix(6 * 32)
+    var expected = Array(original[(3 * 32)..<(27 * 32)])
+    for channel in 0..<4 {
+      var sum = 0
+      for row in 20..<25 {
+        for column in 5..<8 { sum += Int(original[row * 32 + column * 4 + channel]) }
+      }
+      for row in 17..<22 {
+        for column in 5..<8 { expected[row * 32 + column * 4 + channel] = UInt8(sum / 15) }
+      }
+    }
+    for image in [output.image, decoded, thumbnail] {
+      #expect(image.width == 8 && image.height == 24)
+      #expect(try scrollingImagePixels(image) == expected)
+    }
+  }
+
   @Test("Text-like glyph rows stitch exactly after uneven scrolls under a sticky header")
   func scrollingTextStrip() {
     let width = 1031

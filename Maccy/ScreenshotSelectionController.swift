@@ -363,14 +363,30 @@ final class ScreenshotSelectionController {
         scrollingLastActivity = .now
         scrollingDelayTask?.cancel()
       }
+      panel.onEdit = { [weak self, weak panel] in
+        guard let self, isSelecting else { return }
+        scrollingTask?.cancel()
+        scrollingDelayTask?.cancel()
+        scrollingTask = Task { [weak self, weak panel] in
+          guard let update = try? await processor.editingPreview(), let preview = update.thumbnail else {
+            if !Task.isCancelled { self?.cancel() }
+            return
+          }
+          guard !Task.isCancelled, let self, isSelecting, let panel else { return }
+          let frame = ScrollingScreenshotPanel.placement(beside: screenRect,
+            bounds: display.visibleFrame ?? display.frame, size: NSSize(width: 330, height: 410))
+          panel.showEditor(preview, width: update.width, height: update.height, frame: frame)
+        }
+      }
       panel.onFinish = { [weak self, weak window, weak panel] pin in
         guard let self, isSelecting, let panel, panel.onFinish != nil else { return }
         panel.onFinish = nil
         panel.stopMonitoring()
         scrollingTask?.cancel()
         scrollingDelayTask?.cancel()
+        let edit = panel.edit
         scrollingTask = Task { [weak self, weak window] in
-          let output = try? await processor.export(includePreview: !pin)
+          let output = try? await processor.export(includePreview: !pin, edit: edit)
           guard let self, let window, windows.contains(where: { $0 === window }) else { return }
           guard let output, !Task.isCancelled else {
             cancel()
