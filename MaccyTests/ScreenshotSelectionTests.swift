@@ -23,8 +23,8 @@ struct ScreenshotSelectionTests {
       #expect(!cadence.isIdle)
       for _ in 0..<4 { _ = cadence.delay(after: .unchanged, elapsed: .zero) }
     }
-    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(80)) == .milliseconds(5))
-    #expect(cadence.delay(after: .unmatched, elapsed: .milliseconds(48)) == .milliseconds(5))
+    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(80)) == .milliseconds(17))
+    #expect(cadence.delay(after: .unmatched, elapsed: .milliseconds(48)) == .milliseconds(17))
     #expect(cadence.delay(after: .appended, elapsed: .milliseconds(-10)) == .milliseconds(50))
   }
 
@@ -60,14 +60,45 @@ struct ScreenshotSelectionTests {
     #expect(ScrollingScreenshotPanel.placement(beside: bounds, bounds: bounds, size: .zero) == .zero)
   }
 
-  @Test("Observed scrolling removes the fixed wait, while quiet captures retain their idle backoff")
+  @Test("Observed scrolling keeps a minimum wait, while quiet captures retain their idle backoff")
   func scrollingActivityCadence() {
     var cadence = ScrollingScreenshotCadence()
     for result: ScrollingScreenshotStitcher.AppendResult in [.appended, .unchanged, .unmatched, .reanchored] {
-      #expect(cadence.delay(after: result, elapsed: .milliseconds(1), scrollIsActive: true) == .zero)
+      #expect(cadence.delay(after: result, elapsed: .milliseconds(1), scrollIsActive: true) == .milliseconds(17))
     }
     for _ in 0..<4 { _ = cadence.delay(after: .unchanged, elapsed: .zero) }
     #expect(cadence.delay(after: .unchanged, elapsed: .milliseconds(20)) == .milliseconds(130))
+  }
+
+  @Test("Scroll events waking the capture loop cannot skip its minimum frame interval")
+  func scrollingActivityWakeKeepsFrameInterval() async throws {
+    var captures: [ContinuousClock.Instant] = []
+    let controller = ScreenshotSelectionController(displays: { [Self.displays[0]] },
+      presentWindow: { _, _ in }, captureRegion: { _, rectangle, _ in
+        captures.append(.now)
+        return NSImage(size: rectangle.size, flipped: false) { bounds in
+          NSColor.white.setFill(); bounds.fill(); return true
+        }
+      }, freezeDisplays: { _ in [] }, listWindows: { [] })
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 20))
+    window.selectionView.endSelection(at: NSPoint(x: 80, y: 80))
+    window.onLongScreenshot?()
+    let panel = try #require(window.scrollingPanel)
+    for _ in 0..<100 {
+      if captures.count >= 4 { break }
+      panel.onScrollActivity?()
+      try await Task.sleep(for: .milliseconds(2))
+    }
+    controller.cancel()
+    _ = try await task.value
+    try #require(captures.count >= 4)
+    for (previous, next) in zip(captures, captures.dropFirst()) {
+      #expect(previous.duration(to: next) >= .milliseconds(17))
+    }
   }
 
   @Test("Activity monitors only observe events, tolerate missing global monitoring and remove tokens once")

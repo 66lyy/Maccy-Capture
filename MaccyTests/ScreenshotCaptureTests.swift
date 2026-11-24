@@ -108,6 +108,13 @@ struct ScreenshotCaptureTests {
     #expect(try scrollingImagePixels(image) == expected)
     #expect({ stitcher.pixels != page }())
     #expect({ Array(stitcher.pixels.suffix(frameHeight * stride)) == Array(page.suffix(frameHeight * stride)) }())
+    let rows = 761..<1001
+    let cropped = try #require(try stitcher.takeImage(rows: rows))
+    #expect(stitcher.chunks.isEmpty)
+    #expect(cropped.width == image.width && cropped.height == rows.count)
+    let outputStride = image.width * 4
+    let retained = (rows.lowerBound * outputStride)..<(rows.upperBound * outputStride)
+    #expect(try scrollingImagePixels(cropped) == Array(expected[retained]))
   }
 
   @Test("Static corner replacement retains exact pixels across short and tall edge overlays",
@@ -1266,6 +1273,23 @@ struct ScreenshotCaptureTests {
     let task = Task { try await processor.append(image, refreshPreview: true, maximumPixels: 800) }
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
+    #expect(try await processor.export() == nil)
+  }
+
+  @Test("A failed export consumes the stitched frames", arguments: [false, true])
+  func scrollingFailedExportReleasesFrames(invalidEdit: Bool) async throws {
+    let processor = ScrollingScreenshotProcessor()
+    var source = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    source.append(rgba: scrollingFrame(0))
+    let image = try #require(source.image)
+    _ = try await processor.append(image, refreshPreview: false, maximumPixels: 800)
+    let edit = invalidEdit ? ScrollingScreenshotEdit(width: 7, height: 24, blockSize: 5) : nil
+    let output = try await processor.export(edit: edit) { _ in
+      #expect(!invalidEdit)
+      return nil
+    }
+    #expect(output == nil)
+    #expect(try await processor.editingPreview() == nil)
     #expect(try await processor.export() == nil)
   }
 
