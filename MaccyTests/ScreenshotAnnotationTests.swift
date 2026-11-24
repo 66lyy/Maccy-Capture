@@ -6,6 +6,26 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotAnnotationTests {
+  @Test("Undo during an active drag does not leave a stale annotation index")
+  func auditUndoDuringDrag() throws {
+    let window = try editor()
+    defer { window.close() }
+    let canvas = try #require(window.canvas)
+    canvas.tool = .rectangle
+    let start = CGPoint(x: canvas.imageRect.midX, y: canvas.imageRect.midY)
+    let end = CGPoint(x: start.x + 40, y: start.y + 30)
+    canvas.beginMark(at: start)
+    canvas.endMark(at: end)
+    #expect(canvas.document.marks.count == 1)
+    canvas.beginMark(at: end)
+    #expect(canvas.isMovingMark)
+    window.undoMark()
+    #expect(!canvas.isMovingMark && canvas.selectedMarkIndex == nil && canvas.document.marks.isEmpty)
+    canvas.endMark(at: start)
+    window.redoMark()
+    #expect(canvas.document.marks.count == 1)
+  }
+
   @Test("Snapshot text rendering matches the original AppKit drawing", arguments: ["Sample 42", "First line\n第二行"])
   func textRenderingParity(text: String) async throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
@@ -1655,6 +1675,8 @@ struct ScreenshotAnnotationTests {
     }
     canvas.beginMark(at: viewPoint(60, 21))
     canvas.updateMark(to: viewPoint(60, 60))
+    canvas.updateMark(to: NSPoint(x: CGFloat.nan, y: 60))
+    canvas.updateMark(to: NSPoint(x: 60, y: CGFloat.infinity))
     canvas.updateMark(to: viewPoint(230, 60))
     #expect(document.marks.count == 3)
     canvas.endMark(at: viewPoint(230, 60))

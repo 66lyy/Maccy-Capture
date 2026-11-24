@@ -1,8 +1,10 @@
 import AppKit
 import CoreData
 import Defaults
+import ImageIO
 import KeyboardShortcuts
 import Testing
+import UniformTypeIdentifiers
 @testable import Maccy
 
 private extension ScrollingScreenshotStitcher {
@@ -11,6 +13,60 @@ private extension ScrollingScreenshotStitcher {
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Oversized composite bounds fail before allocating the canvas")
+  func auditOversizeComposite() {
+    let bounds = CGRect(x: -16_000, y: -16_000, width: 32_000, height: 32_000)
+    #expect(ScreenshotCaptureSession.compositeWindows([], bounds: bounds, scale: 2) == nil)
+  }
+
+  @Test("Small long frames remain exportable after narrow edge mosaics")
+  func auditNarrowScrollingFrames() async throws {
+    for width in [1, 2, 3, 7, 16] {
+      for height in [1, 2, 4, 5, 12, 24] {
+        var source = ScrollingScreenshotStitcher(width: width, height: height, maximumPixels: 800)
+        #expect(!{ source.append(rgba: []) }())
+        let frame = (0..<(width * height)).flatMap {
+          [UInt8(truncatingIfNeeded: $0 * 139), UInt8(truncatingIfNeeded: $0 * 89), 20, 255]
+        } as [UInt8]
+        #expect({ source.append(rgba: frame) }())
+        let processor = ScrollingScreenshotProcessor()
+        let image = try #require(source.image)
+        _ = try await processor.append(image, refreshPreview: true, maximumPixels: 800)
+        _ = try await processor.append(image, refreshPreview: true, maximumPixels: 800)
+        var edit = ScrollingScreenshotEdit(width: width, height: height, blockSize: 3)
+        edit.paint(CGRect(x: 0.8, y: 0.8, width: 0.4, height: 0.4))
+        edit.crop(at: 1, top: true)
+        let output = try #require(try await processor.export(includePreview: true, edit: edit))
+        #expect(output.image.width == width && output.image.height == 1 && output.preview != nil)
+      }
+    }
+  }
+
+  @Test("Extreme TIFF point dimensions still create a finite pin that closes")
+  func auditExtremeClipboardPin() throws {
+    let raster = try ScreenshotCaptureSession.ValidatedImage.validate(generatedPNG()).image
+    let tiff = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(tiff, UTType.tiff.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(
+      destination, raster, [kCGImagePropertyDPIWidth: 0.0000001, kCGImagePropertyDPIHeight: 72] as CFDictionary
+    )
+    #expect(CGImageDestinationFinalize(destination))
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    #expect(pasteboard.setData(tiff as Data, forType: .tiff))
+    let image = try #require(NSImage(pasteboard: pasteboard))
+    #expect(image.isValid && image.size.width > 1_000_000_000)
+    #expect(PinnedImageBudget.estimatedBytes(for: image) == 4 * raster.width * raster.height)
+    let frame = try #require(NSScreen.main?.visibleFrame)
+    let pin = PinnedScreenshotWindow(image: image, visibleFrame: frame, anchor: .zero)
+    var closes = 0
+    pin.onClose = { closes += 1 }
+    pin.present()
+    #expect(pin.frame.width.isFinite && pin.frame.height.isFinite)
+    pin.close()
+    #expect(closes == 1)
+  }
+
   @Test("Window compositing keeps transparent gaps, stacking order and the backdrop padding")
   func windowCompositing() throws {
     func layer(_ color: NSColor) throws -> CGImage {
