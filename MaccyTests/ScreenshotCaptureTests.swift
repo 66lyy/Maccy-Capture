@@ -82,8 +82,8 @@ struct ScreenshotCaptureTests {
       Dictionary(uniqueKeysWithValues: votes.sorted { $0.key > $1.key })) == expected)
   }
 
-  @Test("Removing a scrollbar does not reveal its stale pixels in already stored rows")
-  func scrollingHistoricalScrollbarCrop() throws {
+  @Test("Removing a scrollbar does not reveal its stale pixels in already stored rows", arguments: [false, true])
+  func scrollingHistoricalScrollbarCrop(fileBacked: Bool) throws {
     let width = 800, frameHeight = 800, stride = width * 4
     let page = scrollingTextContent(width: width, height: 1280)
     var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight,
@@ -109,7 +109,7 @@ struct ScreenshotCaptureTests {
     #expect({ stitcher.pixels != page }())
     #expect({ Array(stitcher.pixels.suffix(frameHeight * stride)) == Array(page.suffix(frameHeight * stride)) }())
     let rows = 761..<1001
-    let cropped = try #require(try stitcher.takeImage(rows: rows))
+    let cropped = try #require(try stitcher.takeImage(rows: rows, fileBacked: fileBacked))
     #expect(stitcher.chunks.isEmpty)
     #expect(cropped.width == image.width && cropped.height == rows.count)
     let outputStride = image.width * 4
@@ -485,6 +485,35 @@ struct ScreenshotCaptureTests {
       context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
     return bytes
+  }
+
+  @Test("Large PNG history previews have bounded pixel dimensions without changing the stored PNG")
+  func largePNGHistoryPreviews() throws {
+    let width = 2048, height = 8193
+    let context = try #require(CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+    ))
+    context.setFillColor(gray: 0.5, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    let image = try #require(context.makeImage())
+    let data = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    let content = HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: data)
+    let decorator = HistoryItemDecorator(HistoryItem(contents: [content]))
+    decorator.sizeImages()
+    let pixelScale = NSScreen.forPopup?.backingScaleFactor ?? 1
+    for (preview, bounds) in [
+      (decorator.thumbnailImage, HistoryItemDecorator.thumbnailImageSize),
+      (decorator.previewImage, HistoryItemDecorator.previewImageSize)
+    ] {
+      let resized = try #require(preview)
+      let representation = try #require(resized.representations.first)
+      #expect(representation.pixelsWide > 0 && representation.pixelsHigh > 0)
+      #expect(representation.pixelsWide <= Int(ceil(bounds.width * pixelScale)))
+      #expect(representation.pixelsHigh <= Int(ceil(bounds.height * pixelScale)))
+      #expect(abs(resized.size.width / resized.size.height - Double(width) / Double(height)) < 0.001)
+    }
+    #expect(decorator.item.imageData == data)
   }
 
   @Test("Forty bands retain exact pixels across thirteen joins with rounded corners, shading and a moving thumb")

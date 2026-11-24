@@ -2,6 +2,7 @@ import Dispatch
 import Foundation
 #if canImport(CoreGraphics)
 import CoreGraphics
+import Darwin
 import ImageIO
 import UniformTypeIdentifiers
 #endif
@@ -781,7 +782,7 @@ extension ScrollingScreenshotStitcher {
     return try? copy.takeImage(rows: 0..<height)
   }
 
-  nonisolated mutating func takeImage(rows: Range<Int>) throws -> CGImage? {
+  nonisolated mutating func takeImage(rows: Range<Int>, fileBacked: Bool = false) throws -> CGImage? {
     let columns = outputPixelColumns
     guard !chunks.isEmpty, !columns.isEmpty, !rows.isEmpty, rows.lowerBound >= 0, rows.upperBound <= height
     else { return nil }
@@ -789,9 +790,13 @@ extension ScrollingScreenshotStitcher {
     let sourceStride = width * 4
     let stride = columns.count * 4
     let byteCount = stride * rows.count
-    let pixels = UnsafeMutableRawPointer.allocate(byteCount: byteCount, alignment: MemoryLayout<UInt32>.alignment)
-    var ownsPixels = true
-    defer { if ownsPixels { pixels.deallocate() } }
+    let file = fileBacked ? Self.openTemporaryRaster() : nil
+    guard !fileBacked || file != nil else { return nil }
+    defer { if let file { fclose(file) } }
+    var pixels = fileBacked ? nil : UnsafeMutableRawPointer.allocate(
+      byteCount: byteCount, alignment: MemoryLayout<UInt32>.alignment
+    )
+    defer { pixels?.deallocate() }
     var row = 0
     for index in chunks.indices {
       try Task.checkCancellation()
@@ -800,25 +805,64 @@ extension ScrollingScreenshotStitcher {
       let start = row
       row += chunk.count / sourceStride
       guard let overlap = (start..<row).overlap(with: rows) else { continue }
-      chunk.withUnsafeBytes { buffer in
+      let written = chunk.withUnsafeBytes { buffer -> Bool in
         let source = buffer.baseAddress! + (overlap.lowerBound - start) * sourceStride + columns.lowerBound * 4
-        let target = pixels + (overlap.lowerBound - rows.lowerBound) * stride
         if stride == sourceStride {
-          target.copyMemory(from: source, byteCount: overlap.count * stride)
+          let count = overlap.count * stride
+          if let file { return fwrite(source, 1, count, file) == count }
+          (pixels! + (overlap.lowerBound - rows.lowerBound) * stride).copyMemory(from: source, byteCount: count)
         } else {
           for rowIndex in 0..<overlap.count {
-            (target + rowIndex * stride).copyMemory(from: source + rowIndex * sourceStride, byteCount: stride)
+            let input = source + rowIndex * sourceStride
+            if let file {
+              guard fwrite(input, 1, stride, file) == stride else { return false }
+            } else {
+              let offset = (overlap.lowerBound - rows.lowerBound + rowIndex) * stride
+              (pixels! + offset).copyMemory(from: input, byteCount: stride)
+            }
           }
         }
+        return true
       }
+      guard written else { return nil }
     }
-    guard row >= rows.upperBound, let provider = CGDataProvider(dataInfo: nil, data: pixels, size: byteCount,
-      releaseData: { _, bytes, _ in UnsafeMutableRawPointer(mutating: bytes).deallocate() }) else { return nil }
-    ownsPixels = false
+    guard row >= rows.upperBound else { return nil }
+    let provider: CGDataProvider
+    if let file {
+      guard fflush(file) == 0 else { return nil }
+      let mapping = mmap(nil, byteCount, PROT_READ, MAP_PRIVATE, fileno(file), 0)
+      guard let mapping, mapping != MAP_FAILED else { return nil }
+      guard let mapped = CGDataProvider(dataInfo: nil, data: mapping, size: byteCount,
+        releaseData: { _, bytes, count in munmap(UnsafeMutableRawPointer(mutating: bytes), count) }) else {
+        munmap(mapping, byteCount)
+        return nil
+      }
+      provider = mapped
+    } else {
+      guard let direct = CGDataProvider(dataInfo: nil, data: pixels!, size: byteCount,
+        releaseData: { _, bytes, _ in UnsafeMutableRawPointer(mutating: bytes).deallocate() }) else { return nil }
+      pixels = nil
+      provider = direct
+    }
     let format = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
     return CGImage(width: columns.count, height: rows.count, bitsPerComponent: 8, bitsPerPixel: 32,
       bytesPerRow: stride, space: outputColorSpace, bitmapInfo: CGBitmapInfo(rawValue: format),
       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+  }
+
+  private nonisolated static func openTemporaryRaster() -> UnsafeMutablePointer<FILE>? {
+    let template = FileManager.default.temporaryDirectory.appendingPathComponent("MaccyRaster.XXXXXX").path
+    var path = Array(template.utf8CString)
+    return path.withUnsafeMutableBufferPointer { buffer in
+      let path = buffer.baseAddress!
+      let descriptor = mkstemp(path)
+      guard descriptor >= 0 else { return nil }
+      guard unlink(path) == 0, let file = fdopen(descriptor, "wb") else {
+        close(descriptor)
+        return nil
+      }
+      return file
+    }
   }
 
   nonisolated private enum ImageBytes {
@@ -994,6 +1038,8 @@ nonisolated struct ScrollingScreenshotCadence {
 }
 
 actor ScrollingScreenshotProcessor {
+  private static let inMemoryRasterPixelLimit = 16 * 1024 * 1024
+
   struct Output: Sendable {
     let data: Data
     let image: CGImage
@@ -1074,7 +1120,9 @@ actor ScrollingScreenshotProcessor {
     let outputRows = edit?.rows ?? rows
     let preview = includePreview
       ? stitcher?.thumbnail(maximumWidth: 440, maximumHeight: 300, rows: outputRows) : nil
-    guard let image = try stitcher?.takeImage(rows: outputRows) else { return nil }
+    guard let width = stitcher?.imageWidth else { return nil }
+    let fileBacked = outputRows.count * width > Self.inMemoryRasterPixelLimit
+    guard let image = try stitcher?.takeImage(rows: outputRows, fileBacked: fileBacked) else { return nil }
     return (image, preview)
   }
 
