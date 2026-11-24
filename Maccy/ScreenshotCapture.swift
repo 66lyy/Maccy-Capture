@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import CoreGraphics
 import Defaults
 import Observation
@@ -79,6 +80,16 @@ final class ScreenshotCapture {
   private var annotationWindows: [UUID: ScreenshotAnnotationWindow] = [:]
   private var annotationSources: [ObjectIdentifier: UUID] = [:]
   private var isShowingAlert = false
+  private let connectedDisplayIDs: @MainActor () -> Set<CGDirectDisplayID>
+  private var screenObserver: AnyCancellable?
+
+  init(connectedDisplayIDs: @escaping @MainActor () -> Set<CGDirectDisplayID> = {
+    Set(NSScreen.screens.map { ScreenshotCapture.displayID(for: $0) })
+  }) {
+    self.connectedDisplayIDs = connectedDisplayIDs
+    screenObserver = NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+      .sink { [weak self] _ in self?.pruneDisconnectedStacks() }
+  }
 
   var isCapturing: Bool { captureTask != nil }
 
@@ -299,11 +310,24 @@ final class ScreenshotCapture {
       window.present()
       return
     }
-    let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
-    let stack = pinnedStacks[displayID] ?? PinnedScreenshotStack()
-    pinnedStacks[displayID] = stack
+    let displayID = Self.displayID(for: screen)
+    let stack = pinnedStacks[displayID] ?? PinnedScreenshotStack(onEmpty: { [weak self] in
+      self?.pinnedStacks.removeValue(forKey: displayID)
+    })
     let candidates = pinnedWindows.values.filter { $0 !== window && $0.screen?.frame == screen.frame }
     stack.add(window, alongside: candidates, visibleFrame: screen.visibleFrame)
+    if !stack.pins.isEmpty { pinnedStacks[displayID] = stack }
+  }
+
+  private static func displayID(for screen: NSScreen) -> CGDirectDisplayID {
+    (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+  }
+
+  private func pruneDisconnectedStacks() {
+    let connected = connectedDisplayIDs()
+    for id in pinnedStacks.keys.filter({ !connected.contains($0) }) {
+      pinnedStacks.removeValue(forKey: id)?.restoreAll()
+    }
   }
 
   func restorePinnedStacks() {

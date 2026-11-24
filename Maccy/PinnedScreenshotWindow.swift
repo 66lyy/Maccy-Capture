@@ -522,9 +522,12 @@ final class PinnedScreenshotStack {
   private var scrollDistance: CGFloat = 0
   private var pagedInGesture = false
   private let visibleFrames: () -> [NSRect]
+  private let onEmpty: (() -> Void)?
 
-  init(visibleFrames: @escaping () -> [NSRect] = { NSScreen.screens.map(\.visibleFrame) }) {
+  init(visibleFrames: @escaping () -> [NSRect] = { NSScreen.screens.map(\.visibleFrame) },
+       onEmpty: (() -> Void)? = nil) {
     self.visibleFrames = visibleFrames
+    self.onEmpty = onEmpty
   }
 
   func add(_ pin: PinnedScreenshotWindow, alongside candidates: [PinnedScreenshotWindow], visibleFrame: NSRect) {
@@ -576,6 +579,7 @@ final class PinnedScreenshotStack {
     } else {
       visiblePin = nil
     }
+    if pins.isEmpty { onEmpty?() }
   }
 
   func step(by direction: Int, from pin: PinnedScreenshotWindow) {

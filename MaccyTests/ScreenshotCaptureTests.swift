@@ -2076,6 +2076,62 @@ struct ScreenshotCaptureTests {
     #expect(first.isVisible && remainingScreen.contains(first.frame))
   }
 
+  @Test("Empty stacks are released when a pin closes or expands", arguments: [false, true])
+  func emptyThumbnailStackIsReleased(expand: Bool) throws {
+    let controller = ScreenshotCapture()
+    let (first, second) = try stackTwoPins(using: controller)
+    defer { second.close(); first.close() }
+    weak var stack = second.thumbnailStack
+    try #require(stack != nil && first.thumbnailStack === stack)
+
+    if expand { second.restoreFromThumbnail() } else { second.close() }
+
+    #expect(first.isVisible && first.thumbnailStack == nil)
+    #expect(stack == nil)
+    withExtendedLifetime(controller) {}
+  }
+
+  @Test("A display change prunes disconnected stacks without closing their pins")
+  func disconnectedThumbnailStackIsReleased() throws {
+    let screen = try #require(NSScreen.main)
+    let displayNumber = try #require(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
+    var connectedDisplayIDs: Set<CGDirectDisplayID> = [displayNumber.uint32Value]
+    let controller = ScreenshotCapture(connectedDisplayIDs: { connectedDisplayIDs })
+    let (first, second) = try stackTwoPins(using: controller)
+    defer { second.close(); first.close() }
+    weak var stack = second.thumbnailStack
+    try #require(stack != nil && first.thumbnailStack === stack)
+    let expandedFrames = [first.editingFrame, second.editingFrame]
+
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+    #expect(stack != nil && !first.isVisible && second.isVisible)
+
+    connectedDisplayIDs = [displayNumber.uint32Value ^ 1]
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+
+    #expect(stack == nil)
+    #expect(first.isVisible && second.isVisible)
+    #expect(first.thumbnailStack == nil && second.thumbnailStack == nil)
+    #expect([first.frame, second.frame] == expandedFrames)
+  }
+
+  private func stackTwoPins(using controller: ScreenshotCapture) throws
+    -> (PinnedScreenshotWindow, PinnedScreenshotWindow) {
+    let screen = try #require(NSScreen.main?.visibleFrame)
+    let key = Defaults.Keys.automaticPinStackingEnabled
+    let previous = Defaults[key]
+    Defaults[key] = true
+    defer { Defaults[key] = previous }
+    let png = try generatedPNG()
+    func pin(offset: CGFloat) throws -> PinnedScreenshotWindow {
+      let image = try #require(NSImage(data: png))
+      let frame = NSRect(x: (screen.midX + offset).rounded(), y: screen.midY.rounded(), width: 120, height: 120)
+      controller.pinImage(image, imageFrame: frame)
+      return try #require(NSApp.windows.compactMap { $0 as? PinnedScreenshotWindow }.first { $0.image === image })
+    }
+    return try (pin(offset: -180), pin(offset: 60))
+  }
+
   @Test("Click-through restores a pin and keeps it out of subsequent thumbnail stacks")
   func clickThroughRemovesThumbnail() {
     let first = pinnedZoomWindow()
