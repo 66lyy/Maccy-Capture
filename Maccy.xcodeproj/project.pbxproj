@@ -24,6 +24,7 @@
 		B9ACD419E2F67A01C5D84015 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84016 /* AppLanguageTests.swift */; };
 		B9ACD419E2F67A01C5D83F11 /* AppIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */; };
 		D97A404AD50147B884795D11 /* ExceptionDiagnostics.m in Sources */ = {isa = PBXBuildFile; fileRef = D97A404AD50147B884795D12 /* ExceptionDiagnostics.m */; };
+		D97A404AD50147B884795D14 /* ExceptionPreprocessorTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D97A404AD50147B884795D15 /* ExceptionPreprocessorTests.m */; };
 		B9ACD419E2F67A01C5D83F13 /* ScreenCapturePermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */; };
 		B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */; };
 		0ABDD5122BB47F1E0054963B /* NSWorkspace+ApplicationName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */; };
@@ -245,6 +246,8 @@
 		B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentity.swift; sourceTree = "<group>"; };
 		D97A404AD50147B884795D12 /* ExceptionDiagnostics.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExceptionDiagnostics.m; sourceTree = "<group>"; };
 		D97A404AD50147B884795D13 /* ExceptionDiagnostics.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExceptionDiagnostics.h; sourceTree = "<group>"; };
+		D97A404AD50147B884795D15 /* ExceptionPreprocessorTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ExceptionPreprocessorTests.m; sourceTree = "<group>"; };
+		D97A404AD50147B884795D16 /* ExceptionPreprocessor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExceptionPreprocessor.h; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCapturePermission.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentityTests.swift; sourceTree = "<group>"; };
 		088F4DA628BECBC40003AD19 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -852,6 +855,7 @@
 				AC1811260000000000000002 /* ScreenshotCaptureTests.swift */,
 				AC1811180000000000000008 /* ScreenshotSelectionTests.swift */,
 				B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */,
+				D97A404AD50147B884795D15 /* ExceptionPreprocessorTests.m */,
 				F1404A720000000000000004 /* JSONFormatterTests.swift */,
 				F1404A720000000000000006 /* LiquidGlassTests.swift */,
 				B9ACD419E2F67A01C5D86006 /* SoftwareUpdaterTests.swift */,
@@ -961,6 +965,7 @@
 				B9ACD419E2F67A01C5D83F12 /* AppIdentity.swift */,
 				D97A404AD50147B884795D13 /* ExceptionDiagnostics.h */,
 				D97A404AD50147B884795D12 /* ExceptionDiagnostics.m */,
+				D97A404AD50147B884795D16 /* ExceptionPreprocessor.h */,
 				F1404A720000000000000002 /* JSONFormatter.swift */,
 				B9ACD419E2F67A01C5D84012 /* AppLanguage.swift */,
 				B9ACD419E2F67A01C5D85002 /* ScreenshotAnnotationDocument.swift */,
@@ -1228,6 +1233,7 @@
 				DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */,
 				4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */,
 				B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */,
+				D97A404AD50147B884795D14 /* ExceptionPreprocessorTests.m in Sources */,
 				F1404A720000000000000003 /* JSONFormatterTests.swift in Sources */,
 				F1404A720000000000000005 /* LiquidGlassTests.swift in Sources */,
 				B9ACD419E2F67A01C5D86005 /* SoftwareUpdaterTests.swift in Sources */,

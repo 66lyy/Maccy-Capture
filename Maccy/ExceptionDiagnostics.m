@@ -1,6 +1,6 @@
 #import "ExceptionDiagnostics.h"
+#import "ExceptionPreprocessor.h"
 #import <AppKit/AppKit.h>
-#import <objc/objc-exception.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -111,9 +111,7 @@ static void FatalSignal(int signal) {
 }
 
 static id ObserveThrow(id object) {
-  if (previousPreprocessor) {
-    object = previousPreprocessor(object);
-  }
+  object = ForwardExceptionToPreprocessor(object, previousPreprocessor);
   if (pthread_self() != layoutThread || recording || ![object isKindOfClass:NSException.class]) return object;
   recording = YES;
   @try {
