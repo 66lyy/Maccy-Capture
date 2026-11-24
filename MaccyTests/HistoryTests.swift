@@ -527,6 +527,28 @@ extension SharedStateTests {
       #expect(!context.hasChanges)
     }
 
+    @Test("Screenshot history notifications are silent without silencing ordinary copies")
+    func screenshotHistoryNotificationIsSilent() throws {
+      var notifications: [(title: String, sound: NSSound?)] = []
+      let history = History(notifyNewItem: { notifications.append(($0, $1)) })
+      defer { history.clearAll() }
+
+      let bitmap = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0
+      ))
+      bitmap.setColor(.red, atX: 0, y: 0)
+      let data = try #require(bitmap.representation(using: .png, properties: [:]))
+      try ScreenshotCapture.shared.saveInHistory(data, history: history)
+      history.add(historyItem("ordinary copy"))
+
+      let screenshotTitle = NSLocalizedString("ScreenshotTitle", tableName: "GeneralSettings", comment: "")
+      #expect(notifications.map(\.title) == [screenshotTitle, "ordinary copy"])
+      #expect(notifications.first?.sound == nil)
+      #expect(notifications.last?.sound === NSSound.write)
+    }
+
     @Test("An attached item is saved without being inserted twice")
     func attachedItemIsSavedOnce() throws {
       let item = historyItem("attached")

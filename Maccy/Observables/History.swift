@@ -1,5 +1,6 @@
 // swiftlint:disable file_length
 import AppKit.NSRunningApplication
+import AppKit.NSSound
 import Defaults
 import Foundation
 import Logging
@@ -72,6 +73,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   private let sorter = Sorter()
   private let throttler = Throttler(minimumDelay: 0.2)
   private let pinManager = PinManager()
+  private let notifyNewItem: (String, NSSound?) -> Void
   private var allPinnedItems: [HistoryItemDecorator] { pinManager.pinnedItems }
   private var allUnpinnedItems: [HistoryItemDecorator] = []
   private var filteredPinnedItems: [HistoryItemDecorator] = []
@@ -97,8 +99,14 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   static let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 #endif
 
-  init(ocrCoordinator: HistoryOCRCoordinator = HistoryOCRCoordinator()) {
+  init(
+    ocrCoordinator: HistoryOCRCoordinator = HistoryOCRCoordinator(),
+    notifyNewItem: @escaping (String, NSSound?) -> Void = { title, sound in
+      Task { Notifier.notify(body: title, sound: sound) }
+    }
+  ) {
     self.ocrCoordinator = ocrCoordinator
+    self.notifyNewItem = notifyNewItem
     #if DEBUG
     guard !Self.isRunningUnitTests else { return }
     #endif
@@ -189,7 +197,9 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   @discardableResult
   @MainActor
-  func add(_ item: HistoryItem, saveToStorage: Bool = true, indexImage: Bool = false) -> HistoryItemDecorator {
+  func add(
+    _ item: HistoryItem, saveToStorage: Bool = true, indexImage: Bool = false, playNotificationSound: Bool = true
+  ) -> HistoryItemDecorator {
     if item.modelContext == nil {
       Storage.shared.context.insert(item)
     }
@@ -219,9 +229,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       }
       deleteFromStorage(existingHistoryItem, replacingWith: item)
     } else {
-      Task {
-        Notifier.notify(body: item.title, sound: .write)
-      }
+      notifyNewItem(item.title, playNotificationSound ? .write : nil)
     }
 
     // Remove exceeding items. Do this after the item is added to avoid removing something

@@ -92,17 +92,17 @@ struct AppIdentityTests {
       defaults.removePersistentDomain(forName: source)
       defaults.removePersistentDomain(forName: destination)
     }
-    defaults.setPersistentDomain(["screenshotSoundEnabled": false, "showFooter": false], forName: source)
+    defaults.setPersistentDomain(["formatJSON": false, "showFooter": false], forName: source)
     defaults.setPersistentDomain(["showFooter": true], forName: destination)
     AppIdentity.migratePreferences(defaults: defaults, destination: destination, source: source)
     let migrated = try #require(defaults.persistentDomain(forName: destination))
-    #expect(migrated["screenshotSoundEnabled"] as? Bool == false)
+    #expect(migrated["formatJSON"] as? Bool == false)
     #expect(migrated["showFooter"] as? Bool == true)
     #expect(migrated[AppIdentity.migrationKey] as? Bool == true)
     #expect(defaults.persistentDomain(forName: source)?["showFooter"] as? Bool == false)
-    defaults.setPersistentDomain(["screenshotSoundEnabled": true], forName: source)
+    defaults.setPersistentDomain(["formatJSON": true], forName: source)
     AppIdentity.migratePreferences(defaults: defaults, destination: destination, source: source)
-    #expect(defaults.persistentDomain(forName: destination)?["screenshotSoundEnabled"] as? Bool == false)
+    #expect(defaults.persistentDomain(forName: destination)?["formatJSON"] as? Bool == false)
   }
 
   @Test("Restart uses the exact application path as an argument, not a bundle lookup")

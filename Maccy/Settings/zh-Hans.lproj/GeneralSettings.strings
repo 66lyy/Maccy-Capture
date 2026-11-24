@@ -130,7 +130,6 @@
 "AnnotationTextCopied" = "已复制";
 "ScreenshotSelectionPinInstructions" = "拖动框选 · 松开即贴屏 · Esc 取消";
 "ScreenshotClipboardHint" = "将剪贴板中已有的图片悬浮显示，不会重新截屏。";
-"ScreenshotSound" = "截图成功时播放提示音";
 "ScreenshotAutoStackPins" = "自动堆叠截图贴图";
 "ScreenshotSuccess" = "截图已复制";
 "ScreenshotSavedLocally" = "已加入本地剪贴板历史";

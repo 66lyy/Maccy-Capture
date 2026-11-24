@@ -63,7 +63,6 @@ struct GeneralSettingsPane: View {
         Divider()
         option(.formatJSON, "FormatJSON")
         Divider()
-        option(.screenshotSoundEnabled, "ScreenshotSound")
         if let notificationsURL = notificationsURL {
           Link(destination: notificationsURL, label: {
             Text("NotificationsAndSounds", tableName: "GeneralSettings")

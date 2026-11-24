@@ -53,7 +53,6 @@ Click its pin button to keep the image on screen.
 Capture and Pin creates a pinned image directly, without an additional preview.
 Starting another capture first closes the old preview so it is not included in the next screenshot.
 Previews are held only in memory.
-The success sound can be disabled in General settings; canceled and failed captures do not play it.
 
 Region capture uses the app's own crosshair and selection overlay.
 After releasing the mouse, drag inside the box to move it or drag a corner to resize.

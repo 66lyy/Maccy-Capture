@@ -215,9 +215,6 @@ final class ScreenshotCapture {
             }
           }
         }
-        if Defaults[.screenshotSoundEnabled] {
-          NSSound.write?.play()
-        }
       } catch is CancellationError {
         return
       } catch {
@@ -248,14 +245,18 @@ final class ScreenshotCapture {
   }
 
   func saveInHistory(_ pngData: Data) throws {
+    try saveInHistory(pngData, history: .shared)
+  }
+
+  func saveInHistory(_ pngData: Data, history: History) throws {
     let item = HistoryItem(contents: [
       HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData)
     ])
     item.application = Bundle.main.bundleIdentifier
     item.title = text("ScreenshotTitle")
 
-    History.shared.add(item, saveToStorage: false, indexImage: true)
-    try History.shared.insertIntoStorage(item)
+    history.add(item, saveToStorage: false, indexImage: true, playNotificationSound: false)
+    try history.insertIntoStorage(item)
   }
 
   func pinImage(_ image: NSImage, imageFrame: NSRect? = nil) {

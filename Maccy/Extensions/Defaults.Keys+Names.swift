@@ -61,7 +61,6 @@ nonisolated extension Defaults.Keys {
   static let previewDelay = Key<Int>("previewDelay", default: 1500, suite: preferencesSuite)
   static let removeFormattingByDefault = Key<Bool>("removeFormattingByDefault", default: false, suite: preferencesSuite)
   static let searchMode = Key<Search.Mode>("searchMode", default: .exact, suite: preferencesSuite)
-  static let screenshotSoundEnabled = Key<Bool>("screenshotSoundEnabled", default: true, suite: preferencesSuite)
   static let screenshotRemoveWindowShadow = Key<Bool>("screenshotRemoveWindowShadow", default: false, suite: preferencesSuite)
   static let screenshotWindowBackdrop = Key<Bool>("screenshotWindowBackdrop", default: false, suite: preferencesSuite)
   static let automaticPinStackingEnabled = Key<Bool>("automaticPinStackingEnabled", default: true, suite: preferencesSuite)
