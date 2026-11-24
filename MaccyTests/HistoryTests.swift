@@ -91,6 +91,81 @@ extension SharedStateTests {
       }
     }
 
+    @Test("Reloading after a sort change preserves the latest tag or text filter",
+          arguments: ["#image", "#code needle", "plain"])
+    func reloadPreservesActiveFilter(query: String) async throws {
+      let searchMode = Defaults[.searchMode]
+      Defaults[.searchMode] = .exact
+      defer {
+        Defaults[.searchMode] = searchMode
+        history.searchQuery = ""
+      }
+
+      let image = ocrItem(0)
+      image.title = "image"
+      image.pin = "b"
+      history.add(image)
+      history.add(historyItem("let needle = 1"))
+      history.add(historyItem("let other = 2"))
+      history.add(historyItem("plain text"))
+
+      let expected = switch query {
+      case "#image": ["image"]
+      case "#code needle": ["let needle = 1"]
+      default: ["plain text"]
+      }
+      history.searchQuery = "#image"
+      history.searchQuery = "#code"
+      history.searchQuery = query
+      let deadline = ContinuousClock.now + .seconds(2)
+      while history.items.map(\.title) != expected && ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      try #require(history.items.map(\.title) == expected)
+
+      Defaults[.sortBy] = .numberOfCopies
+      try await history.load()
+
+      #expect(history.items.map(\.title) == expected)
+    }
+
+    @Test("A cancelled history load neither replaces the list nor trims storage")
+    func cancelledLoadLeavesHistoryUntouched() async throws {
+      let row = history.add(historyItem("stored"))
+      Defaults[.size] = 0
+      let load = Task { @MainActor in try await history.load() }
+      load.cancel()
+
+      await #expect(throws: CancellationError.self) { try await load.value }
+      #expect(history.items.first === row)
+      try assertStorageCounts(items: 1, contents: 1)
+    }
+
+    @Test("An older history load cannot overwrite a newer load or trim storage")
+    func supersededLoadLeavesLatestHistoryUntouched() async throws {
+      history.add(historyItem("stored"))
+      let (waiting, continuation) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
+      let older = Task { @MainActor in
+        try await history.load {
+          await withCheckedContinuation { _ = continuation.yield($0) }
+        }
+      }
+      var iterator = waiting.makeAsyncIterator()
+      let resumeOlder = try #require(await iterator.next())
+      let newestRow: HistoryItemDecorator
+      do {
+        defer { resumeOlder.resume() }
+        try await history.load()
+        newestRow = try #require(history.firstUnpinnedItem)
+        Defaults[.size] = 0
+      }
+
+      try await older.value
+
+      #expect(history.firstUnpinnedItem === newestRow)
+      try assertStorageCounts(items: 1, contents: 1)
+    }
+
     @Test("Duplicate replacement preserves full-sort ordering", arguments: Sorter.By.allCases)
     func duplicateReplacementOrdering(by: Sorter.By) {
       Defaults[.sortBy] = by

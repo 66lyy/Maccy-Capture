@@ -38,7 +38,9 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   var searchQuery: String = "" {
     didSet(previousSearchQuery) {
       guard searchQuery != previousSearchQuery else { return }
+      let query = searchQuery
       throttler.throttle { [self] in
+        guard query == searchQuery else { return }
         updateSearchResults()
 
         if searchQuery.isEmpty {
@@ -93,6 +95,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   @ObservationIgnored private var duplicateIndex: [Data: Set<ObjectIdentifier>] = [:]
   @ObservationIgnored private var indexedItems: [ObjectIdentifier: IndexedItem] = [:]
   @ObservationIgnored private var dirtyIndexedItems: Set<ObjectIdentifier> = []
+  @ObservationIgnored private var loadGeneration = 0
   private var unpinnedSortBy = Defaults[.sortBy]
 
 #if DEBUG
@@ -147,7 +150,14 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  func load() async throws {
+  func load(waitForTurn: @MainActor () async -> Void = { await Task.yield() }) async throws {
+    try Task.checkCancellation()
+    loadGeneration &+= 1
+    let generation = loadGeneration
+    await waitForTurn()
+    try Task.checkCancellation()
+    guard generation == loadGeneration else { return }
+
     let descriptor = FetchDescriptor<HistoryItem>()
     let results = try Storage.shared.context.fetch(descriptor)
     let maxSize = Defaults[.size]
@@ -160,6 +170,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       exceedingItems.append(item)
       return false
     }
+    try Task.checkCancellation()
     if !exceedingItems.isEmpty {
       exceedingItems.forEach { deleteFromStorage($0) }
       Storage.shared.context.processPendingChanges()
@@ -169,8 +180,12 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     pinManager.load(from: decorators)
     allUnpinnedItems = decorators.filter(\.isUnpinned)
     unpinnedSortBy = Defaults[.sortBy]
-    filteredPinnedItems = allPinnedItems
-    filteredUnpinnedItems = allUnpinnedItems
+    if searchQuery.isEmpty {
+      filteredPinnedItems = allPinnedItems
+      filteredUnpinnedItems = allUnpinnedItems
+    } else {
+      updateSearchResults()
+    }
     rebuildDuplicateIndex(decorators)
 
     updateShortcuts()
