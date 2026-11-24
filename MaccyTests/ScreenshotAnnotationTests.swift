@@ -1256,6 +1256,55 @@ struct ScreenshotAnnotationTests {
     #expect(actions == [.apply])
   }
 
+  @Test("Cropping a pin preserves source pixels and annotations inside the chosen rectangle")
+  func cropsPinnedEditorOutput() async throws {
+    let window = try #require(ScreenshotAnnotationWindow(
+      image: fixture(), visibleFrame: NSRect(x: 0, y: 0, width: 1000, height: 800),
+      imageFrame: NSRect(x: 100, y: 200, width: 240, height: 160), editingPin: true
+    ))
+    defer { window.close() }
+    let crop = try #require(window.cropButton)
+    crop.performClick(nil)
+    #expect(window.canvas.isCroppingPin)
+    let canvas = try #require(window.canvas)
+    let bounds = canvas.imageRect
+    let start = NSPoint(x: bounds.minX + bounds.width / 4, y: bounds.maxY - bounds.height * 5 / 160)
+    let end = NSPoint(x: bounds.midX, y: bounds.maxY - bounds.height * 25 / 160)
+    func event(_ type: NSEvent.EventType, _ point: NSPoint) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: canvas.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+        windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+      ))
+    }
+    canvas.mouseDown(with: try event(.leftMouseDown, end))
+    canvas.mouseDragged(with: try event(.leftMouseDragged, start))
+    canvas.mouseUp(with: try event(.leftMouseUp, start))
+    #expect(canvas.pinCrop == CGRect(x: 60, y: 5, width: 60, height: 20))
+    window.cancelOperation(nil)
+    #expect(!window.isFinished && canvas.pinCrop == nil && !canvas.isCroppingPin)
+
+    crop.performClick(nil)
+    canvas.mouseDown(with: try event(.leftMouseDown, start))
+    canvas.mouseUp(with: try event(.leftMouseUp, end))
+    _ = canvas.document.append(.init(
+      tool: .redact, points: [NSPoint(x: 65, y: 140), NSPoint(x: 90, y: 152)], color: .black
+    ))
+    var rendered: NSImage?
+    window.onOutput = { _, image, action in
+      #expect(action == .apply)
+      rendered = image
+    }
+    window.applyImage()
+    await window.exportTask?.value
+    let raster = try #require(rendered?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    #expect(raster.width == 60 && raster.height == 20)
+    let pixels = NSBitmapImageRep(cgImage: raster)
+    #expect((pixels.colorAt(x: 50, y: 0)?.blueComponent ?? 0) > 0.9)
+    #expect((pixels.colorAt(x: 50, y: 0)?.redComponent ?? 1) < 0.1)
+    #expect((pixels.colorAt(x: 50, y: 19)?.redComponent ?? 0) > 0.9)
+    #expect((pixels.colorAt(x: 10, y: 10)?.blueComponent ?? 1) < 0.1)
+  }
+
   @Test("Toolbar stays on screen for edge, full-screen and negative-coordinate captures",
         arguments: [
           NSRect(x: 0, y: 0, width: 800, height: 600),

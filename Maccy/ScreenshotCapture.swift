@@ -73,6 +73,7 @@ final class ScreenshotCapture {
   private let selectionController = ScreenshotSelectionController()
   private var captureTask: Task<Void, Never>?
   private var pinnedWindows: [UUID: PinnedScreenshotWindow] = [:]
+  private var pinnedStacks: [CGDirectDisplayID: PinnedScreenshotStack] = [:]
   private var pinnedImageBudget = PinnedImageBudget()
   private var previewWindow: ScreenshotPreviewWindow?
   private var annotationWindows: [UUID: ScreenshotAnnotationWindow] = [:]
@@ -293,10 +294,15 @@ final class ScreenshotCapture {
     pinnedWindows[identifier] = window
     let popup = AppState.shared.popup
     if !popup.isClosed() { popup.close() }
-    window.present()
+    let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
+    let stack = pinnedStacks[displayID] ?? PinnedScreenshotStack()
+    pinnedStacks[displayID] = stack
+    let candidates = pinnedWindows.values.filter { $0 !== window && $0.screen?.frame == screen.frame }
+    stack.add(window, alongside: candidates, visibleFrame: screen.visibleFrame)
   }
 
   private func closeAllPinnedImages() {
+    pinnedStacks.removeAll()
     for window in Array(pinnedWindows.values) { window.close() }
     pinnedWindows.removeAll()
     pinnedImageBudget = PinnedImageBudget()
@@ -341,7 +347,7 @@ final class ScreenshotCapture {
       return
     }
     dismissPreview()
-    let targetFrame = source?.frame ?? imageFrame
+    let targetFrame = source?.editingFrame ?? imageFrame
     let anchor = targetFrame.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
     guard let screen = source?.screen ?? NSScreen.screens.first(where: { $0.frame.contains(anchor) }) ?? NSScreen.main,
           let window = ScreenshotAnnotationWindow(
@@ -359,8 +365,9 @@ final class ScreenshotCapture {
       case .copy:
         guard let data else { throw CancellationError() }
         try deliverScreenshot(data) {
-          source?.replaceImage(rendered)
-          if source == nil {
+          if let source {
+            replacePinnedImage(rendered, in: source)
+          } else {
             showPreview(rendered, imageFrame: targetFrame)
           }
         }
@@ -370,7 +377,7 @@ final class ScreenshotCapture {
           pinImage(rendered, imageFrame: targetFrame)
         }
       case .apply:
-        source?.replaceImage(rendered)
+        if let source { replacePinnedImage(rendered, in: source) }
       }
     }
     window.onClose = { [weak self] in
@@ -380,6 +387,13 @@ final class ScreenshotCapture {
     annotationWindows[identifier] = window
     if let sourceID { annotationSources[sourceID] = identifier }
     window.present()
+  }
+
+  private func replacePinnedImage(_ image: NSImage, in pin: PinnedScreenshotWindow) {
+    guard let id = pinnedWindows.first(where: { $0.value === pin })?.key,
+          let bytes = PinnedImageBudget.estimatedBytes(for: image), pinnedImageBudget.add(id, bytes: bytes)
+    else { return }
+    pin.replaceImage(image)
   }
 
   private func dismissPreview() {

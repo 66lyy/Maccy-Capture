@@ -1849,6 +1849,97 @@ struct ScreenshotCaptureTests {
     #expect(zoomed == NSRect(x: 250, y: 175, width: 600, height: 300))
   }
 
+  @Test("Thumbnail stacks show one pin, page in order and restore separate pins")
+  func pinnedThumbnailStack() {
+    let first = pinnedZoomWindow()
+    let second = pinnedZoomWindow(size: NSSize(width: 300, height: 200))
+    let third = pinnedZoomWindow(size: NSSize(width: 400, height: 100))
+    let stack = PinnedScreenshotStack()
+    let screen = NSRect(x: -900, y: -600, width: 900, height: 600)
+    let original = first.frame
+    first.alphaValue = 0.45
+    defer { third.close(); second.close(); first.close() }
+
+    stack.add(first, alongside: [], visibleFrame: screen)
+    #expect(first.isVisible && first.thumbnailStack == nil)
+    stack.add(second, alongside: [first], visibleFrame: screen)
+    stack.add(third, alongside: [], visibleFrame: screen)
+    #expect(!first.isVisible && !second.isVisible && third.isVisible)
+    #expect(third.frame == NSRect(x: -192, y: -584, width: 176, height: 112))
+
+    stack.scroll(20, precise: true, phase: .began, from: third)
+    #expect(stack.visiblePin === third)
+    stack.scroll(10, precise: true, phase: .changed, from: third)
+    #expect(stack.visiblePin === second && second.isVisible && !third.isVisible)
+    stack.scroll(50, precise: true, phase: .changed, from: second)
+    #expect(stack.visiblePin === second)
+    stack.scroll(0, precise: true, phase: .ended, from: second)
+    stack.scroll(1, precise: false, phase: [], from: second)
+    #expect(stack.visiblePin === first && first.alphaValue == 1)
+
+    stack.detach(first)
+    #expect(first.frame == original && first.alphaValue == 0.45 && first.isVisible)
+    #expect(first.thumbnailStack == nil && stack.visiblePin === second)
+    let secondExpanded = second.editingFrame
+    third.close()
+    #expect(stack.pins.isEmpty && second.thumbnailStack == nil)
+    #expect(second.isVisible && second.frame == secondExpanded)
+  }
+
+  @Test("Click-through restores a pin and keeps it out of subsequent thumbnail stacks")
+  func clickThroughRemovesThumbnail() {
+    let first = pinnedZoomWindow()
+    let second = pinnedZoomWindow()
+    let third = pinnedZoomWindow()
+    let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let stack = PinnedScreenshotStack()
+    defer { third.close(); second.close(); first.close() }
+
+    stack.add(first, alongside: [], visibleFrame: screen)
+    stack.add(second, alongside: [first], visibleFrame: screen)
+    second.isClickThrough = true
+    #expect(stack.pins.isEmpty && second.ignoresMouseEvents && second.isVisible && first.isVisible)
+    stack.add(third, alongside: [first, second], visibleFrame: screen)
+    #expect(stack.pins.count == 2 && !stack.pins.contains { $0 === second })
+    #expect(second.isVisible && second.thumbnailStack == nil)
+  }
+
+  @Test("Double-click opens annotation on a pin without closing it")
+  func doubleClickEditsPin() throws {
+    let image = try #require(NSImage(data: generatedPNG()))
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
+      anchor: NSPoint(x: 400, y: 300)
+    )
+    defer { window.close() }
+    let view = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
+    let click = try #require(NSEvent.mouseEvent(
+      with: .leftMouseDown, location: NSPoint(x: 4, y: 4), modifierFlags: [], timestamp: 0,
+      windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1
+    ))
+    var opened = false, closed = false
+    window.onAnnotate = { opened = $0 === image }
+    window.onClose = { closed = true }
+    view.mouseDown(with: click)
+    #expect(opened && !closed)
+  }
+
+  @Test("Pin drag stages a real PNG file at the source pixel size and cleans up on cancellation")
+  func pinnedFileExport() throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let source = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let file = try PinnedScreenshotDragExport.stage(source, in: root)
+    let secondFile = try PinnedScreenshotDragExport.stage(source, in: root)
+    let result = try #require(NSBitmapImageRep(data: Data(contentsOf: file)))
+    #expect(file != secondFile && file.pathExtension == "png")
+    #expect(result.pixelsWide == source.width && result.pixelsHigh == source.height)
+    #expect((file as NSURL).writableTypes(for: .general).contains(.fileURL))
+    PinnedScreenshotDragExport.remove(file)
+    #expect(!FileManager.default.fileExists(atPath: file.path))
+    #expect(FileManager.default.fileExists(atPath: secondFile.path))
+  }
+
   @Test("A remapped pinned-window shortcut works without keeping its old binding")
   func remappedPinnedShortcut() throws {
     try #require(AppDelegate.isTesting)

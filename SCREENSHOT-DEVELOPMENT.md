@@ -109,11 +109,8 @@ Images and recognized text are not sent to network services.
 
 ## Pinned Images and Zoom
 
-Pinned images support dragging, mouse-wheel zoom, and two-finger trackpad pinch gestures,
-without zoom buttons.
-Scrolling up enlarges the image and scrolling down reduces it, regardless of Natural Scrolling.
-Precise scrolling has reduced sensitivity, and momentum scrolling is ignored
-so zoom stops when you lift your fingers.
+Command-drag moves a full-size pin. Scroll to adjust opacity, or hold Option while scrolling
+to zoom. Two-finger trackpad pinch also zooms. Momentum scrolling is ignored.
 Only the image under the pointer receives these events; no global event monitor or extra permission is used.
 
 Zoom preserves the aspect ratio and tries to keep the pointer position fixed.
@@ -121,8 +118,15 @@ Near a display edge, the image is repositioned to keep it fully visible.
 Its maximum size is limited by both five times the original logical image size
 and the current display's visible area.
 Zoom changes only the display size; it does not resample the source image or rewrite the clipboard.
-Pinned images retain right-click Copy, a close button, double-click to close,
-and Esc / ⌘W to close or ⌘C to copy when the window has keyboard focus.
+Multiple pins on the same display automatically form one thumbnail stack at the bottom-right.
+Scroll over the card (or use arrow keys when focused) to browse currently pinned images.
+Click the expand button to keep that pin open separately. A lone remaining pin restores its previous size.
+Click-through pins stay outside the stack.
+
+Drag a pin or thumbnail onto an app that accepts files to attach a full-resolution PNG without
+changing the clipboard. Double-click to open the editor; use Crop to drag out the area to keep,
+then Apply to update the pin. Esc in Crop mode resets the crop.
+Right-click Copy, the close button, and Esc / ⌘W to close or ⌘C to copy still work on a focused pin.
 The initial pinned size also fits within the current display's visible area.
 
 This local version currently does not enable App Sandbox because its capture backend launches
@@ -368,7 +372,7 @@ All annotation entry points use a borderless in-place overlay, not a separate ed
   The original remains in memory without first entering the clipboard or history.
 - Click the pencil button in the 2-second preview after copying. The inline overlay opens and the preview closes
   immediately; its original automatic timeout is not extended.
-- Right-click a pinned image and choose Annotate…, or press ⌘E while it has keyboard focus.
+- Double-click a pinned image, choose Annotate… from its context menu, or press ⌘E while it has keyboard focus.
   Edit over that image's current screen rectangle and apply changes back to the same pin.
   Only one annotation session is allowed at a time; repeated capture shortcuts bring it forward.
 

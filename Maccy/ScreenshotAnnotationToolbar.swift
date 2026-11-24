@@ -179,7 +179,14 @@ extension ScreenshotAnnotationWindow {
     func joined(_ groups: [[NSView]]) -> [NSView] {
       groups.filter { !$0.isEmpty }.map { row($0) as NSView }.enumerated().flatMap { $0.offset == 0 ? [$0.element] : [separator(), $0.element] }
     }
-    let tools: [NSView] = toolButtons
+    var tools: [NSView] = toolButtons
+    if editingPin {
+      let crop = button("AnnotationCropPin", symbol: "crop", action: #selector(togglePinCrop))
+      crop.toolTip = PinnedScreenshotWindow.localized("AnnotationPinCropHelp")
+      crop.setAccessibilityLabel(PinnedScreenshotWindow.localized("AnnotationCropPin"))
+      cropButton = crop
+      tools.append(crop)
+    }
     let history = items(.history).compactMap { controls[$0] }
     let output = items(.output).compactMap { controls[$0] }
     var styleRows = ScreenshotToolbarItem.styleRows(order: order, disabled: disabled, narrow: narrow)
@@ -294,6 +301,7 @@ extension ScreenshotAnnotationWindow {
   }
 
   func chooseTool(_ tool: ScreenshotAnnotationDocument.Tool) {
+    setPinCropMode(false)
     canvas?.cancelTextDrag()
     canvas?.commitText()
     let tools = ScreenshotAnnotationDocument.Tool.toolbarTools(
@@ -306,7 +314,7 @@ extension ScreenshotAnnotationWindow {
 
   func updateTool() {
     if let selectedTool { canvas?.tool = selectedTool }
-    for button in toolButtons { button.isChosen = button.tag == selectedTool?.rawValue }
+    for button in toolButtons { button.isChosen = canvas?.isCroppingPin != true && button.tag == selectedTool?.rawValue }
     refreshStyle()
     if let canvas { invalidateCursorRects(for: canvas) }
     refreshHistoryButtons()

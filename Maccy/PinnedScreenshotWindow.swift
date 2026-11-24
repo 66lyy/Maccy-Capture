@@ -1,4 +1,6 @@
 import AppKit
+import ImageIO
+import UniformTypeIdentifiers
 
 @MainActor
 final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
@@ -6,12 +8,14 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   var onCloseAll: (() -> Void)?
   var onAnnotate: ((NSImage) -> Void)?
   var onClickThroughChange: (() -> Void)?
+  weak var thumbnailStack: PinnedScreenshotStack?
 
   nonisolated static let minimumOpacity: CGFloat = 0.1
 
   var isClickThrough = false {
     didSet {
       guard isClickThrough != oldValue else { return }
+      if isClickThrough { thumbnailStack?.detach(self) }
       ignoresMouseEvents = isClickThrough
       controls.isHidden = isClickThrough
       clickThroughSign.isHidden = !isClickThrough
@@ -26,12 +30,17 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   private(set) var image: NSImage
+  fileprivate let createdAt = ContinuousClock.now
   private let imageView = PinnedScreenshotImageView()
   private let controls: GlassControlStrip
+  private let thumbnailControls: GlassControlStrip
+  private let pageLabel = PinnedScreenshotPageLabel(labelWithString: "")
   private let clickThroughSign = PinnedClickThroughSignView()
   private var clickThroughControls: [PinnedClickThroughControlPanel] = []
   private let clickThroughItem = NSMenuItem()
   private let initialVisibleFrame: NSRect
+  private var expandedPresentation: (frame: NSRect, opacity: CGFloat)?
+  var editingFrame: NSRect { expandedPresentation?.frame ?? frame }
   private var imageScale: CGFloat
   private var isApplyingZoom = false
   private var isRequestingKeyboardFocus = false
@@ -51,6 +60,15 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     closeButton.setAccessibilityLabel(closeLabel)
     closeButton.toolTip = closeLabel
     controls = GlassControlStrip(buttons: [closeButton])
+    let restoreLabel = Self.localized("PinnedStackRestore")
+    let restoreButton = NSButton(
+      image: NSImage(systemSymbolName: "arrow.up.left.and.arrow.down.right", accessibilityDescription: restoreLabel)
+        ?? NSImage(),
+      target: nil, action: #selector(restoreFromThumbnail)
+    )
+    restoreButton.setAccessibilityLabel(restoreLabel)
+    restoreButton.toolTip = restoreLabel
+    thumbnailControls = GlassControlStrip(buttons: [restoreButton])
     super.init(
       contentRect: initialFrame,
       styleMask: [.borderless, .resizable, .nonactivatingPanel],
@@ -63,12 +81,11 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     backgroundColor = .clear
     isOpaque = false
     hasShadow = true
-    isMovableByWindowBackground = true
+    isMovableByWindowBackground = false
     hidesOnDeactivate = false
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     contentAspectRatio = image.size
-    let minimumScale = min(1, 40 / min(image.size.width, image.size.height), frame.width / image.size.width)
-    contentMinSize = NSSize(width: image.size.width * minimumScale, height: image.size.height * minimumScale)
+    contentMinSize = Self.minimumSize(for: image.size, in: frame)
     title = Self.localized("PinScreenshot")
     setAccessibilityLabel(Self.localized("PinScreenshot"))
 
@@ -86,6 +103,19 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
                                     y: container.bounds.maxY - controls.frame.height - 4)
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     container.addSubview(controls)
+
+    restoreButton.target = self
+    thumbnailControls.frame.origin = NSPoint(x: 4, y: container.bounds.maxY - thumbnailControls.frame.height - 4)
+    thumbnailControls.autoresizingMask = [.minYMargin]
+    thumbnailControls.isHidden = true
+    container.addSubview(thumbnailControls)
+    pageLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+    pageLabel.textColor = .white
+    pageLabel.drawsBackground = true
+    pageLabel.backgroundColor = .black.withAlphaComponent(0.72)
+    pageLabel.alignment = .center
+    pageLabel.isHidden = true
+    container.addSubview(pageLabel)
 
     clickThroughSign.frame = container.bounds
     clickThroughSign.autoresizingMask = [.width, .height]
@@ -131,11 +161,52 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     makeKey()
   }
 
+  func showThumbnail(in thumbnailFrame: NSRect, page: Int, total: Int) {
+    if expandedPresentation == nil { expandedPresentation = (frame, alphaValue) }
+    backgroundColor = .windowBackgroundColor
+    alphaValue = 1
+    contentMinSize = .zero
+    contentAspectRatio = thumbnailFrame.size
+    setFrame(thumbnailFrame, display: true)
+    thumbnailControls.isHidden = false
+    pageLabel.stringValue = "\(page) / \(total)"
+    pageLabel.sizeToFit()
+    pageLabel.frame = NSRect(x: 6, y: 6, width: pageLabel.frame.width + 8, height: pageLabel.frame.height + 4)
+    pageLabel.isHidden = false
+    imageView.toolTip = Self.localized("PinnedStackHelp")
+    present()
+  }
+
+  func restoreExpandedPresentation() {
+    defer { present() }
+    guard let expandedPresentation else { return }
+    self.expandedPresentation = nil
+    backgroundColor = .clear
+    alphaValue = expandedPresentation.opacity
+    contentAspectRatio = image.size
+    contentMinSize = Self.minimumSize(for: image.size, in: expandedPresentation.frame)
+    setFrame(expandedPresentation.frame, display: true)
+    imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
+    thumbnailControls.isHidden = true
+    pageLabel.isHidden = true
+    imageView.toolTip = Self.localized("ScreenshotZoomHelp")
+  }
+
+  @objc private func restoreFromThumbnail() {
+    thumbnailStack?.detach(self)
+  }
+
   override func scrollWheel(with event: NSEvent) {
-    guard event.momentumPhase.isEmpty, event.phase != .cancelled else { return }
+    guard event.momentumPhase.isEmpty else { return }
     let direction: CGFloat = event.isDirectionInvertedFromDevice ? -1 : 1
     let delta = event.scrollingDeltaY * direction
-    guard delta.isFinite, delta != 0 else { return }
+    if let thumbnailStack {
+      if !event.modifierFlags.contains(.option) {
+        thumbnailStack.scroll(delta, precise: event.hasPreciseScrollingDeltas, phase: event.phase, from: self)
+      }
+      return
+    }
+    guard event.phase != .cancelled, delta.isFinite, delta != 0 else { return }
     if event.modifierFlags.contains(.option) {
       let sensitivity: CGFloat = event.hasPreciseScrollingDeltas ? 0.01 : 0.08
       zoom(by: exp(max(-0.5, min(0.5, delta * sensitivity))), with: event)
@@ -151,7 +222,8 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   override func magnify(with event: NSEvent) {
-    guard event.phase != .cancelled, event.magnification.isFinite, event.magnification != 0 else { return }
+    guard thumbnailStack == nil, event.phase != .cancelled,
+          event.magnification.isFinite, event.magnification != 0 else { return }
     zoom(by: max(0.01, 1 + event.magnification), with: event)
   }
 
@@ -162,6 +234,9 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   override func keyDown(with event: NSEvent) {
     if event.keyCode == 53 {
       close()
+    } else if let thumbnailStack, [123, 124, 125, 126].contains(event.keyCode),
+              event.modifierFlags.isDisjoint(with: [.command, .option, .control, .shift]) {
+      thumbnailStack.step(by: [123, 126].contains(event.keyCode) ? -1 : 1, from: self)
     } else if !handleShortcut(event) {
       super.keyDown(with: event)
     }
@@ -188,6 +263,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    thumbnailStack?.remove(self)
     closeClickThroughControls()
     onAnnotate = nil
     onCloseAll = nil
@@ -198,12 +274,25 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   func replaceImage(_ replacement: NSImage) {
-    guard replacement.isValid else { return }
-    let displayScale = min(frame.width / replacement.size.width, frame.height / replacement.size.height)
+    guard replacement.isValid, replacement.size.width > 0, replacement.size.height > 0 else { return }
+    let oldFrame = editingFrame
+    let displayScale = min(oldFrame.width / replacement.size.width, oldFrame.height / replacement.size.height)
+    let newFrame = NSRect(
+      x: oldFrame.midX - replacement.size.width * displayScale / 2,
+      y: oldFrame.midY - replacement.size.height * displayScale / 2,
+      width: replacement.size.width * displayScale,
+      height: replacement.size.height * displayScale
+    )
     image = replacement
     imageView.image = replacement
-    contentAspectRatio = replacement.size
-    imageScale = displayScale
+    if let expandedPresentation {
+      self.expandedPresentation = (newFrame, expandedPresentation.opacity)
+    } else {
+      contentAspectRatio = replacement.size
+      contentMinSize = Self.minimumSize(for: replacement.size, in: newFrame)
+      setFrame(newFrame, display: true)
+      imageScale = displayScale
+    }
   }
 
   @objc func annotateImage() {
@@ -214,6 +303,15 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     positionClickThroughControls()
     guard !isApplyingZoom else { return }
     imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
+  }
+
+  func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+    thumbnailStack != nil ? frame.size : frameSize
+  }
+
+  private static func minimumSize(for imageSize: NSSize, in frame: NSRect) -> NSSize {
+    let scale = min(1, 40 / min(imageSize.width, imageSize.height), frame.width / imageSize.width)
+    return NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
   }
 
   nonisolated static func initialFrame(
@@ -353,13 +451,111 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     NSPasteboard.general.writeObjects([image])
   }
 
-  private static func localized(_ key: String) -> String {
-    NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  static func localized(_ key: String) -> String {
+    let table = "GeneralSettings"
+    let label = NSLocalizedString(key, tableName: table, comment: "")
+    guard label == key, let url = Bundle.main.url(forResource: "en", withExtension: "lproj"),
+          let fallback = Bundle(url: url) else { return label }
+    return fallback.localizedString(forKey: key, value: nil, table: table)
   }
 }
 
-private final class PinnedScreenshotImageView: NSImageView {
+@MainActor
+final class PinnedScreenshotStack {
+  private(set) var pins: [PinnedScreenshotWindow] = []
+  private(set) weak var visiblePin: PinnedScreenshotWindow?
+  private var visibleFrame: NSRect = .zero
+  private var scrollDistance: CGFloat = 0
+  private var pagedInGesture = false
+
+  func add(_ pin: PinnedScreenshotWindow, alongside candidates: [PinnedScreenshotWindow], visibleFrame: NSRect) {
+    self.visibleFrame = visibleFrame
+    for candidate in candidates + [pin] where candidate.thumbnailStack == nil && !candidate.isClickThrough {
+      pins.append(candidate)
+      candidate.thumbnailStack = self
+    }
+    if pins.count == 1 {
+      pins.removeAll()
+      pin.thumbnailStack = nil
+      pin.present()
+    } else {
+      pins.sort { $0.createdAt < $1.createdAt }
+      show(pin)
+    }
+  }
+
+  func detach(_ pin: PinnedScreenshotWindow) {
+    remove(pin)
+    pin.restoreExpandedPresentation()
+  }
+
+  func remove(_ pin: PinnedScreenshotWindow) {
+    guard let index = pins.firstIndex(where: { $0 === pin }) else { return }
+    pin.thumbnailStack = nil
+    pins.remove(at: index)
+    let next = visiblePin === pin ? (pins.isEmpty ? nil : pins[min(index, pins.count - 1)]) : visiblePin
+    visiblePin = nil
+    if pins.count == 1, let remaining = pins.first {
+      pins.removeAll()
+      remaining.thumbnailStack = nil
+      remaining.restoreExpandedPresentation()
+    } else if let next {
+      show(next)
+    }
+  }
+
+  func step(by direction: Int, from pin: PinnedScreenshotWindow) {
+    guard pin === visiblePin, let index = pins.firstIndex(where: { $0 === pin }), pins.count > 1 else { return }
+    let next = pins[(index + (direction < 0 ? -1 : 1) + pins.count) % pins.count]
+    let wasKey = pin.isKeyWindow
+    show(next)
+    if wasKey { next.focusForInteraction() }
+  }
+
+  func scroll(_ delta: CGFloat, precise: Bool, phase: NSEvent.Phase, from pin: PinnedScreenshotWindow) {
+    if phase == .began || phase == .ended || phase == .cancelled {
+      scrollDistance = 0
+      pagedInGesture = false
+    }
+    guard delta.isFinite, delta != 0, phase != .ended, phase != .cancelled else { return }
+    if precise && !phase.isEmpty {
+      guard !pagedInGesture else { return }
+      scrollDistance += delta
+      guard abs(scrollDistance) >= 28 else { return }
+      pagedInGesture = true
+      step(by: scrollDistance > 0 ? -1 : 1, from: pin)
+    } else {
+      step(by: delta > 0 ? -1 : 1, from: pin)
+    }
+  }
+
+  private func show(_ pin: PinnedScreenshotWindow) {
+    guard let index = pins.firstIndex(where: { $0 === pin }) else { return }
+    for other in pins where other !== pin && other.isVisible { other.orderOut(nil) }
+    visiblePin = pin
+    pin.showThumbnail(in: Self.thumbnailFrame(in: visibleFrame), page: index + 1, total: pins.count)
+  }
+
+  static func thumbnailFrame(in visibleFrame: NSRect) -> NSRect {
+    let margin = min(16, visibleFrame.width / 8, visibleFrame.height / 8)
+    let bounds = visibleFrame.insetBy(dx: margin, dy: margin)
+    let size = NSSize(width: min(176, bounds.width), height: min(112, bounds.height))
+    return NSRect(x: bounds.maxX - size.width, y: bounds.minY, width: size.width, height: size.height)
+  }
+}
+
+private final class PinnedScreenshotPageLabel: NSTextField {
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
+private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
+  private var dragStart: NSPoint?
+  private var lastDragEvent: NSEvent?
+  private var exportTask: Task<Void, Never>?
+  private var exportedFile: URL?
+
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+  override var mouseDownCanMoveWindow: Bool { false }
 
   override func scrollWheel(with event: NSEvent) {
     window?.scrollWheel(with: event)
@@ -371,11 +567,113 @@ private final class PinnedScreenshotImageView: NSImageView {
 
   override func mouseDown(with event: NSEvent) {
     guard let window = window as? PinnedScreenshotWindow else { return }
-    if event.clickCount == 2 {
-      window.close()
+    resetDrag()
+    window.focusForInteraction()
+    if event.modifierFlags.contains(.command) {
+      if window.thumbnailStack == nil { window.performDrag(with: event) }
+    } else if event.clickCount == 2 {
+      window.annotateImage()
     } else {
-      window.focusForInteraction()
-      window.performDrag(with: event)
+      dragStart = event.locationInWindow
+    }
+  }
+
+  override func mouseDragged(with event: NSEvent) {
+    guard let dragStart, exportedFile == nil else { return }
+    lastDragEvent = event
+    let point = event.locationInWindow
+    guard exportTask == nil, hypot(point.x - dragStart.x, point.y - dragStart.y) >= 4,
+          let image, let raster = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+    exportTask = Task { [weak self] in
+      let file = await Task.detached(priority: .userInitiated) { try? PinnedScreenshotDragExport.stage(raster) }.value
+      if Task.isCancelled {
+        if let file { PinnedScreenshotDragExport.remove(file) }
+        return
+      }
+      guard let self, canStartDrag else {
+        self?.resetDrag()
+        if let file { PinnedScreenshotDragExport.remove(file) }
+        return
+      }
+      exportTask = nil
+      let dragEvent = lastDragEvent
+      resetDrag()
+      guard let file else { NSSound.beep(); return }
+      guard let dragEvent else { PinnedScreenshotDragExport.remove(file); return }
+      startDrag(file, image: image, with: dragEvent)
+    }
+  }
+
+  private var canStartDrag: Bool {
+    window?.isVisible == true && dragStart != nil && NSEvent.pressedMouseButtons & 1 != 0
+  }
+
+  override func mouseUp(with event: NSEvent) {
+    resetDrag()
+  }
+
+  private func resetDrag() {
+    exportTask?.cancel()
+    exportTask = nil
+    dragStart = nil
+    lastDragEvent = nil
+  }
+
+  private func startDrag(_ file: URL, image: NSImage, with event: NSEvent) {
+    let item = NSDraggingItem(pasteboardWriter: file as NSURL)
+    let point = convert(event.locationInWindow, from: nil)
+    let scale = min(96 / image.size.width, 72 / image.size.height)
+    let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
+    item.setDraggingFrame(
+      NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width, height: size.height),
+      contents: image
+    )
+    exportedFile = file
+    beginDraggingSession(with: [item], event: event, source: self)
+  }
+
+  func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext)
+    -> NSDragOperation {
+    context == .outsideApplication ? .copy : []
+  }
+
+  func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
+    if operation.isEmpty, let exportedFile { PinnedScreenshotDragExport.remove(exportedFile) }
+    exportedFile = nil
+  }
+}
+
+nonisolated enum PinnedScreenshotDragExport {
+  private static let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("MaccyCapturePinExports", isDirectory: true)
+
+  static func stage(_ image: CGImage, in root: URL = root) throws -> URL {
+    let files = FileManager.default
+    let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    removeExpired(in: root)
+    let file = directory.appendingPathComponent("Screenshot.png")
+    guard let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil)
+    else { remove(file); throw CocoaError(.fileWriteUnknown) }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else { remove(file); throw CocoaError(.fileWriteUnknown) }
+    return file
+  }
+
+  static func remove(_ file: URL) {
+    try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+  }
+
+  // A receiving app may read the file asynchronously after accepting the drop.
+  private static func removeExpired(in root: URL) {
+    let files = FileManager.default
+    let keys: Set<URLResourceKey> = [.contentModificationDateKey]
+    let directories = try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: Array(keys))
+    let cutoff = Date(timeIntervalSinceNow: -86_400)
+    for directory in directories ?? [] where UUID(uuidString: directory.lastPathComponent) != nil {
+      if let date = try? directory.resourceValues(forKeys: keys).contentModificationDate, date < cutoff {
+        try? files.removeItem(at: directory)
+      }
     }
   }
 }

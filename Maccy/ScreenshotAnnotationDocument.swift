@@ -424,15 +424,19 @@ final class ScreenshotAnnotationDocument {
       return data as Data
     }
 
-    nonisolated func render() -> CGImage? {
-      guard !marks.isEmpty else { return source }
+    nonisolated func render(croppingTo crop: CGRect? = nil) -> CGImage? {
+      let sourceBounds = CGRect(x: 0, y: 0, width: source.width, height: source.height)
+      let pixels = crop?.integral.intersection(sourceBounds) ?? sourceBounds
+      guard !pixels.isEmpty else { return nil }
+      if pixels == sourceBounds, marks.isEmpty { return source }
       guard let context = CGContext(
-              data: nil, width: source.width, height: source.height, bitsPerComponent: 8,
+              data: nil, width: Int(pixels.width), height: Int(pixels.height), bitsPerComponent: 8,
               bytesPerRow: 0, space: ScreenshotColorSpace.rgb(source.colorSpace),
               bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return nil }
       context.interpolationQuality = .high
-      context.draw(source, in: CGRect(x: 0, y: 0, width: source.width, height: source.height))
+      context.translateBy(x: -pixels.minX, y: pixels.maxY - CGFloat(source.height))
+      context.draw(source, in: sourceBounds)
       let lens = ScreenshotAnnotationDocument.lensSource(source, marks: marks)
       for mark in marks where mark.tool != .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, source: lens, in: context) }
       for mark in marks where mark.tool == .redact { ScreenshotAnnotationDocument.drawRenderedMark(mark, source: lens, in: context) }

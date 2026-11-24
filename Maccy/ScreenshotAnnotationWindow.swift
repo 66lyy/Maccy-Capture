@@ -21,6 +21,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   var redoButton: NSButton!
   var copyButton: NSButton!
   var pinButton: NSButton!
+  var cropButton: ScreenshotToolbarButton?
   let annotationToolbar = ScreenshotAnnotationToolbar()
   let styleSlider = NSSlider()
   let colorWell = NSColorWell()
@@ -33,6 +34,7 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   let styleValue = NSTextField(labelWithString: "")
   let statusLabel = NSTextField(labelWithString: "")
   let editingPin: Bool
+  private var pinPointScale: NSSize?
   let toolbarBounds: NSRect
   var toolbarSize = NSSize(width: 610, height: 0)
   private let originalWasCopied: Bool
@@ -67,10 +69,16 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     let display = screenFrame ?? visibleFrame
     guard display.width > 0, display.height > 0 else { return nil }
     self.init(display: display, visibleFrame: visibleFrame, editingPin: editingPin, originalWasCopied: originalWasCopied)
+    if editingPin {
+      pinPointScale = NSSize(
+        width: image.size.width / document.imageSize.width, height: image.size.height / document.imageSize.height
+      )
+    }
     let overlay = ScreenshotAnnotationOverlay(frame: NSRect(origin: .zero, size: display.size))
     overlay.onCancel = { [weak self] in self?.cancelOperation(nil) }
     contentView = overlay
-    let rectangle = Self.imageFrame(imageSize: image.size, display: display, preferred: imageFrame)
+    let preferredFrame = editingPin ? imageFrame.map(Self.pinEditingFrame) : imageFrame
+    let rectangle = Self.imageFrame(imageSize: image.size, display: display, preferred: preferredFrame)
       .offsetBy(dx: -display.minX, dy: -display.minY)
     overlay.imageFrame = rectangle
     selectedTool = ScreenshotAnnotationDocument.Tool.toolbarTools(
@@ -228,6 +236,9 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
   override func cancelOperation(_ sender: Any?) {
     if recognitionResults != nil {
       dismissRecognition()
+    } else if let canvas, canvas.isCroppingPin {
+      canvas.clearPinCrop()
+      setPinCropMode(false)
     } else if let canvas, canvas.textField != nil || canvas.isMovingText {
       canvas.discardPendingMark()
       makeFirstResponder(canvas)
@@ -311,9 +322,10 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     guard !isFinished, exportTask == nil, savePanel == nil, let onOutput, let canvas else { return }
     canvas.commitText()
     let snapshot = canvas.document.renderSnapshot()
+    let crop = canvas.pinCrop
     exportTask = Task { [weak self] in
       let result = await Task.detached(priority: .userInitiated) {
-        guard let image = snapshot.render() else { return nil as (CGImage, Data?)? }
+        guard let image = snapshot.render(croppingTo: crop) else { return nil as (CGImage, Data?)? }
         if action == .apply { return (image, nil) }
         guard let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image) else { return nil }
         return (image, data)
@@ -322,7 +334,10 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       defer { exportTask = nil }
       guard let (rendered, data) = result else { showOutputError(); return }
       do {
-        try onOutput(data, NSImage(cgImage: rendered, size: .zero), action)
+        let size = pinPointScale.map {
+          NSSize(width: CGFloat(rendered.width) * $0.width, height: CGFloat(rendered.height) * $0.height)
+        } ?? .zero
+        try onOutput(data, NSImage(cgImage: rendered, size: size), action)
         if !isFinished { close() }
       } catch {
         showOutputError()
@@ -363,6 +378,28 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
     )
   }
 
+  private static func pinEditingFrame(_ frame: NSRect) -> NSRect {
+    let scale = max(1, 320 / max(frame.width, frame.height))
+    let size = NSSize(width: frame.width * scale, height: frame.height * scale)
+    return NSRect(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2, width: size.width, height: size.height)
+  }
+
+  @objc func togglePinCrop() {
+    guard let canvas else { return }
+    clearRecognition()
+    canvas.cancelTextDrag()
+    canvas.commitText()
+    setPinCropMode(!canvas.isCroppingPin)
+    makeFirstResponder(canvas)
+  }
+
+  func setPinCropMode(_ enabled: Bool) {
+    guard let canvas, canvas.isCroppingPin != enabled else { return }
+    canvas.isCroppingPin = enabled
+    cropButton?.isChosen = enabled
+    updateTool()
+  }
+
   private func showOutputError() {
     setStatus(text("AnnotationOutputFailedShort"), detail: text("AnnotationOutputFailed"))
   }
@@ -384,10 +421,11 @@ class ScreenshotAnnotationWindow: NSPanel, NSWindowDelegate {
       self.savePanel = nil
       guard !self.isFinished, response == .OK, let url = panel.url else { return }
       let snapshot = canvas.document.renderSnapshot()
+      let crop = canvas.pinCrop
       self.exportTask = Task { [weak self] in
         let result = await Task.detached(priority: .userInitiated) {
           Result {
-            guard let image = snapshot.render(),
+            guard let image = snapshot.render(croppingTo: crop),
                   let data = ScreenshotAnnotationDocument.RenderSnapshot.pngData(image)
             else { throw ScreenshotExportFailure.render }
             try data.write(to: url, options: .atomic)

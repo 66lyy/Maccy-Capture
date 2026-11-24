@@ -68,8 +68,10 @@
 "ScreenshotSelection" = "Capture region:";
 "PinScreenshot" = "Capture and pin:";
 "PinClipboardImage" = "Pin clipboard image:";
-"ScreenshotHelp" = "Press Esc to cancel capture. Drag a pinned image to move it, scroll to change its opacity, Option-scroll or pinch to zoom, and double-click to close. Right-click for more actions, including click-through. Run only one copy of Maccy to avoid shortcut conflicts.";
-"ScreenshotZoomHelp" = "Scroll to change opacity. Hold Option and scroll, or pinch with two fingers, to zoom. Drag to move; double-click to close.";
+"ScreenshotHelp" = "Press Esc to cancel capture. Drag a pinned image to export it, Command-drag to move it, and double-click to edit it. Scroll to change opacity, Option-scroll or pinch to zoom, or scroll a thumbnail stack to browse its pins. Right-click for more actions, including click-through. Run only one copy of Maccy to avoid shortcut conflicts.";
+"ScreenshotZoomHelp" = "Drag to export a PNG. Command-drag to move; double-click to edit. Scroll to change opacity, Option-scroll or pinch to zoom.";
+"PinnedStackHelp" = "Scroll to browse pinned images. Drag to export a PNG; double-click to edit.";
+"PinnedStackRestore" = "Restore Pinned Image";
 "AnnotationEdit" = "Annotate…";
 "AnnotationTitle" = "Annotate Screenshot";
 "AnnotationArrow" = "Arrow";
@@ -94,6 +96,8 @@
 "AnnotationSave" = "Save PNG…";
 "AnnotationCopy" = "Copy and Finish";
 "AnnotationApply" = "Apply to Pinned Image";
+"AnnotationCropPin" = "Crop Pinned Image";
+"AnnotationPinCropHelp" = "Drag over the area to keep. Press Esc to reset the crop.";
 "AnnotationOutputFailed" = "Could not open or export the image. Your current editor remains available if it is already open; try again or save a PNG.";
 "AnnotationOutputFailedShort" = "Export failed. Retry.";
 "AnnotationInlineHelp" = "Annotate directly on the captured image. Click an annotation to select it, drag it to move it, drag its handles to resize it, and press Delete to remove it. The toolbar is not included in the exported image.";

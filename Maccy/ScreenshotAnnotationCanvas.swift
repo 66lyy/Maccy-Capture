@@ -26,6 +26,14 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   var magnifierZoom: CGFloat = 2
   var imageInset: CGFloat = 16
   var canvasBackgroundColor = NSColor.underPageBackgroundColor
+  var isCroppingPin = false {
+    didSet {
+      cropDrag = nil
+      needsDisplay = true
+    }
+  }
+  private(set) var pinCrop: CGRect?
+  private var cropDrag: (start: NSPoint, end: NSPoint)?
   private(set) var textField: NSTextField?
   private var textOrigin: NSPoint?
   private var textScale: CGFloat = 1
@@ -67,7 +75,7 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   override var mouseDownCanMoveWindow: Bool { false }
 
   override func resetCursorRects() {
-    addCursorRect(imageRect, cursor: tool == .text ? .iBeam : .crosshair)
+    addCursorRect(imageRect, cursor: tool == .text && !isCroppingPin ? .iBeam : .crosshair)
   }
 
   override func draw(_ dirtyRect: NSRect) {
@@ -82,7 +90,55 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
       hiddenMarks: erasing?.indices ?? []
     )
     context.restoreGState()
-    drawSelection()
+    if !isCroppingPin { drawSelection() }
+    drawPinCrop()
+  }
+
+  private func drawPinCrop() {
+    let preview = cropDrag.flatMap { cropPixels(from: $0.start, to: $0.end) }
+    guard let crop = preview ?? pinCrop else { return }
+    let image = imageRect
+    let scale = imageScale
+    let selection = NSRect(
+      x: image.minX + crop.minX * scale, y: image.maxY - crop.maxY * scale,
+      width: crop.width * scale, height: crop.height * scale
+    )
+    let outside = NSBezierPath(rect: image)
+    outside.appendRect(selection)
+    outside.windingRule = .evenOdd
+    NSColor.black.withAlphaComponent(0.48).setFill()
+    outside.fill()
+    let border = NSBezierPath(rect: selection)
+    border.lineWidth = 1
+    NSColor.white.setStroke()
+    border.stroke()
+  }
+
+  private func cropPixels(from start: NSPoint, to end: NSPoint) -> CGRect? {
+    Self.cropPixels(from: start, to: end, imageRect: imageRect, pixelSize: document.imageSize)
+  }
+
+  static func cropPixels(from start: NSPoint, to end: NSPoint, imageRect: NSRect, pixelSize: NSSize) -> CGRect? {
+    guard imageRect.contains(start), imageRect.width > 0, imageRect.height > 0,
+          end.x.isFinite, end.y.isFinite else { return nil }
+    let end = NSPoint(
+      x: min(imageRect.maxX, max(imageRect.minX, end.x)),
+      y: min(imageRect.maxY, max(imageRect.minY, end.y))
+    )
+    let selection = CGRect(
+      x: min(start.x, end.x) - imageRect.minX, y: imageRect.maxY - max(start.y, end.y),
+      width: abs(start.x - end.x), height: abs(start.y - end.y)
+    )
+    let pixels = ScreenshotSelectionController.Display.pixelBounds(
+      for: selection, canvasSize: imageRect.size, rasterSize: pixelSize
+    )
+    return pixels.isEmpty ? nil : pixels
+  }
+
+  func clearPinCrop() {
+    pinCrop = nil
+    cropDrag = nil
+    needsDisplay = true
   }
 
   private func drawSelection() {
@@ -130,15 +186,34 @@ final class ScreenshotAnnotationCanvas: NSView, NSTextFieldDelegate {
   override func mouseDown(with event: NSEvent) {
     commitText()
     window?.makeFirstResponder(self)
-    beginMark(at: convert(event.locationInWindow, from: nil))
+    let point = convert(event.locationInWindow, from: nil)
+    if isCroppingPin {
+      if imageRect.contains(point) { cropDrag = (point, point) }
+    } else {
+      beginMark(at: point)
+    }
   }
 
   override func mouseDragged(with event: NSEvent) {
-    updateMark(to: convert(event.locationInWindow, from: nil))
+    let point = convert(event.locationInWindow, from: nil)
+    if isCroppingPin {
+      cropDrag?.end = point
+      needsDisplay = true
+      return
+    }
+    updateMark(to: point)
     if isMovingMark { NSCursor.closedHand.set() }
   }
 
   override func mouseUp(with event: NSEvent) {
+    if isCroppingPin {
+      if let cropDrag, let crop = cropPixels(from: cropDrag.start, to: convert(event.locationInWindow, from: nil)) {
+        pinCrop = crop
+      }
+      cropDrag = nil
+      needsDisplay = true
+      return
+    }
     let wasMoving = isMovingMark
     endMark(at: convert(event.locationInWindow, from: nil))
     if wasMoving { (tool == .text ? NSCursor.iBeam : NSCursor.crosshair).set() }
