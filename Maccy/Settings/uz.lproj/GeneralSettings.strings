@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Oyna soyasini olib tashlash";
+"ScreenshotWindowBackdrop" = "Oynaga fon qo‘shish";
+"ScreenshotWindowCascadeHint" = "Oynalarni qo‘shish yoki olib tashlash uchun ⇧ bilan bosing";

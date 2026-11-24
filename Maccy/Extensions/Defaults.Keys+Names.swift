@@ -62,6 +62,8 @@ nonisolated extension Defaults.Keys {
   static let removeFormattingByDefault = Key<Bool>("removeFormattingByDefault", default: false, suite: preferencesSuite)
   static let searchMode = Key<Search.Mode>("searchMode", default: .exact, suite: preferencesSuite)
   static let screenshotSoundEnabled = Key<Bool>("screenshotSoundEnabled", default: true, suite: preferencesSuite)
+  static let screenshotRemoveWindowShadow = Key<Bool>("screenshotRemoveWindowShadow", default: false, suite: preferencesSuite)
+  static let screenshotWindowBackdrop = Key<Bool>("screenshotWindowBackdrop", default: false, suite: preferencesSuite)
   static let annotationToolOrder = Key<[Int]>("annotationToolOrder", default: [], suite: preferencesSuite)
   static let disabledAnnotationTools = Key<[Int]>("disabledAnnotationTools", default: [], suite: preferencesSuite)
   static let toolbarItemOrder = Key<[String]>("screenshotToolbarItemOrder", default: [], suite: preferencesSuite)

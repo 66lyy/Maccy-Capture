@@ -70,6 +70,10 @@ struct GeneralSettingsPane: View {
           })
           .padding(.bottom, 10)
         }
+        Divider()
+        option(.screenshotRemoveWindowShadow, "ScreenshotRemoveWindowShadow")
+        Divider()
+        option(.screenshotWindowBackdrop, "ScreenshotWindowBackdrop")
       }
 
       PreferencesGroup(title: Text("AnnotationToolsSection", tableName: "GeneralSettings"), symbol: "pencil.tip.crop.circle") {

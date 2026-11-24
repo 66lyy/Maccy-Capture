@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Hapus bayangan jendela";
+"ScreenshotWindowBackdrop" = "Tambahkan latar belakang jendela";
+"ScreenshotWindowCascadeHint" = "Klik sambil menahan ⇧ untuk menambah atau menghapus jendela";

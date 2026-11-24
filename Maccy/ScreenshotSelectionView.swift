@@ -15,6 +15,7 @@ final class ScreenshotSelectionView: NSView {
   var findElements: (@Sendable (NSPoint, ScreenshotElementDetection.Window) -> ScreenshotElementDetection.Result)?
   var elementProbe = ScreenshotElementProbe()
   private(set) var selectedRect: NSRect?
+  private(set) var selectedWindows: [ScreenshotElementDetection.Window] = []
   var hasSelectionInteraction: Bool { selectedRect != nil || drag != nil || colorCopyTask != nil }
   private(set) var frozen: NSImage?
   var isScrolling = false {
@@ -37,6 +38,9 @@ final class ScreenshotSelectionView: NSView {
   private let pinImmediately: Bool
   private var drag: Drag?
   private var clickSnap: NSRect?
+  private var clickWindow: ScreenshotElementDetection.Window?
+  private var hoverWindow: ScreenshotElementDetection.Window?
+  private var shiftHeld = false
   private var pointer: NSPoint?
   private var snapRects: [NSRect] = []
   private var snapIndex = 0
@@ -45,6 +49,7 @@ final class ScreenshotSelectionView: NSView {
   private var probePID: pid_t?
   private var drawnBounds: NSRect?
   private var drawnActiveRect: NSRect?
+  private var drawnHighlights: [NSRect] = []
   private var drawnHandles = false
   private var wantsSnapping = false
   private let selectionHint = GlassSelectionLabel()
@@ -71,7 +76,7 @@ final class ScreenshotSelectionView: NSView {
 
   override func resetCursorRects() {
     addCursorRect(bounds, cursor: .crosshair)
-    if let selectedRect, drag == nil {
+    if let selectedRect, selectedWindows.isEmpty, drag == nil {
       addCursorRect(selectedRect, cursor: .openHand)
       for corner in Self.corners(of: selectedRect) {
         addCursorRect(NSRect(x: corner.x - 6, y: corner.y - 6, width: 12, height: 12), cursor: .crosshair)
@@ -114,6 +119,7 @@ final class ScreenshotSelectionView: NSView {
   }
 
   override func flagsChanged(with event: NSEvent) {
+    shiftHeld = event.modifierFlags.contains(.shift)
     if pointer == nil, let window, window.isKeyWindow {
       pointer = convert(window.mouseLocationOutsideOfEventStream, from: nil)
     }
@@ -126,6 +132,11 @@ final class ScreenshotSelectionView: NSView {
     window?.makeFirstResponder(self)
     let point = convert(event.locationInWindow, from: nil)
     pointer = point
+    shiftHeld = event.modifierFlags.contains(.shift)
+    if shiftHeld, let target = findElementWindow?(point), target.id != kCGNullWindowID {
+      toggleWindow(target)
+      return
+    }
     if event.clickCount == 2, selectedRect?.contains(point) == true {
       captureSelection(pinToScreen: pinImmediately)
       return
@@ -133,7 +144,7 @@ final class ScreenshotSelectionView: NSView {
     if event.modifierFlags.contains(.option),
        let snap = snapRectangle(near: point) {
       onBegin?()
-      selectedRect = snap
+      selectSnap(snap, near: point)
       updateProbe(enabled: false)
       if pinImmediately { captureSelection(pinToScreen: true) }
       updateControls()
@@ -179,7 +190,7 @@ final class ScreenshotSelectionView: NSView {
     if ScopedShortcut.copyCapture.matches(event) || ScopedShortcut.copyCaptureWithCommand.matches(event) {
       if selectedRect == nil, let pointer, let snap = snapRectangle(near: pointer) {
         onBegin?()
-        selectedRect = snap
+        selectSnap(snap, near: pointer)
         updateProbe(enabled: false)
         if pinImmediately { captureSelection(pinToScreen: true) }
         updateControls()
@@ -242,9 +253,10 @@ final class ScreenshotSelectionView: NSView {
 
   func beginSelection(at point: NSPoint) {
     guard canAdjustSelection?() != false else { return }
-    clickSnap = selectedRect == nil ? snapRectangle(near: point) : nil
+    clickSnap = selectedRect == nil || !selectedWindows.isEmpty ? snapRectangle(near: point) : nil
+    clickWindow = clickSnap.flatMap { windowMatching($0, near: point) }
     updateProbe(enabled: false)
-    if let selectedRect, !pinImmediately {
+    if let selectedRect, selectedWindows.isEmpty, !pinImmediately {
       let corners = Self.corners(of: selectedRect)
       if let index = corners.firstIndex(where: { hypot($0.x - point.x, $0.y - point.y) <= 8 }) {
         drag = .resize(corners[3 - index])
@@ -259,6 +271,7 @@ final class ScreenshotSelectionView: NSView {
     }
     onBegin?()
     drag = .new(point)
+    selectedWindows = []
     selectedRect = nil
     updateControls()
   }
@@ -281,9 +294,11 @@ final class ScreenshotSelectionView: NSView {
        selectedRect.width < 3 || selectedRect.height < 3,
        let clickSnap {
       self.selectedRect = clickSnap
+      selectedWindows = clickWindow.map { [$0] } ?? []
     }
     self.drag = nil
     clickSnap = nil
+    clickWindow = nil
     guard let selectedRect, selectedRect.width >= 3, selectedRect.height >= 3 else {
       clearSelection()
       return
@@ -297,6 +312,8 @@ final class ScreenshotSelectionView: NSView {
   func clearSelection() {
     drag = nil
     clickSnap = nil
+    clickWindow = nil
+    selectedWindows = []
     selectedRect = nil
     updateProbe(enabled: false)
     updateControls()
@@ -326,7 +343,7 @@ final class ScreenshotSelectionView: NSView {
       guard let point else { return }
       let next = moveCrosshair(from: point, dx: dx, dy: dy)
       updateSelection(to: next)
-    } else if let selectedRect {
+    } else if let selectedRect, selectedWindows.isEmpty {
       self.selectedRect = Self.translated(selectedRect, dx: dx, dy: dy, bounds: bounds)
       updateControls()
     } else if let point = pointer ?? window.map({ convert($0.mouseLocationOutsideOfEventStream, from: nil) }) {
@@ -374,6 +391,10 @@ final class ScreenshotSelectionView: NSView {
 
   private func updateProbe(enabled: Bool) {
     updateLoupe()
+    let previousHover = hoverWindow
+    hoverWindow = enabled ? pointer.flatMap { findElementWindow?($0) }.flatMap {
+      $0.id != kCGNullWindowID ? $0 : nil
+    } : nil
     wantsSnapping = enabled && selectedRect == nil && drag == nil
     if !wantsSnapping {
       snapRects = []
@@ -382,7 +403,8 @@ final class ScreenshotSelectionView: NSView {
       return
     }
     guard let pointer, bounds.contains(pointer), let findElements,
-          lastProbe.map({ hypot($0.x - pointer.x, $0.y - pointer.y) >= 3 }) ?? true else { return }
+          previousHover?.id != hoverWindow?.id
+            || (lastProbe.map({ hypot($0.x - pointer.x, $0.y - pointer.y) >= 3 }) ?? true) else { return }
     guard let window = findElementWindow?(pointer) else {
       probeID = nil
       probePID = nil
@@ -391,20 +413,22 @@ final class ScreenshotSelectionView: NSView {
       refreshOverlay()
       return
     }
-    guard probeID == nil || probePID != window.pid else { return }
+    guard probeID == nil || probePID != window.pid || previousHover?.id != hoverWindow?.id else { return }
     let id = UUID()
     probeID = id
     probePID = window.pid
     lastProbe = pointer
-    snapRects = []
+    snapRects = hoverWindow.map { Self.snapCandidates([$0.frame], containing: pointer, bounds: bounds) } ?? []
+    snapIndex = 0
     refreshOverlay()
     let started = elementProbe.start(at: pointer, in: window, detect: findElements) { [weak self] result in
       guard let self, probeID == id else { return }
       probeID = nil
       probePID = nil
       if wantsSnapping, self.pointer.map({ hypot($0.x - pointer.x, $0.y - pointer.y) < 3 }) == true {
-        snapRects = Self.snapCandidates(result.rectangles, containing: pointer, bounds: bounds)
-        snapIndex = 0
+        let candidates = Self.snapCandidates(result.rectangles, containing: pointer, bounds: bounds)
+        snapRects = candidates
+        snapIndex = hoverWindow.flatMap { candidates.firstIndex(of: $0.frame.intersection(bounds)) } ?? 0
       }
       refreshOverlay()
       if wantsSnapping { updateProbe(enabled: true) }
@@ -425,9 +449,37 @@ final class ScreenshotSelectionView: NSView {
   }
 
   func snapRectangle(near point: NSPoint) -> NSRect? {
-    guard let lastProbe, hypot(lastProbe.x - point.x, lastProbe.y - point.y) < 3,
-          snapRects.indices.contains(snapIndex) else { return nil }
-    return snapRects[snapIndex]
+    let target = findElementWindow?(point)
+    if !shiftHeld, let lastProbe, hypot(lastProbe.x - point.x, lastProbe.y - point.y) < 3,
+       snapRects.indices.contains(snapIndex) {
+      return snapRects[snapIndex]
+    }
+    guard let target, target.id != kCGNullWindowID else { return nil }
+    return Self.snapCandidates([target.frame], containing: point, bounds: bounds).first
+  }
+
+  private func windowMatching(_ rectangle: NSRect, near point: NSPoint) -> ScreenshotElementDetection.Window? {
+    guard let target = findElementWindow?(point), target.id != kCGNullWindowID,
+          target.frame.intersection(bounds) == rectangle else { return nil }
+    return target
+  }
+
+  private func selectSnap(_ rectangle: NSRect, near point: NSPoint) {
+    selectedRect = rectangle
+    selectedWindows = windowMatching(rectangle, near: point).map { [$0] } ?? []
+  }
+
+  func toggleWindow(_ target: ScreenshotElementDetection.Window) {
+    onBegin?()
+    if let index = selectedWindows.firstIndex(where: { $0.id == target.id }) {
+      selectedWindows.remove(at: index)
+    } else {
+      selectedWindows.append(target)
+    }
+    selectedRect = selectedWindows.reduce(NSRect.null) { $0.union($1.frame.intersection(bounds)) }
+    if selectedRect?.isNull == true { selectedRect = nil }
+    updateProbe(enabled: true)
+    updateControls()
   }
 
   static func snapCandidates(_ rectangles: [NSRect], containing point: NSPoint, bounds: NSRect) -> [NSRect] {
@@ -475,6 +527,16 @@ final class ScreenshotSelectionView: NSView {
     selectedRect ?? pointer.flatMap { snapRectangle(near: $0) }
   }
 
+  private var highlightRects: [NSRect] {
+    var highlights = selectedWindows.isEmpty
+      ? activeRect.map { [$0] } ?? [] : selectedWindows.map { $0.frame.intersection(bounds) }
+    if shiftHeld, let hoverWindow, !selectedWindows.contains(where: { $0.id == hoverWindow.id }) {
+      let rectangle = hoverWindow.frame.intersection(bounds)
+      if !highlights.contains(rectangle) { highlights.append(rectangle) }
+    }
+    return highlights
+  }
+
   private func refreshOverlay() {
     needsLayout = true
     layoutSubtreeIfNeeded()
@@ -513,7 +575,8 @@ final class ScreenshotSelectionView: NSView {
   override func layout() {
     super.layout()
     updateLoupe()
-    let showsHandles = selectedRect != nil && drag == nil && !isScrolling
+    let showsHandles = selectedRect != nil && selectedWindows.isEmpty && drag == nil && !isScrolling
+    let highlights = highlightRects
     let oldLabels = [selectionHint, elementHint].filter { !$0.isHidden }.map(\.frame)
     defer {
       if drawnBounds != bounds {
@@ -522,12 +585,18 @@ final class ScreenshotSelectionView: NSView {
                 let dirty = Self.dirtyRect(from: drawnActiveRect, to: activeRect, in: bounds) {
         setNeedsDisplay(dirty)
       }
+      if drawnHighlights != highlights {
+        for rect in drawnHighlights + highlights {
+          setNeedsDisplay(rect.insetBy(dx: -4, dy: -4).intersection(bounds))
+        }
+      }
       let newLabels = [selectionHint, elementHint].filter { !$0.isHidden }.map(\.frame)
       for rect in oldLabels + newLabels {
         setNeedsDisplay(rect.insetBy(dx: -8, dy: -8).intersection(bounds))
       }
       drawnBounds = bounds
       drawnActiveRect = activeRect
+      drawnHighlights = highlights
       drawnHandles = showsHandles
     }
     if isScrolling {
@@ -556,9 +625,10 @@ final class ScreenshotSelectionView: NSView {
       let key = pinImmediately ? "ScreenshotSelectionPinInstructions" : "ScreenshotSelectionInstructions"
       selectionHint.update(localized(key), near: NSPoint(x: bounds.midX - 190, y: bounds.maxY - 64), in: bounds)
     }
-    elementHint.isHidden = !wantsSnapping || snapRects.isEmpty
+    let showsCascadeHint = hoverWindow != nil && (wantsSnapping || shiftHeld) || !selectedWindows.isEmpty
+    elementHint.isHidden = !showsCascadeHint && (!wantsSnapping || snapRects.isEmpty)
     if !elementHint.isHidden {
-      let title = AXIsProcessTrusted()
+      let title = showsCascadeHint ? localized("ScreenshotWindowCascadeHint") : AXIsProcessTrusted()
         ? String(localized: "ScreenshotElementActions", defaultValue: "Click to select · \(ScopedShortcut.selectParent.current?.description ?? "—") parent · \(ScopedShortcut.selectChild.current?.description ?? "—") child", table: "GeneralSettings")
         : localized("ScreenshotElementPermissionHint")
       elementHint.update(title, near: NSPoint(x: 12, y: 12), in: bounds)
@@ -569,26 +639,32 @@ final class ScreenshotSelectionView: NSView {
     NSColor.clear.setFill()
     bounds.fill(using: .copy)
     if !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
+    let highlights = highlightRects
     let shade = NSBezierPath(rect: bounds)
-    let activeRect = self.activeRect
-    if let activeRect {
-      shade.appendRect(activeRect)
-    }
+    if let highlight = highlights.first, highlights.count == 1 { shade.appendRect(highlight) }
     shade.windingRule = .evenOdd
     NSColor.black.withAlphaComponent(0.12).setFill()
     shade.fill()
-    if let activeRect {
+    if highlights.count > 1 {
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current?.cgContext.clip(to: highlights)
+      NSColor.clear.setFill()
+      bounds.fill(using: .copy)
+      if !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
+      NSGraphicsContext.restoreGraphicsState()
+    }
+    if !isScrolling {
       // A fully transparent hole would let clicks fall through to the window below.
-      if !isScrolling {
-        NSColor.black.withAlphaComponent(0.001).setFill()
-        activeRect.fill(using: .sourceOver)
-      }
+      NSColor.black.withAlphaComponent(0.001).setFill()
+      for rectangle in highlights { rectangle.fill(using: .sourceOver) }
+    }
+    for rectangle in highlights {
       NSColor.systemRed.setStroke()
-      let border = NSBezierPath(rect: activeRect.insetBy(dx: 1, dy: 1))
+      let border = NSBezierPath(rect: rectangle.insetBy(dx: 1, dy: 1))
       border.lineWidth = 2
       border.stroke()
-      if selectedRect != nil, drag == nil, !isScrolling {
-        for corner in Self.corners(of: activeRect) {
+      if selectedRect != nil, selectedWindows.isEmpty, drag == nil, !isScrolling {
+        for corner in Self.corners(of: rectangle) {
           NSColor.white.setFill()
           let handle = NSBezierPath(ovalIn: NSRect(x: corner.x - 3, y: corner.y - 3, width: 6, height: 6))
           handle.fill()

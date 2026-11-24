@@ -120,3 +120,6 @@
 "PinnedClickThroughShortcut" = "切換貼圖滑鼠穿透：";
 "PinnedClickThroughHint" = "讓點擊和捲動穿過所有貼圖，直接操作後面的視窗；再按一次恢復貼圖互動。";
 "PinnedClickThroughOff" = "關閉貼圖滑鼠穿透";
+"ScreenshotRemoveWindowShadow" = "移除視窗陰影";
+"ScreenshotWindowBackdrop" = "加入視窗美化背景";
+"ScreenshotWindowCascadeHint" = "按住 ⇧ 點一下以加入或移除視窗";

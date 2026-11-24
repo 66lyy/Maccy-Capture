@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Elimină umbra ferestrei";
+"ScreenshotWindowBackdrop" = "Adaugă un fundal ferestrei";
+"ScreenshotWindowCascadeHint" = "Clic cu ⇧ pentru a adăuga sau elimina ferestre";

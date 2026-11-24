@@ -18,3 +18,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Poista ikkunan varjo";
+"ScreenshotWindowBackdrop" = "Lisää ikkunalle tausta";
+"ScreenshotWindowCascadeHint" = "Lisää tai poista ikkunoita ⇧-klikkauksella";

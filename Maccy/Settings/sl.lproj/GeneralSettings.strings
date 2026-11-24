@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Odstrani senco okna";
+"ScreenshotWindowBackdrop" = "Dodaj ozadje okna";
+"ScreenshotWindowCascadeHint" = "Kliknite s ⇧, da dodate ali odstranite okna";

@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "הסרת צל החלון";
+"ScreenshotWindowBackdrop" = "הוספת רקע לחלון";
+"ScreenshotWindowCascadeHint" = "לחיצה עם ⇧ מוסיפה או מסירה חלונות";

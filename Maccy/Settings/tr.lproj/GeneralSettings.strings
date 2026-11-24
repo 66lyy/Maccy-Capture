@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Pencere gölgesini kaldır";
+"ScreenshotWindowBackdrop" = "Pencereye arka plan ekle";
+"ScreenshotWindowCascadeHint" = "Pencere eklemek veya kaldırmak için ⇧ ile tıklayın";

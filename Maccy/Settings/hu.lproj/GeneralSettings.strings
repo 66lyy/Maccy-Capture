@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Ablakárnyék eltávolítása";
+"ScreenshotWindowBackdrop" = "Ablakháttér hozzáadása";
+"ScreenshotWindowCascadeHint" = "Ablakok hozzáadása vagy eltávolítása ⇧-kattintással";

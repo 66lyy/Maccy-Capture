@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Remover a sombra da janela";
+"ScreenshotWindowBackdrop" = "Adicionar um fundo à janela";
+"ScreenshotWindowCascadeHint" = "Clique com ⇧ para adicionar ou remover janelas";

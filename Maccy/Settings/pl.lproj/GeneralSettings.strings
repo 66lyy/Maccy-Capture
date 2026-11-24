@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Usuń cień okna";
+"ScreenshotWindowBackdrop" = "Dodaj tło okna";
+"ScreenshotWindowCascadeHint" = "Kliknij z ⇧, aby dodać lub usunąć okna";

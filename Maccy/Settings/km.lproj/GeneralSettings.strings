@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "ដកស្រមោលបង្អួច";
+"ScreenshotWindowBackdrop" = "បន្ថែមផ្ទៃខាងក្រោយបង្អួច";
+"ScreenshotWindowCascadeHint" = "ចុចដោយសង្កត់ ⇧ ដើម្បីបន្ថែម ឬដកបង្អួច";

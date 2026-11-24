@@ -34,6 +34,7 @@ final class ScreenshotCaptureSession {
   enum Mode: Equatable {
     case mainDisplay
     case region(NSRect)
+    case window(CGWindowID, removeShadow: Bool)
 
     func arguments(output: URL) -> [String] {
       let options: [String]
@@ -45,6 +46,8 @@ final class ScreenshotCaptureSession {
         let coordinates = [integralRect.minX, integralRect.minY, integralRect.width, integralRect.height]
           .map { String(Int($0)) }.joined(separator: ",")
         options = ["-R\(coordinates)"]
+      case .window(let id, let removeShadow):
+        options = ["-l\(id)", "-a"] + (removeShadow ? ["-o"] : [])
       }
       return options + ["-x", "-t", "png", output.path]
     }
@@ -115,6 +118,165 @@ final class ScreenshotCaptureSession {
     let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     try Task.checkCancellation()
     return NSImage(cgImage: ScreenshotColorSpace.matchDisplay(image, profile: display.colorSpace), size: source.size)
+  }
+
+  static func captureWindows(
+    _ targets: [ScreenshotElementDetection.Window], on display: ScreenshotSelectionController.Display,
+    snapshots: [CGWindowID: WindowLayer], removeShadow: Bool, addBackdrop: Bool
+  ) async throws -> (image: CGImage, frame: NSRect) {
+    let bounds = targets.reduce(NSRect.null) { $0.union($1.frame) }
+    guard !bounds.isEmpty else { throw Failure.captureFailed }
+    let image: CGImage
+    let scale: CGFloat
+    let imageBounds: CGRect
+    if #available(macOS 26.0, *), targets.allSatisfy({ snapshots[$0.id] == nil }) {
+      let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+      let windows = targets.compactMap { target in content.windows.first { $0.windowID == target.id } }
+      guard windows.count == targets.count, let screen = content.displays.first(where: {
+        $0.displayID == display.displayID
+      }) else { throw Failure.captureFailed }
+      let filter = SCContentFilter(display: screen, including: windows)
+      let configuration = SCScreenshotConfiguration()
+      configuration.showsCursor = false
+      configuration.ignoreShadows = removeShadow
+      configuration.includeChildWindows = false
+      guard let captured = try await SCScreenshotManager.captureScreenshot(
+        contentFilter: filter, configuration: configuration
+      ).sdrImage else { throw Failure.captureFailed }
+      image = captured
+      scale = CGFloat(filter.pointPixelScale)
+      imageBounds = bounds
+    } else if let target = targets.first, targets.count == 1, snapshots[target.id] == nil {
+      image = try await ScreenshotCaptureSession().capture(
+        mode: .window(target.id, removeShadow: removeShadow)
+      ).image
+      scale = display.scale
+      imageBounds = bounds
+    } else {
+      var layers: [(CGImage, CGRect)] = []
+      for target in targets.reversed() {
+        if let snapshot = snapshots[target.id] {
+          layers.append((snapshot.image, snapshot.frame))
+        } else if #available(macOS 26.0, *) {
+          let layer = try await windowLayer(target, on: display, removeShadow: removeShadow)
+          layers.append((layer.image, layer.frame))
+        } else {
+          let layer = try await ScreenshotCaptureSession().capture(
+            mode: .window(target.id, removeShadow: true)
+          ).image
+          layers.append((layer, target.frame))
+        }
+      }
+      scale = display.scale
+      imageBounds = layers.reduce(CGRect.null) { $0.union($1.1) }
+      guard let composed = compositeWindows(layers, bounds: imageBounds, scale: scale) else {
+        throw Failure.captureFailed
+      }
+      image = composed
+    }
+    try Task.checkCancellation()
+    guard scale > 0 else { throw Failure.captureFailed }
+    let padded = addBackdrop ? windowBackdrop(image, scale: scale) : image
+    guard let padded else { throw Failure.captureFailed }
+    let width = CGFloat(padded.width) / scale
+    let height = CGFloat(padded.height) / scale
+    return (padded, CGRect(
+      x: imageBounds.midX - width / 2, y: imageBounds.midY - height / 2, width: width, height: height
+    ))
+  }
+
+  struct WindowLayer {
+    let image: CGImage
+    let frame: CGRect
+  }
+
+  static func snapshotPopups(
+    _ targets: [ScreenshotElementDetection.Window], on displays: [ScreenshotSelectionController.Display],
+    removeShadow: Bool
+  ) async -> [CGWindowID: WindowLayer] {
+    var snapshots: [CGWindowID: WindowLayer] = [:]
+    for target in targets where target.layer == Int(CGWindowLevelForKey(.popUpMenuWindow)) {
+      guard !Task.isCancelled else { break }
+      if #available(macOS 26.0, *), let display = displays.max(by: {
+        let lhs = $0.captureFrame.intersection(target.frame), rhs = $1.captureFrame.intersection(target.frame)
+        return (lhs.isNull ? 0 : lhs.width * lhs.height) < (rhs.isNull ? 0 : rhs.width * rhs.height)
+      }) {
+        snapshots[target.id] = try? await windowLayer(target, on: display, removeShadow: removeShadow)
+      } else if let snapshot = try? await ScreenshotCaptureSession().capture(
+        mode: .window(target.id, removeShadow: true)
+      ) {
+        snapshots[target.id] = WindowLayer(image: snapshot.image, frame: target.frame)
+      }
+    }
+    return snapshots
+  }
+
+  @available(macOS 26.0, *)
+  private static func windowLayer(
+    _ target: ScreenshotElementDetection.Window, on display: ScreenshotSelectionController.Display, removeShadow: Bool
+  ) async throws -> WindowLayer {
+    let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+    guard let screen = content.displays.first(where: { $0.displayID == display.displayID }),
+          let window = content.windows.first(where: { $0.windowID == target.id }) else {
+      throw Failure.captureFailed
+    }
+    let filter = SCContentFilter(display: screen, including: [window])
+    let configuration = SCScreenshotConfiguration()
+    configuration.showsCursor = false
+    configuration.ignoreShadows = removeShadow
+    configuration.includeChildWindows = false
+    let margin: CGFloat = removeShadow ? 0 : 96
+    let frame = target.frame.insetBy(dx: -margin, dy: -margin).intersection(display.captureFrame)
+    guard !frame.isEmpty else { throw Failure.captureFailed }
+    configuration.sourceRect = sourceRectangle(frame, displayFrame: display.captureFrame)
+    guard let image = try await SCScreenshotManager.captureScreenshot(
+      contentFilter: filter, configuration: configuration
+    ).sdrImage else { throw Failure.captureFailed }
+    return WindowLayer(image: image, frame: frame)
+  }
+
+  static func compositeWindows(_ layers: [(CGImage, CGRect)], bounds: CGRect, scale: CGFloat) -> CGImage? {
+    guard !bounds.isEmpty, scale > 0,
+          let context = windowCanvas(width: Int((bounds.width * scale).rounded()),
+                                     height: Int((bounds.height * scale).rounded()),
+                                     colorSpace: layers.first?.0.colorSpace) else { return nil }
+    for (image, frame) in layers {
+      let rect = CGRect(
+        x: (frame.minX - bounds.minX) * scale, y: (bounds.maxY - frame.maxY) * scale,
+        width: frame.width * scale, height: frame.height * scale
+      )
+      context.draw(image, in: rect.integral)
+    }
+    return context.makeImage()
+  }
+
+  static func windowBackdrop(_ image: CGImage, scale: CGFloat) -> CGImage? {
+    let padding = Int((32 * scale).rounded())
+    let width = image.width + 2 * padding
+    let height = image.height + 2 * padding
+    guard let context = windowCanvas(width: width, height: height, colorSpace: image.colorSpace),
+          let gradient = CGGradient(
+            colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
+            colors: [
+              CGColor(red: 0.22, green: 0.34, blue: 0.66, alpha: 1),
+              CGColor(red: 0.56, green: 0.33, blue: 0.67, alpha: 1)
+            ] as CFArray, locations: [0, 1]
+          ) else { return nil }
+    context.drawLinearGradient(
+      gradient, start: .zero, end: CGPoint(x: width, y: height), options: []
+    )
+    context.draw(image, in: CGRect(x: padding, y: padding, width: image.width, height: image.height))
+    return context.makeImage()
+  }
+
+  private static func windowCanvas(width: Int, height: Int, colorSpace: CGColorSpace?) -> CGContext? {
+    guard width > 0, height > 0, width <= ScreenshotImageLimits.maximumPixels / height,
+          let rgb = colorSpace.flatMap({ $0.model == .rgb ? $0 : nil })
+            ?? CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+    return CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: rgb,
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    )
   }
 
   static func captureDisplays(_ displays: [ScreenshotSelectionController.Display]) async -> [CGImage?] {

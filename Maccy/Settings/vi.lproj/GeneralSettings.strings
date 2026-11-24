@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Xóa bóng của cửa sổ";
+"ScreenshotWindowBackdrop" = "Thêm nền cho cửa sổ";
+"ScreenshotWindowCascadeHint" = "Giữ ⇧ và bấm để thêm hoặc bỏ cửa sổ";

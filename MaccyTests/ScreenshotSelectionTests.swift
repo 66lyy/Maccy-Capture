@@ -1158,6 +1158,28 @@ struct ScreenshotSelectionTests {
     #expect(ScreenshotElementDetection.rectangles(at: NSPoint(x: 150, y: 150), in: []).isEmpty)
   }
 
+  @Test("Window hover snaps immediately and Shift selection tracks IDs and clips the on-screen union")
+  func windowCascadeSelection() {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 300, height: 200), scale: 1, pinImmediately: false
+    )
+    let main = ScreenshotElementDetection.Window(pid: 10, frame: CGRect(x: 10, y: 30, width: 210, height: 160), id: 1)
+    let menu = ScreenshotElementDetection.Window(pid: 10, frame: CGRect(x: 160, y: 150, width: 160, height: 80), id: 2)
+    view.findElementWindow = { point in [menu, main].first { $0.frame.contains(point) } }
+    let mainPoint = NSPoint(x: 40, y: 100)
+    #expect(view.snapRectangle(near: mainPoint) == main.frame)
+    view.beginSelection(at: mainPoint)
+    view.endSelection(at: mainPoint)
+    #expect(view.selectedWindows == [main])
+    view.toggleWindow(menu)
+    #expect(view.selectedWindows == [main, menu])
+    #expect(view.selectedRect == CGRect(x: 10, y: 30, width: 290, height: 170))
+    view.toggleWindow(main)
+    #expect(view.selectedRect == CGRect(x: 160, y: 150, width: 140, height: 50))
+    view.toggleWindow(menu)
+    #expect(view.selectedRect == nil)
+  }
+
   @Test("The screen is frozen when selection starts: the overlay shows it and copy and edit cut from it")
   func frozenScreen() async throws {
     let context = try #require(CGContext(

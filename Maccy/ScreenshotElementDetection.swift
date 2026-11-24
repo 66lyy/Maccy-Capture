@@ -7,6 +7,8 @@ enum ScreenshotElementDetection {
   nonisolated struct Window: Sendable, Equatable {
     let pid: pid_t
     let frame: NSRect
+    var id: CGWindowID = kCGNullWindowID
+    var layer = 0
   }
 
   nonisolated struct Result: Sendable {
@@ -19,13 +21,19 @@ enum ScreenshotElementDetection {
     guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                    kCGNullWindowID) as? [[String: Any]] else { return [] }
     let ownPID = ProcessInfo.processInfo.processIdentifier
+    let windowLevels = Set([CGWindowLevelKey.normalWindow, .floatingWindow, .modalPanelWindow, .popUpMenuWindow]
+      .map { Int(CGWindowLevelForKey($0)) })
     return windows.compactMap { window in
       guard let pid = window[kCGWindowOwnerPID as String] as? pid_t, pid != ownPID,
-            window[kCGWindowLayer as String] as? Int == 0,
+            let id = window[kCGWindowNumber as String] as? CGWindowID,
+            let layer = window[kCGWindowLayer as String] as? Int,
+            windowLevels.contains(layer),
+            let alpha = window[kCGWindowAlpha as String] as? Double, alpha > 0,
             let bounds = window[kCGWindowBounds as String] as? [String: Any],
-            let rectangle = CGRect(dictionaryRepresentation: bounds as CFDictionary)
+            let rectangle = CGRect(dictionaryRepresentation: bounds as CFDictionary),
+            rectangle.width >= 3, rectangle.height >= 3
       else { return nil }
-      return Window(pid: pid, frame: rectangle)
+      return Window(pid: pid, frame: rectangle, id: id, layer: layer)
     }
   }
 

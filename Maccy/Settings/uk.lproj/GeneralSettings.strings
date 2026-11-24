@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Прибрати тінь вікна";
+"ScreenshotWindowBackdrop" = "Додати тло до вікна";
+"ScreenshotWindowCascadeHint" = "Клацніть з ⇧, щоб додати або прибрати вікна";

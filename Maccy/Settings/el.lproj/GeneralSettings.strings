@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Αφαίρεση σκιάς παραθύρου";
+"ScreenshotWindowBackdrop" = "Προσθήκη φόντου παραθύρου";
+"ScreenshotWindowCascadeHint" = "Κάντε κλικ με ⇧ για προσθήκη ή αφαίρεση παραθύρων";

@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "حذف سایهٔ پنجره";
+"ScreenshotWindowBackdrop" = "افزودن پس‌زمینهٔ پنجره";
+"ScreenshotWindowCascadeHint" = "برای افزودن یا حذف پنجره‌ها با ⇧ کلیک کنید";

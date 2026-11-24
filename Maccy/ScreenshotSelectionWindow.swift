@@ -31,7 +31,11 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     contentView = selectionView
     initialFirstResponder = selectionView
     selectionView.onCancel = { [weak self] in self?.cancelOperation(nil) }
-    selectionView.onValidSelection = { [weak self] rectangle in self?.showToolbar(beside: rectangle) }
+    selectionView.onValidSelection = { [weak self] rectangle in
+      guard let self else { return }
+      showToolbar(beside: rectangle)
+      longScreenshotButton?.isHidden = selectionView.selectedWindows.count > 1
+    }
     selectionView.onChooseDrawingTool = { [weak self] in self?.chooseTool(.arrow) }
   }
 

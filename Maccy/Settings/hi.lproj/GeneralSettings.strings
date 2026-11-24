@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "विंडो की छाया हटाएँ";
+"ScreenshotWindowBackdrop" = "विंडो की पृष्ठभूमि जोड़ें";
+"ScreenshotWindowCascadeHint" = "विंडो जोड़ने या हटाने के लिए ⇧ दबाकर क्लिक करें";

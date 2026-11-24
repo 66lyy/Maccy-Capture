@@ -201,3 +201,6 @@
 "PinnedClickThroughShortcut" = "Toggle pinned image click-through:";
 "PinnedClickThroughHint" = "Let clicks and scrolling pass through all pinned images to the windows behind them; press again to make them interactive.";
 "PinnedClickThroughOff" = "Turn Off Pinned Image Click-Through";
+"ScreenshotRemoveWindowShadow" = "Remove window shadows";
+"ScreenshotWindowBackdrop" = "Add a window backdrop";
+"ScreenshotWindowCascadeHint" = "⇧-click to add or remove windows";

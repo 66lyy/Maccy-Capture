@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "ลบเงาหน้าต่าง";
+"ScreenshotWindowBackdrop" = "เพิ่มพื้นหลังให้หน้าต่าง";
+"ScreenshotWindowCascadeHint" = "กด ⇧ ค้างไว้แล้วคลิกเพื่อเพิ่มหรือนำหน้าต่างออก";

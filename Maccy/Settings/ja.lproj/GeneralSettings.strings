@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "ウインドウの影を取り除く";
+"ScreenshotWindowBackdrop" = "ウインドウに背景を追加";
+"ScreenshotWindowCascadeHint" = "⇧ キーを押しながらクリックしてウインドウを追加・解除";

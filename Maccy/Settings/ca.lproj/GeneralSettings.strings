@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Elimina l’ombra de la finestra";
+"ScreenshotWindowBackdrop" = "Afegeix un fons a la finestra";
+"ScreenshotWindowCascadeHint" = "Fes clic amb ⇧ per afegir o treure finestres";

@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Fjern vindusskygge";
+"ScreenshotWindowBackdrop" = "Legg til bakgrunn for vinduet";
+"ScreenshotWindowCascadeHint" = "Klikk med ⇧ for å legge til eller fjerne vinduer";

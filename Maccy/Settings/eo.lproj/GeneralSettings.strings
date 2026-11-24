@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Forigi fenestran ombron";
+"ScreenshotWindowBackdrop" = "Aldoni fonon al la fenestro";
+"ScreenshotWindowCascadeHint" = "Alklaku kun ⇧ por aldoni aŭ forigi fenestrojn";

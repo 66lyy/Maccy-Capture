@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "சாளர நிழலை நீக்கு";
+"ScreenshotWindowBackdrop" = "சாளரப் பின்னணியைச் சேர்";
+"ScreenshotWindowCascadeHint" = "சாளரங்களைச் சேர்க்க அல்லது நீக்க ⇧ அழுத்திக் கிளிக் செய்யவும்";

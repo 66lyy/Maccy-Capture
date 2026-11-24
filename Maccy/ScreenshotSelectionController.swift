@@ -1,6 +1,7 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Defaults
 
 @MainActor
 final class ScreenshotSelectionController {
@@ -100,6 +101,7 @@ final class ScreenshotSelectionController {
   private var screenObserver: NSObjectProtocol?
   private var localEscapeMonitor: Any?
   private var globalEscapeMonitor: Any?
+  private var windowCaptureTask: Task<Void, Never>?
   private var scrollingTask: Task<Void, Never>?
   private var scrollingDelayTask: Task<Void, Error>?
   private var scrollingLastActivity: ContinuousClock.Instant?
@@ -141,7 +143,12 @@ final class ScreenshotSelectionController {
     let frozenWindows = await Task.detached(priority: .userInitiated) { [listWindows] in
       listWindows()
     }.value
-    let frozen = await freezeDisplays(availableDisplays)
+    let removeWindowShadow = Defaults[.screenshotRemoveWindowShadow]
+    async let frozenDisplays = freezeDisplays(availableDisplays)
+    async let popupSnapshots = ScreenshotCaptureSession.snapshotPopups(
+      frozenWindows, on: availableDisplays, removeShadow: removeWindowShadow
+    )
+    let (frozen, snapshots) = await (frozenDisplays, popupSnapshots)
     isFreezing = false
     try Task.checkCancellation()
     guard Display.sameLayout(availableDisplays, displays()) else { return nil }
@@ -152,7 +159,7 @@ final class ScreenshotSelectionController {
         windows = availableDisplays.enumerated().map { index, display in
           makeWindow(
             display: display, frozen: index < frozen.count ? frozen[index] : nil, frozenWindows: frozenWindows,
-            pinImmediately: pinImmediately
+            snapshots: snapshots, pinImmediately: pinImmediately, removeWindowShadow: removeWindowShadow
           )
         }
         monitorEscape()
@@ -238,7 +245,8 @@ final class ScreenshotSelectionController {
   }
 
   private func makeWindow(
-    display: Display, frozen: CGImage?, frozenWindows: [ScreenshotElementDetection.Window], pinImmediately: Bool
+    display: Display, frozen: CGImage?, frozenWindows: [ScreenshotElementDetection.Window],
+    snapshots: [CGWindowID: ScreenshotCaptureSession.WindowLayer], pinImmediately: Bool, removeWindowShadow: Bool
   ) -> ScreenshotSelectionWindow {
     let window = ScreenshotSelectionWindow(
       frame: display.frame, visibleFrame: display.visibleFrame ?? display.frame,
@@ -258,7 +266,7 @@ final class ScreenshotSelectionController {
       }) else { return nil }
       let local = Self.screenRectangle(target.frame, display: display)
         .offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
-      return ScreenshotElementDetection.Window(pid: target.pid, frame: local)
+      return ScreenshotElementDetection.Window(pid: target.pid, frame: local, id: target.id, layer: target.layer)
     }
     window.selectionView.findElements = { point, target in
       let global = NSPoint(x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y)
@@ -279,7 +287,8 @@ final class ScreenshotSelectionController {
       }
     }
     window.selectionView.canAdjustSelection = { [weak self] in
-      self?.windows.allSatisfy { $0.canvas == nil && !$0.isPreparingImage && !$0.selectionView.isScrolling } ?? false
+      guard let self, windowCaptureTask == nil else { return false }
+      return windows.allSatisfy { $0.canvas == nil && !$0.isPreparingImage && !$0.selectionView.isScrolling }
     }
     window.selectionView.canPickColor = { [weak self, weak window] in
       self?.windows.allSatisfy {
@@ -297,12 +306,41 @@ final class ScreenshotSelectionController {
         image: data == nil ? frozen.flatMap { Self.crop($0, to: captureRect, display: display) } : nil
       )
     }
-    window.selectionView.onCapture = { [weak self] rectangle, pinToScreen in
-      self?.finish(selection(rectangle, pinToScreen: pinToScreen))
+    var renderedWindowFrame: NSRect?
+    func captureWindows(_ targets: [ScreenshotElementDetection.Window]) async throws -> (CGImage, NSRect) {
+      let ids = Set(targets.map(\.id))
+      let native = frozenWindows.filter { ids.contains($0.id) }
+      let result = try await ScreenshotCaptureSession.captureWindows(
+        native, on: display, snapshots: snapshots, removeShadow: removeWindowShadow,
+        addBackdrop: Defaults[.screenshotWindowBackdrop]
+      )
+      return (result.image, Self.screenRectangle(result.frame, display: display))
+    }
+    window.selectionView.onCapture = { [weak self, weak window] rectangle, pinToScreen in
+      guard let self, let window else { return }
+      let targets = window.selectionView.selectedWindows
+      guard !targets.isEmpty else {
+        finish(selection(rectangle, pinToScreen: pinToScreen))
+        return
+      }
+      guard windowCaptureTask == nil else { return }
+      windowCaptureTask = Task {
+        do {
+          let (image, frame) = try await captureWindows(targets)
+          try Task.checkCancellation()
+          finish(Selection(
+            captureRect: frame, anchor: NSPoint(x: frame.midX, y: frame.midY), pinToScreen: pinToScreen, image: image
+          ))
+        } catch {
+          if !Task.isCancelled { finish(nil, failure: error) }
+        }
+      }
     }
     window.onLongScreenshot = { [weak self, weak window] in
       guard let self, let window, let rectangle = window.selectionView.selectedRect,
-            scrollingTask == nil else { return }
+            scrollingTask == nil, windowCaptureTask == nil, window.selectionView.selectedWindows.count <= 1 else {
+        return
+      }
       timeoutTask?.cancel()
       timeoutTask = nil
       for overlay in windows {
@@ -398,6 +436,13 @@ final class ScreenshotSelectionController {
     }
     window.loadSelectionImage = { [weak self, weak window] in
       guard let self, let window, let rectangle = window.selectionView.selectedRect else { throw CancellationError() }
+      let targets = window.selectionView.selectedWindows
+      if !targets.isEmpty {
+        let (image, frame) = try await captureWindows(targets)
+        renderedWindowFrame = frame
+        return (NSImage(cgImage: image, size: frame.size),
+                frame.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY))
+      }
       let captureRect = Self.captureRectangle(rectangle, display: display)
       let globalFrame = Self.screenRectangle(captureRect, display: display)
       let localFrame = globalFrame.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
@@ -423,14 +468,23 @@ final class ScreenshotSelectionController {
     }
     window.onOutput = { [weak self, weak window] data, _, action in
       guard let self, let data, let rectangle = window?.selectionView.selectedRect else { throw CancellationError() }
-      finish(selection(rectangle, pinToScreen: action == .pin, data: data))
+      if let frame = renderedWindowFrame, window?.selectionView.selectedWindows.isEmpty == false {
+        finish(Selection(
+          captureRect: frame, anchor: NSPoint(x: frame.midX, y: frame.midY),
+          pinToScreen: action == .pin, renderedData: data
+        ))
+      } else {
+        finish(selection(rectangle, pinToScreen: action == .pin, data: data))
+      }
     }
     return window
   }
 
-  private func finish(_ selection: Selection?, closingWindow: ScreenshotSelectionWindow? = nil) {
+  private func finish(_ selection: Selection?, closingWindow: ScreenshotSelectionWindow? = nil, failure: Error? = nil) {
     guard let continuation else { return }
     self.continuation = nil
+    windowCaptureTask?.cancel()
+    windowCaptureTask = nil
     scrollingTask?.cancel()
     scrollingDelayTask?.cancel()
     scrollingDelayTask = nil
@@ -461,6 +515,10 @@ final class ScreenshotSelectionController {
       }
     }
     windows.removeAll()
-    continuation.resume(returning: selection)
+    if let failure {
+      continuation.resume(throwing: failure)
+    } else {
+      continuation.resume(returning: selection)
+    }
   }
 }

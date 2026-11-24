@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Noņemt loga ēnu";
+"ScreenshotWindowBackdrop" = "Pievienot logam fonu";
+"ScreenshotWindowCascadeHint" = "Klikšķiniet, turot ⇧, lai pievienotu vai noņemtu logus";

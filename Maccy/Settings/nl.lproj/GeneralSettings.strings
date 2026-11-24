@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Vensterschaduw verwijderen";
+"ScreenshotWindowBackdrop" = "Achtergrond aan venster toevoegen";
+"ScreenshotWindowCascadeHint" = "⇧-klik om vensters toe te voegen of te verwijderen";

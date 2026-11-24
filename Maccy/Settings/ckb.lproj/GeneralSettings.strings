@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "سێبەری پەنجەرە لاببە";
+"ScreenshotWindowBackdrop" = "پاشبنەما بۆ پەنجەرە زیاد بکە";
+"ScreenshotWindowCascadeHint" = "بۆ زیادکردن یان لابردنی پەنجەرە ⇧ بگرە و کلیک بکە";

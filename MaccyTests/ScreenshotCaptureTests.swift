@@ -11,6 +11,36 @@ private extension ScrollingScreenshotStitcher {
 
 @MainActor
 struct ScreenshotCaptureTests {
+  @Test("Window compositing keeps transparent gaps, stacking order and the backdrop padding")
+  func windowCompositing() throws {
+    func layer(_ color: NSColor) throws -> CGImage {
+      let context = try #require(CGContext(
+        data: nil, width: 3, height: 3, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+      ))
+      context.setFillColor(color.cgColor)
+      context.fill(CGRect(x: 0, y: 0, width: 3, height: 3))
+      return try #require(context.makeImage())
+    }
+    let main = CGRect(x: -2, y: 4, width: 3, height: 3)
+    let menu = CGRect(x: 0, y: 6, width: 3, height: 3)
+    let windows = try ScreenshotCaptureSession.compositeWindows(
+      [(layer(.red), main), (layer(.blue), menu)], bounds: main.union(menu), scale: 2
+    )
+    let image = try #require(windows)
+    #expect(image.width == 10 && image.height == 10)
+    let pixels = NSBitmapImageRep(cgImage: image)
+    #expect(pixels.colorAt(x: 1, y: 1)?.redComponent == 1)
+    #expect(pixels.colorAt(x: 4, y: 4)?.blueComponent == 1)
+    #expect(pixels.colorAt(x: 9, y: 1)?.alphaComponent == 0)
+    let result = try #require(ScreenshotCaptureSession.windowBackdrop(image, scale: 2))
+    let padded = NSBitmapImageRep(cgImage: result)
+    #expect(result.width == 138 && result.height == 138)
+    #expect(padded.colorAt(x: 2, y: 2)?.alphaComponent == 1)
+    #expect(padded.colorAt(x: 68, y: 68)?.blueComponent == 1)
+    #expect(padded.colorAt(x: 135, y: 2) != padded.colorAt(x: 2, y: 135))
+  }
+
   @Test("Inferred leading and trailing misses require informative body confirmation",
         arguments: [false, true])
   func scrollingExcludedBandsRequireBody(trailing: Bool) {

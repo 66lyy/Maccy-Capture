@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "Выдаліць цень акна";
+"ScreenshotWindowBackdrop" = "Дадаць фон акна";
+"ScreenshotWindowCascadeHint" = "Націсніце з ⇧, каб дадаць ці выдаліць вокны";

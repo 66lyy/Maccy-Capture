@@ -202,3 +202,6 @@
 "PinnedClickThroughShortcut" = "切换贴图鼠标穿透：";
 "PinnedClickThroughHint" = "让点击和滚动穿过所有贴图，直接操作后面的窗口；再按一次恢复贴图交互。";
 "PinnedClickThroughOff" = "关闭贴图鼠标穿透";
+"ScreenshotRemoveWindowShadow" = "移除窗口阴影";
+"ScreenshotWindowBackdrop" = "添加窗口美化背景";
+"ScreenshotWindowCascadeHint" = "按住 ⇧ 点击以添加或移除窗口";

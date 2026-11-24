@@ -39,3 +39,6 @@
 "ToolbarHistoryGroup" = "Undo and redo";
 "ToolbarOutputGroup" = "Actions";
 "ToolbarStyleGroup" = "Color and size";
+"ScreenshotRemoveWindowShadow" = "إزالة ظل النافذة";
+"ScreenshotWindowBackdrop" = "إضافة خلفية للنافذة";
+"ScreenshotWindowCascadeHint" = "⇧ مع النقر لإضافة نوافذ أو إزالتها";
