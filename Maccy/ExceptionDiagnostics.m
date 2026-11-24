@@ -111,7 +111,9 @@ static void FatalSignal(int signal) {
 }
 
 static id ObserveThrow(id object) {
-  object = previousPreprocessor(object);
+  if (previousPreprocessor) {
+    object = previousPreprocessor(object);
+  }
   if (pthread_self() != layoutThread || recording || ![object isKindOfClass:NSException.class]) return object;
   recording = YES;
   @try {
