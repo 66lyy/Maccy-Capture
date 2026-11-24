@@ -65,6 +65,7 @@ nonisolated extension Defaults.Keys {
   static let screenshotRemoveWindowShadow = Key<Bool>("screenshotRemoveWindowShadow", default: false, suite: preferencesSuite)
   static let screenshotWindowBackdrop = Key<Bool>("screenshotWindowBackdrop", default: false, suite: preferencesSuite)
   static let automaticPinStackingEnabled = Key<Bool>("automaticPinStackingEnabled", default: true, suite: preferencesSuite)
+  static let screenshotColorFormat = Key<String>("screenshotColorFormat", default: "hex", suite: preferencesSuite)
   static let annotationToolOrder = Key<[Int]>("annotationToolOrder", default: [], suite: preferencesSuite)
   static let disabledAnnotationTools = Key<[Int]>("disabledAnnotationTools", default: [], suite: preferencesSuite)
   static let toolbarItemOrder = Key<[String]>("screenshotToolbarItemOrder", default: [], suite: preferencesSuite)

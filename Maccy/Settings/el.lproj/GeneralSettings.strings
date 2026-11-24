@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Αφαίρεση σκιάς παραθύρου";
 "ScreenshotWindowBackdrop" = "Προσθήκη φόντου παραθύρου";
 "ScreenshotWindowCascadeHint" = "Κάντε κλικ με ⇧ για προσθήκη ή αφαίρεση παραθύρων";
+"ScreenshotColorFormatHint" = "Κρατήστε το C · Διάστημα για αλλαγή";

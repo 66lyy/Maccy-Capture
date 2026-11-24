@@ -58,6 +58,9 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    if canvas == nil, !isPreparingImage, selectionView.isPickingColor, selectionView.handleColorShortcut(event) {
+      return true
+    }
     if canvas == nil, !isPreparingImage, selectionView.handleSelectionShortcut(event) {
       return true
     }

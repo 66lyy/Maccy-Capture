@@ -211,3 +211,4 @@
 "ScreenshotRemoveWindowShadow" = "Remove window shadows";
 "ScreenshotWindowBackdrop" = "Add a window backdrop";
 "ScreenshotWindowCascadeHint" = "⇧-click to add or remove windows";
+"ScreenshotColorFormatHint" = "Hold C · Space to switch";

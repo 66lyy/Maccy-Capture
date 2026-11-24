@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Убрать тень окна";
 "ScreenshotWindowBackdrop" = "Добавить фон окна";
 "ScreenshotWindowCascadeHint" = "Нажмите с ⇧, чтобы добавить или убрать окна";
+"ScreenshotColorFormatHint" = "Удерживайте C · Пробел — формат";

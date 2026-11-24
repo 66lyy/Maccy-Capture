@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Defaults
 
 @MainActor
 final class ScreenshotSelectionView: NSView {
@@ -16,7 +17,9 @@ final class ScreenshotSelectionView: NSView {
   var elementProbe = ScreenshotElementProbe()
   private(set) var selectedRect: NSRect?
   private(set) var selectedWindows: [ScreenshotElementDetection.Window] = []
-  var hasSelectionInteraction: Bool { selectedRect != nil || drag != nil || colorCopyTask != nil }
+  var hasSelectionInteraction: Bool {
+    selectedRect != nil || drag != nil || colorCopyTask != nil || colorPick != nil
+  }
   private(set) var frozen: NSImage?
   var isScrolling = false {
     didSet {
@@ -56,6 +59,7 @@ final class ScreenshotSelectionView: NSView {
   private let elementHint = GlassSelectionLabel()
   private let loupe = ScreenshotPixelLoupe()
   private var colorCopyTask: Task<Void, Never>?
+  private var colorPick: (keyCode: UInt16, format: ScreenshotPixelLoupe.ColorFormat, switched: Bool)?
 
   init(frame: NSRect, scale: CGFloat, pinImmediately: Bool, pixelSize: CGSize? = nil) {
     self.scale = scale
@@ -66,6 +70,7 @@ final class ScreenshotSelectionView: NSView {
     addSubview(selectionHint)
     addSubview(elementHint)
     addSubview(loupe)
+    loupe.format = Self.rememberedColorFormat
     refreshOverlay()
   }
 
@@ -177,6 +182,7 @@ final class ScreenshotSelectionView: NSView {
       return
     }
     let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    if colorPick != nil, handleColorShortcut(event) { return }
     if handleSelectionShortcut(event) { return }
     if ScopedShortcut.closeCapture.matches(event) {
       onCancel?()
@@ -233,22 +239,80 @@ final class ScreenshotSelectionView: NSView {
     needsDisplay = true
   }
 
+  var isPickingColor: Bool { colorPick != nil }
+
+  override func keyUp(with event: NSEvent) {
+    if !handleColorShortcut(event) { super.keyUp(with: event) }
+  }
+
+  static var rememberedColorFormat: ScreenshotPixelLoupe.ColorFormat {
+    ScreenshotPixelLoupe.ColorFormat(rawValue: Defaults[.screenshotColorFormat]) ?? .hex
+  }
+
+  /// Holding C samples the hovered pixel; Space or Tab cycles the format (Shift-Tab back, 1-5 pick one)
+  /// and releasing C copies the shown format. Shift-C starts at RGB.
   func handleColorShortcut(_ event: NSEvent, to target: NSPasteboard? = nil) -> Bool {
+    if event.type == .keyUp {
+      guard let pick = colorPick, event.keyCode == pick.keyCode else { return false }
+      copyPickedColor(pick, to: target)
+      return true
+    }
     let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift, .function])
-    guard event.charactersIgnoringModifiers?.lowercased() == "c",
-          modifiers.isEmpty || modifiers == .shift, !loupe.isHidden,
-          let color = loupe.color else { return false }
-    guard colorCopyTask == nil else { return true }
+    let isColorKey = event.charactersIgnoringModifiers?.lowercased() == "c"
+      && (modifiers.isEmpty || modifiers == .shift)
+    if let pick = colorPick, !(isColorKey && event.keyCode == pick.keyCode && !event.isARepeat) {
+      if (123...126).contains(event.keyCode) || event.keyCode == 53 || modifiers.contains(.command) { return false }
+      if event.keyCode != pick.keyCode, let format = Self.colorFormat(after: pick.format, for: event) {
+        colorPick?.format = format
+        colorPick?.switched = true
+        loupe.format = format
+        updateLoupe()
+      }
+      return true
+    }
+    guard isColorKey, !loupe.isHidden, loupe.color != nil else { return false }
+    guard colorCopyTask == nil, !event.isARepeat else { return true }
+    let format = modifiers == .shift ? .rgb : Self.rememberedColorFormat
+    colorPick = (event.keyCode, format, false)
+    loupe.format = format
+    loupe.isPicking = true
+    updateLoupe()
+    return true
+  }
+
+  static func colorFormat(
+    after format: ScreenshotPixelLoupe.ColorFormat, for event: NSEvent
+  ) -> ScreenshotPixelLoupe.ColorFormat? {
+    let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+    guard modifiers.isEmpty || modifiers == .shift else { return nil }
+    let formats = ScreenshotPixelLoupe.ColorFormat.allCases
+    if let digit = event.charactersIgnoringModifiers.flatMap(Int.init), formats.indices.contains(digit - 1) {
+      return formats[digit - 1]
+    }
+    guard event.keyCode == 49 || event.keyCode == 48, let index = formats.firstIndex(of: format) else { return nil }
+    let step = event.keyCode == 48 && modifiers == .shift ? formats.count - 1 : 1
+    return formats[(index + step) % formats.count]
+  }
+
+  private func copyPickedColor(
+    _ pick: (keyCode: UInt16, format: ScreenshotPixelLoupe.ColorFormat, switched: Bool), to target: NSPasteboard?
+  ) {
+    colorPick = nil
+    loupe.isPicking = false
+    if pick.switched { Defaults[.screenshotColorFormat] = pick.format.rawValue }
+    guard !loupe.isHidden, let color = loupe.color else {
+      loupe.format = Self.rememberedColorFormat
+      updateLoupe()
+      return
+    }
     let pasteboard = target ?? .general
     pasteboard.clearContents()
-    let value = modifiers == .shift ? color.rgb : color.hex
-    guard pasteboard.setString(value, forType: .string) else { return true }
+    guard pasteboard.setString(color.string(in: pick.format), forType: .string) else { return }
     loupe.copied = localized("AnnotationTextCopied")
     colorCopyTask = Task { [weak self] in
       do { try await Task.sleep(for: .milliseconds(450)) } catch { return }
       self?.onCancel?()
     }
-    return true
   }
 
   func beginSelection(at point: NSPoint) {
@@ -322,6 +386,7 @@ final class ScreenshotSelectionView: NSView {
   func finishInteraction() {
     colorCopyTask?.cancel()
     colorCopyTask = nil
+    colorPick = nil
     probeID = nil
     probePID = nil
     onBegin = nil
@@ -681,6 +746,20 @@ final class ScreenshotSelectionView: NSView {
 
 @MainActor
 final class ScreenshotPixelLoupe: NSView {
+  enum ColorFormat: String, CaseIterable {
+    case hex, rgb, hsl, swiftUI, nsColor
+
+    var title: String {
+      switch self {
+      case .hex: "HEX"
+      case .rgb: "RGB"
+      case .hsl: "HSL"
+      case .swiftUI: "SwiftUI"
+      case .nsColor: "NSColor"
+      }
+    }
+  }
+
   struct Color: Equatable {
     let red: Int
     let green: Int
@@ -688,6 +767,40 @@ final class ScreenshotPixelLoupe: NSView {
 
     var hex: String { String(format: "#%02X%02X%02X", red, green, blue) }
     var rgb: String { "rgb(\(red), \(green), \(blue))" }
+
+    var hsl: String {
+      let r = Double(red) / 255, g = Double(green) / 255, b = Double(blue) / 255
+      let high = max(r, g, b), low = min(r, g, b), delta = high - low
+      let lightness = (high + low) / 2
+      let saturation = delta == 0 ? 0 : delta / (1 - abs(2 * lightness - 1))
+      var hue = 0.0
+      if delta > 0 {
+        if high == r {
+          hue = 60 * ((g - b) / delta).truncatingRemainder(dividingBy: 6)
+        } else if high == g {
+          hue = 60 * ((b - r) / delta + 2)
+        } else {
+          hue = 60 * ((r - g) / delta + 4)
+        }
+      }
+      let degrees = (Int(hue.rounded()) % 360 + 360) % 360
+      return "hsl(\(degrees), \(Int((saturation * 100).rounded()))%, \(Int((lightness * 100).rounded()))%)"
+    }
+
+    var swiftUI: String { "Color(red: \(unit(red)), green: \(unit(green)), blue: \(unit(blue)))" }
+    var nsColor: String { "NSColor(srgbRed: \(unit(red)), green: \(unit(green)), blue: \(unit(blue)), alpha: 1)" }
+
+    func string(in format: ColorFormat) -> String {
+      switch format {
+      case .hex: hex
+      case .rgb: rgb
+      case .hsl: hsl
+      case .swiftUI: swiftUI
+      case .nsColor: nsColor
+      }
+    }
+
+    private func unit(_ component: Int) -> String { String(format: "%.3f", Double(component) / 255) }
   }
 
   var source: CGImage? {
@@ -697,15 +810,30 @@ final class ScreenshotPixelLoupe: NSView {
   var copied: String? {
     didSet { needsDisplay = true }
   }
+  var format: ColorFormat = .hex {
+    didSet { if format != oldValue { needsDisplay = true } }
+  }
+  var isPicking = false {
+    didSet { if isPicking != oldValue { needsDisplay = true } }
+  }
   private var currentPixel: CGPoint?
   private var patch: NSImage?
-  private var patchFrame: NSRect = .zero
+  private var patchCrop: CGRect = .zero
   private let cell: CGFloat = 12
   private let radius: CGFloat = 4
-  private let size = NSSize(width: 176, height: 176)
+  private static let valueFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+  private static let detailFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+  private static let pillPadding: CGFloat = 5
+  private static let pillGap: CGFloat = 2
+  private var hint: String { NSLocalizedString("ScreenshotColorFormatHint", tableName: "GeneralSettings", comment: "") }
+  var size: NSSize {
+    let value = color.map { Self.width(of: $0.string(in: format), font: Self.valueFont) } ?? 0
+    let widest = max(value, Self.formatsWidth, Self.width(of: copied ?? hint, font: Self.detailFont))
+    return NSSize(width: max(176, ceil(widest) + 20), height: 176)
+  }
   private var grid: NSRect {
     let side = (2 * radius + 1) * cell
-    return NSRect(x: (size.width - side) / 2, y: 60, width: side, height: side)
+    return NSRect(x: (bounds.width - side) / 2, y: 60, width: side, height: side)
   }
 
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -740,6 +868,8 @@ final class ScreenshotPixelLoupe: NSView {
 
   func update(near point: NSPoint, in bounds: NSRect) {
     guard let source, !bounds.isEmpty else { return }
+    sample(at: point, in: bounds, image: source)
+    let size = self.size
     let gap: CGFloat = 20
     let right = point.x + gap
     let above = point.y + gap
@@ -750,8 +880,13 @@ final class ScreenshotPixelLoupe: NSView {
       y: max(bounds.minY, min(y.rounded(), bounds.maxY - size.height))
     )
     let nextFrame = NSRect(origin: origin, size: size)
-    if frame != nextFrame { frame = nextFrame }
+    if frame != nextFrame {
+      frame = nextFrame
+      needsDisplay = true
+    }
+  }
 
+  private func sample(at point: NSPoint, in bounds: NSRect, image source: CGImage) {
     let pixel = Self.pixel(at: point, in: bounds, image: source)
     guard currentPixel != pixel else { return }
     currentPixel = pixel
@@ -760,10 +895,9 @@ final class ScreenshotPixelLoupe: NSView {
     let neighborhood = CGRect(x: pixel.x - radius, y: pixel.y - radius, width: side, height: side)
     let crop = neighborhood.intersection(CGRect(x: 0, y: 0, width: source.width, height: source.height))
     patch = source.cropping(to: crop).map { NSImage(cgImage: $0, size: crop.size) }
-    patchFrame = NSRect(
-      x: grid.minX + (crop.minX - neighborhood.minX) * cell,
-      y: grid.minY + (neighborhood.maxY - crop.maxY) * cell,
-      width: crop.width * cell, height: crop.height * cell
+    patchCrop = CGRect(
+      x: crop.minX - neighborhood.minX, y: neighborhood.maxY - crop.maxY,
+      width: crop.width, height: crop.height
     )
     needsDisplay = true
   }
@@ -776,6 +910,10 @@ final class ScreenshotPixelLoupe: NSView {
     background.stroke()
     NSColor(white: 0.23, alpha: 1).setFill()
     grid.fill()
+    let patchFrame = NSRect(
+      x: grid.minX + patchCrop.minX * cell, y: grid.minY + patchCrop.minY * cell,
+      width: patchCrop.width * cell, height: patchCrop.height * cell
+    )
     patch?.draw(in: patchFrame, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
                 hints: [.interpolation: NSImageInterpolation.none])
 
@@ -796,16 +934,41 @@ final class ScreenshotPixelLoupe: NSView {
     NSBezierPath.stroke(center.insetBy(dx: -0.5, dy: -0.5))
 
     if let color {
-      drawLabel(color.hex, at: 41, size: 13, color: .white)
-      drawLabel(color.rgb, at: 25, size: 12, color: .white)
-      drawLabel(copied ?? "C → HEX   ·   ⇧C → RGB", at: 8, size: 11, color: NSColor(white: 0.82, alpha: 1))
+      drawLabel(color.string(in: format), at: 41, font: Self.valueFont, color: .white)
+      drawFormats(at: 24)
+      drawLabel(copied ?? hint, at: 6, font: Self.detailFont, color: NSColor(white: 0.82, alpha: 1))
     }
   }
 
-  private func drawLabel(_ text: String, at y: CGFloat, size: CGFloat, color: NSColor) {
-    let label = NSAttributedString(string: text, attributes: [
-      .font: NSFont.monospacedSystemFont(ofSize: size, weight: .medium), .foregroundColor: color
-    ])
+  private static func width(of text: String, font: NSFont) -> CGFloat {
+    NSAttributedString(string: text, attributes: [.font: font]).size().width
+  }
+
+  private static var formatsWidth: CGFloat {
+    ColorFormat.allCases.reduce(0) { $0 + width(of: $1.title, font: detailFont) + 2 * pillPadding }
+      + CGFloat(ColorFormat.allCases.count - 1) * pillGap
+  }
+
+  private func drawFormats(at y: CGFloat) {
+    var x = round((bounds.width - Self.formatsWidth) / 2)
+    for candidate in ColorFormat.allCases {
+      let selected = candidate == format
+      let label = NSAttributedString(string: candidate.title, attributes: [
+        .font: Self.detailFont,
+        .foregroundColor: selected ? NSColor.white : NSColor(white: 0.62, alpha: 1)
+      ])
+      let pill = NSRect(x: x, y: y, width: label.size().width + 2 * Self.pillPadding, height: label.size().height + 2)
+      if selected {
+        (isPicking ? NSColor.controlAccentColor : NSColor.white.withAlphaComponent(0.2)).setFill()
+        NSBezierPath(roundedRect: pill, xRadius: 4, yRadius: 4).fill()
+      }
+      label.draw(at: NSPoint(x: pill.minX + Self.pillPadding, y: pill.minY + 1))
+      x = pill.maxX + Self.pillGap
+    }
+  }
+
+  private func drawLabel(_ text: String, at y: CGFloat, font: NSFont, color: NSColor) {
+    let label = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: color])
     label.draw(at: NSPoint(x: round((bounds.width - label.size().width) / 2), y: y))
   }
 }

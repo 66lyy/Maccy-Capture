@@ -1,4 +1,5 @@
 import AppKit
+import Defaults
 import Testing
 @testable import Maccy
 
@@ -819,27 +820,103 @@ struct ScreenshotSelectionTests {
     ])
   }
 
-  @Test("C and Shift-C copy the hovered color as text but Command-C remains a capture shortcut",
+  @Test("Tapping C copies the remembered format, Shift-C copies RGB, and Command-C remains a capture shortcut",
         arguments: [false, true])
   func copyLoupeColor(rgb: Bool) throws {
+    let saved = Defaults[.screenshotColorFormat]
+    defer { Defaults[.screenshotColorFormat] = saved }
+    Defaults[.screenshotColorFormat] = "hex"
+    let view = try colorPickerView()
+    defer { view.finishInteraction() }
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    #expect(try !view.handleColorShortcut(colorKey(.keyDown, "c", 8, .command), to: pasteboard))
+    #expect(try view.handleColorShortcut(colorKey(.keyDown, "c", 8, rgb ? .shift : []), to: pasteboard))
+    #expect(view.isPickingColor)
+    #expect(pasteboard.string(forType: .string) == nil)
+    #expect(try view.handleColorShortcut(colorKey(.keyUp, "c", 8, rgb ? .shift : []), to: pasteboard))
+    #expect(pasteboard.string(forType: .string) == (rgb ? "rgb(4, 160, 255)" : "#04A0FF"))
+    #expect(!view.isPickingColor)
+    #expect(Defaults[.screenshotColorFormat] == "hex")
+  }
+
+  @Test("Holding C cycles formats with Space, Tab, Shift-Tab and digits, and releasing C copies the shown one")
+  func cycleLoupeColorFormat() throws {
+    let saved = Defaults[.screenshotColorFormat]
+    defer { Defaults[.screenshotColorFormat] = saved }
+    Defaults[.screenshotColorFormat] = "hex"
+    let view = try colorPickerView()
+    defer { view.finishInteraction() }
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    view.keyDown(with: try colorKey(.keyDown, "c", 8))
+    view.keyDown(with: try colorKey(.keyDown, "c", 8, repeating: true))
+    view.keyDown(with: try colorKey(.keyDown, " ", 49))
+    view.keyDown(with: try colorKey(.keyDown, "c", 8, repeating: true))
+    view.keyDown(with: try colorKey(.keyDown, "\t", 48))
+    view.keyDown(with: try colorKey(.keyDown, "\t", 48))
+    view.keyDown(with: try colorKey(.keyDown, "\t", 48, .shift))
+    view.keyDown(with: try colorKey(.keyDown, "\r", 36))
+    #expect(view.isPickingColor)
+    #expect(view.selectedRect == nil)
+    #expect(try !view.handleColorShortcut(colorKey(.keyUp, " ", 49), to: pasteboard))
+    #expect(try view.handleColorShortcut(colorKey(.keyUp, "c", 8), to: pasteboard))
+    #expect(pasteboard.string(forType: .string) == "hsl(203, 100%, 51%)")
+    #expect(Defaults[.screenshotColorFormat] == "hsl")
+
+    let next = try colorPickerView()
+    defer { next.finishInteraction() }
+    #expect(try next.handleColorShortcut(colorKey(.keyDown, "c", 8), to: pasteboard))
+    #expect(try next.handleColorShortcut(colorKey(.keyDown, "4", 21), to: pasteboard))
+    #expect(try next.handleColorShortcut(colorKey(.keyUp, "c", 8), to: pasteboard))
+    #expect(pasteboard.string(forType: .string) == "Color(red: 0.016, green: 0.627, blue: 1.000)")
+    #expect(Defaults[.screenshotColorFormat] == "swiftUI")
+  }
+
+  @Test("Space wraps from the last format to the first and Shift-Tab wraps back")
+  func colorFormatWraps() throws {
+    #expect(try ScreenshotSelectionView.colorFormat(after: .nsColor, for: colorKey(.keyDown, " ", 49)) == .hex)
+    #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "\t", 48, .shift)) == .nsColor)
+    #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "5", 23)) == .nsColor)
+    #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "6", 22)) == nil)
+    #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "\t", 48, .option)) == nil)
+  }
+
+  @Test("Each color format produces text that pastes into CSS or Swift")
+  func colorFormats() {
+    let color = ScreenshotPixelLoupe.Color(red: 4, green: 160, blue: 255)
+    #expect(color.string(in: .hex) == "#04A0FF")
+    #expect(color.string(in: .rgb) == "rgb(4, 160, 255)")
+    #expect(color.string(in: .hsl) == "hsl(203, 100%, 51%)")
+    #expect(color.string(in: .swiftUI) == "Color(red: 0.016, green: 0.627, blue: 1.000)")
+    #expect(color.string(in: .nsColor) == "NSColor(srgbRed: 0.016, green: 0.627, blue: 1.000, alpha: 1)")
+    #expect(ScreenshotPixelLoupe.Color(red: 0, green: 0, blue: 0).hsl == "hsl(0, 0%, 0%)")
+    #expect(ScreenshotPixelLoupe.Color(red: 255, green: 255, blue: 255).hsl == "hsl(0, 0%, 100%)")
+    #expect(ScreenshotPixelLoupe.Color(red: 128, green: 128, blue: 128).hsl == "hsl(0, 0%, 50%)")
+    #expect(ScreenshotPixelLoupe.Color(red: 255, green: 0, blue: 128).hsl == "hsl(330, 100%, 50%)")
+    #expect(ScreenshotPixelLoupe.Color(red: 255, green: 0, blue: 1).hsl == "hsl(0, 100%, 50%)")
+    #expect(ScreenshotPixelLoupe.Color(red: 0, green: 255, blue: 0).hsl == "hsl(120, 100%, 50%)")
+    #expect(ScreenshotPixelLoupe.Color(red: 10, green: 20, blue: 30).hsl == "hsl(210, 50%, 8%)")
+  }
+
+  private func colorPickerView() throws -> ScreenshotSelectionView {
     let view = ScreenshotSelectionView(
       frame: NSRect(x: 0, y: 0, width: 100, height: 100), scale: 1, pinImmediately: false
     )
-    defer { view.finishInteraction() }
     view.setFrozenImage(try colorPickerImage())
     view.moveHover(to: NSPoint(x: 75, y: 75))
-    let pasteboard = NSPasteboard.withUniqueName()
-    defer { pasteboard.releaseGlobally() }
-    func event(_ modifiers: NSEvent.ModifierFlags) throws -> NSEvent {
-      try #require(NSEvent.keyEvent(
-        with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
-        windowNumber: 0, context: nil, characters: "c", charactersIgnoringModifiers: "c",
-        isARepeat: false, keyCode: 8
-      ))
-    }
-    #expect(try !view.handleColorShortcut(event(.command), to: pasteboard))
-    #expect(try view.handleColorShortcut(event(rgb ? .shift : []), to: pasteboard))
-    #expect(pasteboard.string(forType: .string) == (rgb ? "rgb(4, 160, 255)" : "#04A0FF"))
+    return view
+  }
+
+  private func colorKey(
+    _ type: NSEvent.EventType, _ key: String, _ code: UInt16,
+    _ modifiers: NSEvent.ModifierFlags = [], repeating: Bool = false
+  ) throws -> NSEvent {
+    try #require(NSEvent.keyEvent(
+      with: type, location: .zero, modifierFlags: modifiers, timestamp: 0,
+      windowNumber: 0, context: nil, characters: key, charactersIgnoringModifiers: key,
+      isARepeat: repeating, keyCode: code
+    ))
   }
 
   private func colorPickerImage() throws -> CGImage {

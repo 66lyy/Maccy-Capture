@@ -240,6 +240,20 @@ struct AppLanguageTests {
     }
   }
 
+  @Test("The color format hint is translated in every shipped localization")
+  func colorFormatHintTranslated() throws {
+    let english = "Hold C · Space to switch"
+    let localizations = Bundle.main.localizations.filter { $0 != "en" && $0 != "Base" }
+    #expect(localizations.count >= 30)
+    for localization in localizations {
+      guard let path = Bundle.main.path(forResource: localization, ofType: "lproj"),
+            let bundle = Bundle(path: path),
+            bundle.path(forResource: "GeneralSettings", ofType: "strings") != nil else { continue }
+      let value = bundle.localizedString(forKey: "ScreenshotColorFormatHint", value: nil, table: "GeneralSettings")
+      #expect(value != english && value != "ScreenshotColorFormatHint", "\(localization) is untranslated")
+    }
+  }
+
   private func withPreferences(_ body: (UserDefaults, String) -> Void) throws {
     let domain = "local.maccy.language.fixture.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: domain))

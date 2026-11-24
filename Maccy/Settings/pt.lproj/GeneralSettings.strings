@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Remover a sombra da janela";
 "ScreenshotWindowBackdrop" = "Adicionar um fundo à janela";
 "ScreenshotWindowCascadeHint" = "Clique com ⇧ para adicionar ou remover janelas";
+"ScreenshotColorFormatHint" = "Manter C · Espaço para alternar";

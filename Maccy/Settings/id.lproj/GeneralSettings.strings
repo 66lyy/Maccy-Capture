@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Hapus bayangan jendela";
 "ScreenshotWindowBackdrop" = "Tambahkan latar belakang jendela";
 "ScreenshotWindowCascadeHint" = "Klik sambil menahan ⇧ untuk menambah atau menghapus jendela";
+"ScreenshotColorFormatHint" = "Tahan C · Spasi untuk ganti";

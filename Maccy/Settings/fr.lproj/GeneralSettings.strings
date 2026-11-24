@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Supprimer l’ombre de la fenêtre";
 "ScreenshotWindowBackdrop" = "Ajouter un fond à la fenêtre";
 "ScreenshotWindowCascadeHint" = "Cliquez avec ⇧ pour ajouter ou retirer des fenêtres";
+"ScreenshotColorFormatHint" = "Maintenir C · Espace pour changer";

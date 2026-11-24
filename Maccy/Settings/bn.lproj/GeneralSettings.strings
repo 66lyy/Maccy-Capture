@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "উইন্ডোর ছায়া সরান";
 "ScreenshotWindowBackdrop" = "উইন্ডোর পটভূমি যোগ করুন";
 "ScreenshotWindowCascadeHint" = "উইন্ডো যোগ বা বাদ দিতে ⇧ চেপে ক্লিক করুন";
+"ScreenshotColorFormatHint" = "C চেপে ধরুন · স্পেসে বদলান";

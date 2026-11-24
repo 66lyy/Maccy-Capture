@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "إزالة ظل النافذة";
 "ScreenshotWindowBackdrop" = "إضافة خلفية للنافذة";
 "ScreenshotWindowCascadeHint" = "⇧ مع النقر لإضافة نوافذ أو إزالتها";
+"ScreenshotColorFormatHint" = "اضغط مطولًا على C · المسافة للتبديل";

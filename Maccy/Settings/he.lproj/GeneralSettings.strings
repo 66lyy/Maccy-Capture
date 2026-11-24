@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "הסרת צל החלון";
 "ScreenshotWindowBackdrop" = "הוספת רקע לחלון";
 "ScreenshotWindowCascadeHint" = "לחיצה עם ⇧ מוסיפה או מסירה חלונות";
+"ScreenshotColorFormatHint" = "החזיקו C · רווח להחלפה";

@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Ta bort fönsterskugga";
 "ScreenshotWindowBackdrop" = "Lägg till fönsterbakgrund";
 "ScreenshotWindowCascadeHint" = "Klicka med ⇧ för att lägga till eller ta bort fönster";
+"ScreenshotColorFormatHint" = "Håll C · Mellanslag byter";

@@ -23,3 +23,4 @@
 "ScreenshotRemoveWindowShadow" = "Poista ikkunan varjo";
 "ScreenshotWindowBackdrop" = "Lisää ikkunalle tausta";
 "ScreenshotWindowCascadeHint" = "Lisää tai poista ikkunoita ⇧-klikkauksella";
+"ScreenshotColorFormatHint" = "Pidä C pohjassa · Välilyönti vaihtaa";

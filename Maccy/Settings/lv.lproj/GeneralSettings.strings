@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Noņemt loga ēnu";
 "ScreenshotWindowBackdrop" = "Pievienot logam fonu";
 "ScreenshotWindowCascadeHint" = "Klikšķiniet, turot ⇧, lai pievienotu vai noņemtu logus";
+"ScreenshotColorFormatHint" = "Turiet C · Atstarpe pārslēdz";

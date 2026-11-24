@@ -130,3 +130,4 @@
 "ScreenshotRemoveWindowShadow" = "移除視窗陰影";
 "ScreenshotWindowBackdrop" = "加入視窗美化背景";
 "ScreenshotWindowCascadeHint" = "按住 ⇧ 點一下以加入或移除視窗";
+"ScreenshotColorFormatHint" = "按住 C · 空白鍵切換格式";

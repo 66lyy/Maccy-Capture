@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "ลบเงาหน้าต่าง";
 "ScreenshotWindowBackdrop" = "เพิ่มพื้นหลังให้หน้าต่าง";
 "ScreenshotWindowCascadeHint" = "กด ⇧ ค้างไว้แล้วคลิกเพื่อเพิ่มหรือนำหน้าต่างออก";
+"ScreenshotColorFormatHint" = "กด C ค้างไว้ · Space เพื่อสลับ";

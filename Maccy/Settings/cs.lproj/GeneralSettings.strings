@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Odstranit stín okna";
 "ScreenshotWindowBackdrop" = "Přidat pozadí okna";
 "ScreenshotWindowCascadeHint" = "Kliknutím s ⇧ přidáte nebo odeberete okna";
+"ScreenshotColorFormatHint" = "Držte C · Mezerník přepíná";

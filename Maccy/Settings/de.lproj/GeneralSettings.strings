@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Fensterschatten entfernen";
 "ScreenshotWindowBackdrop" = "Fensterhintergrund hinzufügen";
 "ScreenshotWindowCascadeHint" = "⇧-Klick: Fenster hinzufügen oder entfernen";
+"ScreenshotColorFormatHint" = "C halten · Leertaste wechselt";

@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "윈도우 그림자 제거";
 "ScreenshotWindowBackdrop" = "윈도우 배경 추가";
 "ScreenshotWindowCascadeHint" = "⇧를 누른 채 클릭하여 윈도우 추가 또는 제거";
+"ScreenshotColorFormatHint" = "C 누른 채 · Space로 전환";

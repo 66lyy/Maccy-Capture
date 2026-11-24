@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Fjern vindusskygge";
 "ScreenshotWindowBackdrop" = "Legg til bakgrunn for vinduet";
 "ScreenshotWindowCascadeHint" = "Klikk med ⇧ for å legge til eller fjerne vinduer";
+"ScreenshotColorFormatHint" = "Hold C · Mellomrom bytter";

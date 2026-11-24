@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Ablakárnyék eltávolítása";
 "ScreenshotWindowBackdrop" = "Ablakháttér hozzáadása";
 "ScreenshotWindowCascadeHint" = "Ablakok hozzáadása vagy eltávolítása ⇧-kattintással";
+"ScreenshotColorFormatHint" = "Tartsa lenyomva a C-t · Szóköz vált";

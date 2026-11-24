@@ -44,3 +44,4 @@
 "ScreenshotRemoveWindowShadow" = "Usuń cień okna";
 "ScreenshotWindowBackdrop" = "Dodaj tło okna";
 "ScreenshotWindowCascadeHint" = "Kliknij z ⇧, aby dodać lub usunąć okna";
+"ScreenshotColorFormatHint" = "Przytrzymaj C · Spacja zmienia";
