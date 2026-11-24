@@ -73,6 +73,7 @@ class Footer: ItemsContainer {
         title: "check_for_updates",
         help: "check_for_updates_tooltip"
       ) {
+        AppState.shared.popup.close()
         SoftwareUpdater.shared.checkForUpdates()
       },
       FooterItem(

@@ -25,5 +25,5 @@
 "history_item_image_accessibility_label_no_app" = "Imagine, %d×%d";
 "history_item_image_accessibility_generic" = "Imagine";
 "toolbar_remove_paste_stack_action" = "Oprește stiva de lipire";
-"check_for_updates" = "Caută actualizări…";
+"check_for_updates" = "Caută actualizări";
 "check_for_updates_tooltip" = "Verifică dacă există o versiune nouă a aplicației.";

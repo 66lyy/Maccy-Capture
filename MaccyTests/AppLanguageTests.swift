@@ -291,12 +291,14 @@ struct AppLanguageTests {
       let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
       let bundle = try #require(Bundle(path: path))
       for (key, english) in [
-        ("check_for_updates", "Check for Updates…"),
+        ("check_for_updates", "Check for Updates"),
         ("check_for_updates_tooltip", "Check for a new version of the application.")
       ] {
         let value = bundle.localizedString(forKey: key, value: nil, table: nil)
         #expect(!value.isEmpty && value != english && value != key, "\(localization): \(key) is untranslated")
       }
+      let title = bundle.localizedString(forKey: "check_for_updates", value: nil, table: nil)
+      #expect(!title.hasSuffix("…"), "\(localization): \(title)")
     }
   }
 

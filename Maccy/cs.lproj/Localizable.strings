@@ -25,5 +25,5 @@
 "history_item_image_accessibility_label_no_app" = "Obrázek, %d×%d";
 "history_item_image_accessibility_generic" = "Obrázek";
 "toolbar_remove_paste_stack_action" = "Zastavit zásobník vložení";
-"check_for_updates" = "Zkontrolovat aktualizace…";
+"check_for_updates" = "Zkontrolovat aktualizace";
 "check_for_updates_tooltip" = "Zkontrolovat, zda je k dispozici nová verze aplikace.";

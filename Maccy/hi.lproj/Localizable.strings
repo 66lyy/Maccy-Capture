@@ -26,5 +26,5 @@
 "history_item_image_accessibility_label_no_app" = "छवि, %d×%d";
 "history_item_image_accessibility_generic" = "छवि";
 "toolbar_remove_paste_stack_action" = "पेस्ट स्टैक रोकें";
-"check_for_updates" = "अपडेट जाँचें…";
+"check_for_updates" = "अपडेट जाँचें";
 "check_for_updates_tooltip" = "जाँचें कि एप्लिकेशन का नया संस्करण उपलब्ध है या नहीं।";

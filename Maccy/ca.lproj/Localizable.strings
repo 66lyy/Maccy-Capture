@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Imatge, %d×%d";
 "history_item_image_accessibility_generic" = "Imatge";
 "toolbar_remove_paste_stack_action" = "Atura la pila d'enganxat";
-"check_for_updates" = "Cerca actualitzacions…";
+"check_for_updates" = "Cerca actualitzacions";
 "check_for_updates_tooltip" = "Comprova si hi ha una versió nova de l'aplicació.";

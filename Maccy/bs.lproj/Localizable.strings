@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Slika, %d×%d";
 "history_item_image_accessibility_generic" = "Slika";
 "toolbar_remove_paste_stack_action" = "Zaustavi stog za lijepljenje";
-"check_for_updates" = "Provjeri ažuriranja…";
+"check_for_updates" = "Provjeri ažuriranja";
 "check_for_updates_tooltip" = "Provjeri postoji li nova verzija aplikacije.";

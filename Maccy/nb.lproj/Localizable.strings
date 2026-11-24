@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Bilde, %d×%d";
 "history_item_image_accessibility_generic" = "Bilde";
 "toolbar_remove_paste_stack_action" = "Stopp innlimingsstabelen";
-"check_for_updates" = "Se etter oppdateringer…";
+"check_for_updates" = "Se etter oppdateringer";
 "check_for_updates_tooltip" = "Se etter en ny versjon av programmet.";

@@ -23,5 +23,5 @@
 "history_item_image_accessibility_label_no_app" = "صورة، %d×%d";
 "history_item_image_accessibility_generic" = "صورة";
 "toolbar_remove_paste_stack_action" = "إيقاف مكدس اللصق";
-"check_for_updates" = "التحقق من وجود تحديثات…";
+"check_for_updates" = "التحقق من وجود تحديثات";
 "check_for_updates_tooltip" = "تحقق من وجود إصدار جديد من التطبيق.";

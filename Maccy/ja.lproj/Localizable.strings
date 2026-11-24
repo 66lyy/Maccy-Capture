@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "画像、%d×%d";
 "history_item_image_accessibility_generic" = "画像";
 "toolbar_remove_paste_stack_action" = "ペーストスタックを停止";
-"check_for_updates" = "アップデートを確認…";
+"check_for_updates" = "アップデートを確認";
 "check_for_updates_tooltip" = "アプリケーションの新しいバージョンがあるか確認します。";

@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Изображение, %d×%d";
 "history_item_image_accessibility_generic" = "Изображение";
 "toolbar_remove_paste_stack_action" = "Остановить стек вставки";
-"check_for_updates" = "Проверить обновления…";
+"check_for_updates" = "Проверить обновления";
 "check_for_updates_tooltip" = "Проверить, есть ли новая версия приложения.";

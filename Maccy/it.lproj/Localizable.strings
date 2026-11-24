@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Immagine, %d×%d";
 "history_item_image_accessibility_generic" = "Immagine";
 "toolbar_remove_paste_stack_action" = "Arresta la pila di incollaggio";
-"check_for_updates" = "Controlla aggiornamenti…";
+"check_for_updates" = "Controlla aggiornamenti";
 "check_for_updates_tooltip" = "Controlla se è disponibile una nuova versione dell'applicazione.";

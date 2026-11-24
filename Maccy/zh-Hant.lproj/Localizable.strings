@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "影像，%d×%d";
 "history_item_image_accessibility_generic" = "影像";
 "toolbar_remove_paste_stack_action" = "停止貼上堆疊";
-"check_for_updates" = "檢查更新…";
+"check_for_updates" = "檢查更新";
 "check_for_updates_tooltip" = "檢查應用程式是否有新版本。";

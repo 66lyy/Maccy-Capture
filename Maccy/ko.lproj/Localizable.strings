@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "이미지, %d×%d";
 "history_item_image_accessibility_generic" = "이미지";
 "toolbar_remove_paste_stack_action" = "붙여넣기 스택 중지";
-"check_for_updates" = "업데이트 확인…";
+"check_for_updates" = "업데이트 확인";
 "check_for_updates_tooltip" = "어플리케이션의 새 버전이 있는지 확인합니다.";

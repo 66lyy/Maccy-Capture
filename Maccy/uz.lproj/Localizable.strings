@@ -30,5 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Rasm, %d×%d";
 "history_item_image_accessibility_generic" = "Rasm";
 "toolbar_remove_paste_stack_action" = "Joylashtirish to‘plamini to‘xtatish";
-"check_for_updates" = "Yangilanishlarni tekshirish…";
+"check_for_updates" = "Yangilanishlarni tekshirish";
 "check_for_updates_tooltip" = "Ilovaning yangi versiyasi bor-yo'qligini tekshirish.";
