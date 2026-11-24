@@ -108,12 +108,12 @@ bash script/setup_local_signing.sh
 ## GitHub Actions 自动打包
 
 工作流位于 `.github/workflows/build-capture.yml`，在推送到 `master` / `main`、
-推送 `capture-v*` 标签、提交 Pull Request 或手动触发时运行。构建任务只有读取源码的权限，
+提交 Pull Request 或手动触发时运行。构建任务只有读取源码的权限，
 主分支成功构建后，由独立的发布任务创建 `maccy-capture-v主版本.次版本.补丁版本-build构建号` 测试版 Release，并附上更新内容。
 只有发布任务具有写入仓库内容的权限；Pull Request 不发布，仓库可保持私有。
 分支推送与 Pull Request 仅涉及 Markdown、`docs/`、`LICENSE`、Issue/PR 模板、
 `.gitignore` 或 `.gitattributes` 时不触发构建；混合代码改动仍会构建。
-版本标签与手动触发不受此文档过滤影响。
+稳定版标签推送与手动触发不受此文档过滤影响。
 
 流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的六组回归测试，
 只使用生成图片和模拟输入，不读取开发者机器上的桌面、剪贴板、历史或钥匙串。
@@ -141,12 +141,13 @@ ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 主分支每次成功构建后都会在 Releases 中发布独立测试版，
 附带 ZIP、DMG、`SHA256SUMS.txt`、`BUILD-INFO.txt` 及更新元数据；
 新包、支持文件及 `capture-appcast.xml` 上传完成前，Release 保持草稿状态。
-发布稳定版时，从已验证的默认分支构建提取原样签名的 ZIP 和 DMG，按源码提交创建
-`maccy-capture-v主版本.次版本.补丁版本` 标签的独立 Release 草稿，上传安装包、构建信息及更新元数据。
-用 `script/generate_update_feed.py appcast` 和**稳定版自身的 ZIP 附件 ID**生成更新源，
-上传更新源及校验文件后，发布为 Latest（非预发布）。默认分支构建不会覆盖它。
+发布稳定版时，先提交对应的应用版本与 `docs/releases/版本号.md`，等默认分支的推送构建成功后，
+在同一个提交上推送 `maccy-capture-v主版本.次版本.补丁版本` 标签。
+**Publish stable release** 会验证该提交并复用已签名的 ZIP 和 DMG，不会重新打包。
+工作流使用**稳定版自身的 ZIP 附件 ID**生成更新源，上传校验文件后发布为 Latest（非预发布），
+也可以在默认分支手动触发。
 仓库首页的 Actions → Build Maccy Capture 可查看运行和下载，Run workflow 可手动构建；
-在默认分支上手动构建也会更新测试版 Release，其他分支、版本标签及 Pull Request 只提供 Artifacts。
+在默认分支上手动构建也会更新测试版 Release，其他分支及 Pull Request 只提供 Artifacts。
 GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度与计费以该账号设置为准。
 
 默认分支的发布包复用已配置的 CI 专用自签名证书，指定要求校验包标识与证书指纹。

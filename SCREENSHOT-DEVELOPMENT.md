@@ -175,17 +175,17 @@ instead of running two versions together.
 ## GitHub Actions Packaging
 
 The workflow is `.github/workflows/build-capture.yml`.
-It runs on pushes to `master` / `main`, `capture-v*` tags, pull requests, and manual dispatch.
+It runs on pushes to `master` / `main`, pull requests, and manual dispatch.
 The build job has read-only source permissions.
 After a successful default-branch build, a separate publishing job creates a
 `maccy-capture-vMAJOR.MINOR.PATCH-buildBUILD` prerelease with its changes.
-Only that publishing job can write repository contents.
+Build jobs cannot write repository contents.
 Pull requests never publish. In-app updates require the release to be publicly accessible.
 
 Branch pushes and pull requests that change only Markdown, `docs/`, `LICENSE`,
 issue or pull request templates, `.gitignore`, or `.gitattributes` do not trigger builds.
 Changes that also affect code still trigger a build.
-Version tags and manual dispatch are not subject to this documentation filter.
+Stable tag pushes and manual dispatch are not subject to this documentation filter.
 
 The pipeline uses Xcode 26.6 on GitHub's hosted `macos-26` runner.
 It first runs the six regression suites listed below using generated images and simulated input,
@@ -222,16 +222,17 @@ Successful artifacts are retained for 14 days and failure diagnostics for 7 days
 Successful default-branch builds each publish a separate test build in Releases
 with the ZIP, DMG, `SHA256SUMS.txt`, and `BUILD-INFO.txt`.
 The release stays a draft until the signed ZIP, supporting files, and `capture-appcast.xml` upload.
-Promote a verified default-branch build to stable by creating a separate draft Release with a
-`maccy-capture-vMAJOR.MINOR.PATCH` tag at its source commit. Upload the unchanged signed ZIP and DMG
-with their build information and update metadata. Use `script/generate_update_feed.py appcast`
-with the **stable Release's ZIP asset ID**, not the preview asset ID, and upload the new appcast and
-checksums before publishing as Latest (not a prerelease). Default-branch builds never replace that release.
+To publish a stable release, commit the matching app version and `docs/releases/VERSION.md`,
+wait for a successful default-branch push build, then push `maccy-capture-vMAJOR.MINOR.PATCH`
+at that commit. **Publish stable release** verifies the commit and reuses its signed ZIP and DMG
+without rebuilding. It generates the appcast using the **stable Release's ZIP asset ID**,
+uploads the checksums, then publishes as Latest (not a prerelease).
+The workflow can also be dispatched manually from the default branch.
 
 Open Actions → Build Maccy Capture in this repository to view runs and download artifacts;
 select Run workflow to build manually.
 Manual builds on the default branch also update the test release;
-other branches, version tags, and pull requests provide artifacts only.
+other branches and pull requests provide artifacts only.
 Private-repository macOS builds may count against GitHub Actions usage;
 consult your account's current limits and billing settings.
 

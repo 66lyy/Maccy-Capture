@@ -89,6 +89,71 @@ class UpdateFeedTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.metadata()
 
+    def test_stable_tag_push_requires_a_successful_build_of_that_commit(self):
+        script = pathlib.Path(__file__).resolve().with_name("publish_stable.sh")
+        tag = "maccy-capture-v2.11.0"
+        command_log = self.root / "stable-commands.log"
+        mock_gh = self.root / "gh"
+        mock_gh.write_text(
+            "#!/bin/sh\n"
+            'printf "%s\\n" "$2" >> "$COMMAND_LOG"\n'
+            'case "$2" in\n'
+            '  */releases/tags/*) exit 1 ;;\n'
+            '  */commits/tags/*) [ "$TAG_EXISTS" = yes ] && printf "%s\\n" "$REVISION" ;;\n'
+            '  */compare/*) printf "%s\\n" "$COMPARE_STATUS" ;;\n'
+            '  */actions/workflows/*) exit 0 ;;\n'
+            "  *) exit 1 ;;\n"
+            "esac\n",
+            encoding="utf-8",
+        )
+        mock_gh.chmod(0o700)
+        environment = os.environ | {
+            "PATH": f"{self.root}{os.pathsep}{os.environ['PATH']}",
+            "COMMAND_LOG": str(command_log),
+            "REVISION": self.revision,
+            "TAG_EXISTS": "yes",
+            "COMPARE_STATUS": "ahead",
+            "GH_REPO": "fixture/capture",
+            "GITHUB_ACTIONS": "true",
+            "GITHUB_REF": f"refs/tags/{tag}",
+            "GITHUB_EVENT_NAME": "push",
+            "MACCY_DEFAULT_BRANCH": "master",
+            "MACCY_RELEASE_TAG": tag,
+        }
+
+        def run(**overrides):
+            command_log.write_text("", encoding="utf-8")
+            result = subprocess.run(
+                ["bash", str(script)], env=environment | overrides, capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 2, result.stderr)
+            return result.stderr, command_log.read_text().splitlines()
+
+        stderr, commands = run()
+        self.assertIn("No successful default-branch build", stderr)
+        self.assertEqual(commands, [
+            f"repos/fixture/capture/releases/tags/{tag}",
+            f"repos/fixture/capture/commits/tags/{tag}",
+            f"repos/fixture/capture/compare/{self.revision}...master",
+            "repos/fixture/capture/actions/workflows/build-capture.yml/"
+            f"runs?branch=master&event=push&status=success&head_sha={self.revision}&per_page=1",
+        ])
+        stderr, commands = run(TAG_EXISTS="no")
+        self.assertIn("Could not resolve the release tag", stderr)
+        self.assertEqual(commands[-1], f"repos/fixture/capture/commits/tags/{tag}")
+        stderr, commands = run(COMPARE_STATUS="diverged")
+        self.assertIn("is not on master", stderr)
+        self.assertEqual(commands[-1], f"repos/fixture/capture/compare/{self.revision}...master")
+        for invalid in [
+            {"GITHUB_REF": "refs/heads/master"},
+            {"GITHUB_REF": "refs/tags/maccy-capture-v2.11.1"},
+            {"MACCY_RELEASE_TAG": f"{tag}-build1120.1", "GITHUB_REF": f"refs/tags/{tag}-build1120.1"},
+            {"MACCY_RELEASE_TAG": "capture-v2.11.0", "GITHUB_REF": "refs/tags/capture-v2.11.0"},
+        ]:
+            with self.subTest(invalid=invalid):
+                _, commands = run(**invalid)
+                self.assertEqual(commands, [])
+
     def test_publishing_uploads_packages_before_activating_the_feed(self):
         repository_root = pathlib.Path(__file__).resolve().parent.parent
         distribution = self.root / "dist"

@@ -1,6 +1,8 @@
 name: Publish stable release
 
 on:
+  push:
+    tags: ["maccy-capture-v[0-9]+.[0-9]+.[0-9]+"]
   workflow_dispatch:
     inputs:
       tag:
@@ -17,7 +19,10 @@ concurrency:
 jobs:
   publish:
     name: Publish stable release from a verified master build
-    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: >-
+      (github.event_name == 'push' && !github.event.deleted) ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -27,6 +32,7 @@ jobs:
       - name: Check out publishing script and notes
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
 
       - name: Publish stable release
@@ -35,5 +41,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           MACCY_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          MACCY_RELEASE_TAG: ${{ inputs.tag }}
+          MACCY_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: bash script/publish_stable.sh
