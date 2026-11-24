@@ -96,6 +96,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   @ObservationIgnored private var indexedItems: [ObjectIdentifier: IndexedItem] = [:]
   @ObservationIgnored private var dirtyIndexedItems: Set<ObjectIdentifier> = []
   @ObservationIgnored private var loadGeneration = 0
+  @ObservationIgnored private var loadTask: Task<Void, Error>?
   private var unpinnedSortBy = Defaults[.sortBy]
 
 #if DEBUG
@@ -150,16 +151,46 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  func load(waitForTurn: @MainActor () async -> Void = { await Task.yield() }) async throws {
+  func load(waitForTurn: @escaping @MainActor () async -> Void = {}) async throws {
     try Task.checkCancellation()
     loadGeneration &+= 1
     let generation = loadGeneration
-    await waitForTurn()
+    loadTask?.cancel()
+    let task = Task {
+      try checkLoad(generation: generation)
+      await waitForTurn()
+      try checkLoad(generation: generation)
+    }
+    loadTask = task
+    defer {
+      if generation == loadGeneration {
+        loadTask = nil
+      }
+    }
+
+    do {
+      try await withTaskCancellationHandler {
+        try await task.value
+      } onCancel: {
+        task.cancel()
+      }
+      try runLoad(generation: generation)
+    } catch is CancellationError where generation != loadGeneration {
+      try Task.checkCancellation()
+    }
+  }
+
+  private func checkLoad(generation: Int) throws {
     try Task.checkCancellation()
-    guard generation == loadGeneration else { return }
+    guard generation == loadGeneration else { throw CancellationError() }
+  }
+
+  private func runLoad(generation: Int) throws {
+    try checkLoad(generation: generation)
 
     let descriptor = FetchDescriptor<HistoryItem>()
     let results = try Storage.shared.context.fetch(descriptor)
+    try checkLoad(generation: generation)
     let maxSize = Defaults[.size]
     var unpinnedCount = 0
     var exceedingItems: [HistoryItem] = []
@@ -170,13 +201,17 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       exceedingItems.append(item)
       return false
     }
-    try Task.checkCancellation()
+    try checkLoad(generation: generation)
+    let decorators = try retainedItems.map {
+      try Task.checkCancellation()
+      return HistoryItemDecorator($0)
+    }
+    try checkLoad(generation: generation)
     if !exceedingItems.isEmpty {
       exceedingItems.forEach { deleteFromStorage($0) }
       Storage.shared.context.processPendingChanges()
       saveHistoryChanges(after: "trimming history")
     }
-    let decorators = retainedItems.map { HistoryItemDecorator($0) }
     pinManager.load(from: decorators)
     allUnpinnedItems = decorators.filter(\.isUnpinned)
     unpinnedSortBy = Defaults[.sortBy]

@@ -144,10 +144,15 @@ extension SharedStateTests {
     @Test("An older history load cannot overwrite a newer load or trim storage")
     func supersededLoadLeavesLatestHistoryUntouched() async throws {
       history.add(historyItem("stored"))
+      let cancelled = OSAllocatedUnfairLock(initialState: false)
       let (waiting, continuation) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
       let older = Task { @MainActor in
         try await history.load {
-          await withCheckedContinuation { _ = continuation.yield($0) }
+          await withTaskCancellationHandler {
+            await withCheckedContinuation { _ = continuation.yield($0) }
+          } onCancel: {
+            cancelled.withLock { $0 = true }
+          }
         }
       }
       var iterator = waiting.makeAsyncIterator()
@@ -156,6 +161,7 @@ extension SharedStateTests {
       do {
         defer { resumeOlder.resume() }
         try await history.load()
+        #expect(cancelled.withLock { $0 })
         newestRow = try #require(history.firstUnpinnedItem)
         Defaults[.size] = 0
       }
@@ -163,6 +169,27 @@ extension SharedStateTests {
       try await older.value
 
       #expect(history.firstUnpinnedItem === newestRow)
+      try assertStorageCounts(items: 1, contents: 1)
+    }
+
+    @Test("Cancelling a waiting caller cancels its history load before it can trim storage")
+    func cancellationWhileWaitingLeavesHistoryUntouched() async throws {
+      let row = history.add(historyItem("stored"))
+      Defaults[.size] = 0
+      let (waiting, continuation) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
+      let load = Task { @MainActor in
+        try await history.load {
+          await withCheckedContinuation { _ = continuation.yield($0) }
+        }
+      }
+      var iterator = waiting.makeAsyncIterator()
+      let resumeLoad = try #require(await iterator.next())
+
+      load.cancel()
+      resumeLoad.resume()
+
+      await #expect(throws: CancellationError.self) { try await load.value }
+      #expect(history.firstUnpinnedItem === row)
       try assertStorageCounts(items: 1, contents: 1)
     }
 
