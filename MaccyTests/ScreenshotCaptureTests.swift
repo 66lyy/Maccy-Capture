@@ -1938,6 +1938,32 @@ struct ScreenshotCaptureTests {
     #expect(second.isVisible && second.frame == secondExpanded)
   }
 
+  @Test("A moved thumbnail stack stays in place when paging, adding or closing a pin")
+  func movedThumbnailStack() {
+    let first = pinnedZoomWindow()
+    let second = pinnedZoomWindow()
+    let third = pinnedZoomWindow()
+    let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let stack = PinnedScreenshotStack()
+    let original = first.frame
+    defer { second.close(); first.close() }
+
+    stack.add(first, alongside: [], visibleFrame: screen)
+    stack.add(second, alongside: [first], visibleFrame: screen)
+    second.setFrameOrigin(NSPoint(x: second.frame.minX - 80, y: second.frame.minY + 60))
+    let movedFrame = second.frame
+    #expect(movedFrame != PinnedScreenshotStack.thumbnailFrame(in: screen))
+    stack.step(by: -1, from: second)
+    #expect(stack.visiblePin === first && first.frame == movedFrame)
+
+    stack.add(third, alongside: [], visibleFrame: screen)
+    #expect(stack.visiblePin === third && third.frame == movedFrame)
+    third.close()
+    #expect(stack.visiblePin === second && second.frame == movedFrame)
+    second.restoreFromThumbnail()
+    #expect(first.isVisible && first.thumbnailStack == nil && first.frame == original)
+  }
+
   @Test("Click-through restores a pin and keeps it out of subsequent thumbnail stacks")
   func clickThroughRemovesThumbnail() {
     let first = pinnedZoomWindow()
@@ -2022,24 +2048,40 @@ struct ScreenshotCaptureTests {
     #expect(!first.isVisible && !second.isVisible && !third.isVisible)
   }
 
-  @Test("Double-click opens annotation on a pin without closing it")
-  func doubleClickEditsPin() throws {
+  @Test("Double-click closes only the current pin, while the context menu opens annotation", arguments: [false, true])
+  func doubleClickClosesPin(stacked: Bool) throws {
     let image = try #require(NSImage(data: generatedPNG()))
     let window = PinnedScreenshotWindow(
       image: image, visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600),
       anchor: NSPoint(x: 400, y: 300)
     )
-    defer { window.close() }
+    let other = stacked ? pinnedZoomWindow() : nil
+    let stack = PinnedScreenshotStack()
+    defer { window.close(); other?.close() }
+    if let other {
+      let screen = window.screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+      stack.add(other, alongside: [], visibleFrame: screen)
+      stack.add(window, alongside: [other], visibleFrame: screen)
+    } else {
+      window.present()
+    }
     let view = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
     let click = try #require(NSEvent.mouseEvent(
       with: .leftMouseDown, location: NSPoint(x: 4, y: 4), modifierFlags: [], timestamp: 0,
       windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 2, pressure: 1
     ))
-    var opened = false, closed = false
-    window.onAnnotate = { opened = $0 === image }
+    let annotate = #selector(PinnedScreenshotWindow.annotateImage)
+    let item = try #require(view.menu?.items.first { $0.action == annotate })
+    var annotatedImages: [NSImage] = []
+    var closed = false
+    window.onAnnotate = { annotatedImages.append($0) }
     window.onClose = { closed = true }
+    #expect(NSApp.sendAction(annotate, to: item.target, from: item))
+    #expect(annotatedImages.count == 1 && annotatedImages.first === image)
+    #expect(window.isVisible && !closed)
     view.mouseDown(with: click)
-    #expect(opened && !closed)
+    #expect(!window.isVisible && closed && annotatedImages.count == 1)
+    if let other { #expect(other.isVisible && other.thumbnailStack == nil) }
   }
 
   @Test("Pin drag stages a real PNG file at the source pixel size and cleans up on cancellation")

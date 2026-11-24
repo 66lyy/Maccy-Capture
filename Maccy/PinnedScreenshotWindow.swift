@@ -510,13 +510,15 @@ final class PinnedScreenshotStack {
     pin.thumbnailStack = nil
     pins.remove(at: index)
     let next = visiblePin === pin ? (pins.isEmpty ? nil : pins[min(index, pins.count - 1)]) : visiblePin
-    visiblePin = nil
     if pins.count == 1, let remaining = pins.first {
+      visiblePin = nil
       pins.removeAll()
       remaining.thumbnailStack = nil
       remaining.restoreExpandedPresentation()
     } else if let next {
       show(next)
+    } else {
+      visiblePin = nil
     }
   }
 
@@ -547,9 +549,11 @@ final class PinnedScreenshotStack {
 
   private func show(_ pin: PinnedScreenshotWindow) {
     guard let index = pins.firstIndex(where: { $0 === pin }) else { return }
+    var frame = Self.thumbnailFrame(in: visibleFrame)
+    if let visiblePin { frame.origin = visiblePin.frame.origin }
     for other in pins where other !== pin && other.isVisible { other.orderOut(nil) }
     visiblePin = pin
-    pin.showThumbnail(in: Self.thumbnailFrame(in: visibleFrame), page: index + 1, total: pins.count)
+    pin.showThumbnail(in: frame, page: index + 1, total: pins.count)
   }
 
   static func thumbnailFrame(in visibleFrame: NSRect) -> NSRect {
@@ -585,12 +589,12 @@ private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
     guard let window = window as? PinnedScreenshotWindow else { return }
     resetDrag()
     window.focusForInteraction()
-    if event.modifierFlags.contains(.command) {
-      if window.thumbnailStack == nil { window.performDrag(with: event) }
-    } else if event.clickCount == 2 {
-      window.annotateImage()
-    } else {
+    if event.modifierFlags.contains(.option) {
       dragStart = event.locationInWindow
+    } else if event.clickCount == 2 {
+      window.close()
+    } else {
+      window.performDrag(with: event)
     }
   }
 

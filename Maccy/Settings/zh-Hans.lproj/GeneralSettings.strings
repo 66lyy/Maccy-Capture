@@ -65,9 +65,9 @@
 "ScreenshotSelection" = "区域截图：";
 "PinScreenshot" = "截图并贴屏：";
 "PinClipboardImage" = "贴出剪贴板图片：";
-"ScreenshotHelp" = "按 Esc 取消截图。拖拽贴图可导出，按住 ⌘ 拖动可移动，双击可编辑。滚轮调节透明度，按住 Option 滚动或双指捏合可缩放，在缩略图栈上滚动可切换贴图。右键查看更多操作（含鼠标穿透）。请只运行一个版本的 Maccy，避免快捷键冲突。";
-"ScreenshotZoomHelp" = "拖拽可导出 PNG，按住 ⌘ 拖动可移动，双击可编辑。滚轮调节透明度，按住 Option 滚动或双指捏合可缩放。";
-"PinnedStackHelp" = "滚动可切换贴图，拖拽可导出 PNG，双击可编辑。";
+"ScreenshotHelp" = "按 Esc 取消截图。直接拖动可移动贴图，按住 Option 拖动可导出，双击可关闭。滚轮调节透明度，按住 Option 滚动或双指捏合可缩放，在缩略图栈上滚动可切换贴图。右键可标注、裁剪或开启鼠标穿透。请只运行一个版本的 Maccy，避免快捷键冲突。";
+"ScreenshotZoomHelp" = "直接拖动可移动贴图，按住 Option 拖动可导出 PNG，双击可关闭。右键可标注或裁剪。滚轮调节透明度，按住 Option 滚动或双指捏合可缩放。";
+"PinnedStackHelp" = "直接拖动可移动贴图栈，滚动可切换贴图。按住 Option 拖动可导出 PNG，双击可关闭当前贴图，右键可标注或裁剪。";
 "PinnedStackRestore" = "展开贴图";
 "AnnotationEdit" = "标注…";
 "AnnotationTitle" = "截图标注";

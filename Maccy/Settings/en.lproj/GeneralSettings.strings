@@ -70,9 +70,9 @@
 "ScreenshotSelection" = "Capture region:";
 "PinScreenshot" = "Capture and pin:";
 "PinClipboardImage" = "Pin clipboard image:";
-"ScreenshotHelp" = "Press Esc to cancel capture. Drag a pinned image to export it, Command-drag to move it, and double-click to edit it. Scroll to change opacity, Option-scroll or pinch to zoom, or scroll a thumbnail stack to browse its pins. Right-click for more actions, including click-through. Run only one copy of Maccy to avoid shortcut conflicts.";
-"ScreenshotZoomHelp" = "Drag to export a PNG. Command-drag to move; double-click to edit. Scroll to change opacity, Option-scroll or pinch to zoom.";
-"PinnedStackHelp" = "Scroll to browse pinned images. Drag to export a PNG; double-click to edit.";
+"ScreenshotHelp" = "Press Esc to cancel capture. Drag a pin to move it, Option-drag to export it, and double-click to close it. Scroll to change opacity, Option-scroll or pinch to zoom, or scroll a thumbnail stack to browse its pins. Right-click to annotate, crop, or enable click-through. Run only one copy of Maccy to avoid shortcut conflicts.";
+"ScreenshotZoomHelp" = "Drag to move, Option-drag to export a PNG, double-click to close. Right-click to annotate or crop. Scroll to change opacity, Option-scroll or pinch to zoom.";
+"PinnedStackHelp" = "Drag to move the stack, scroll to browse pins. Option-drag to export a PNG, double-click to close the current pin. Right-click to annotate or crop.";
 "PinnedStackRestore" = "Restore Pinned Image";
 "AnnotationEdit" = "Annotate…";
 "AnnotationTitle" = "Annotate Screenshot";

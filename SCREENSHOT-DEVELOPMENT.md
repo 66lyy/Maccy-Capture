@@ -109,7 +109,7 @@ Images and recognized text are not sent to network services.
 
 ## Pinned Images and Zoom
 
-Command-drag moves a full-size pin. Scroll to adjust opacity, or hold Option while scrolling
+Drag to move a full-size pin. Scroll to adjust opacity, or hold Option while scrolling
 to zoom. Two-finger trackpad pinch also zooms. Momentum scrolling is ignored.
 Only the image under the pointer receives these events; no global event monitor or extra permission is used.
 
@@ -119,15 +119,17 @@ Its maximum size is limited by both five times the original logical image size
 and the current display's visible area.
 Zoom changes only the display size; it does not resample the source image or rewrite the clipboard.
 Multiple pins on the same display automatically form one thumbnail stack at the bottom-right.
+Drag the card to move it; paging and adding pins keep it in its new position.
 Scroll over the card (or use arrow keys when focused) to browse currently pinned images.
 Click the expand button to keep that pin separate until it closes, even when more pins are added.
 A lone remaining pin restores its previous size. Click-through pins stay outside the stack.
 Turn off **Automatically stack pinned screenshots** in General settings to restore existing stacks
 and leave new pins at full size. Turning it back on resumes stacking the next time you pin.
 
-Drag a pin or thumbnail onto an app that accepts files to attach a full-resolution PNG without
-changing the clipboard. Double-click to open the editor; use Crop to drag out the area to keep,
-then Apply to update the pin. Esc in Crop mode resets the crop.
+Option-drag a pin or thumbnail onto an app that accepts files to attach a full-resolution PNG without
+changing the clipboard. Double-click to close the current pin. To edit, right-click and choose
+Annotate…; use Crop to drag out the area to keep, then Apply to update the pin.
+Esc in Crop mode resets the crop.
 Right-click Copy, the close button, and Esc / ⌘W to close or ⌘C to copy still work on a focused pin.
 The initial pinned size also fits within the current display's visible area.
 
@@ -374,7 +376,7 @@ All annotation entry points use a borderless in-place overlay, not a separate ed
   The original remains in memory without first entering the clipboard or history.
 - Click the pencil button in the 2-second preview after copying. The inline overlay opens and the preview closes
   immediately; its original automatic timeout is not extended.
-- Double-click a pinned image, choose Annotate… from its context menu, or press ⌘E while it has keyboard focus.
+- Choose Annotate… from a pinned image's context menu or press ⌘E while it has keyboard focus.
   Edit over that image's current screen rectangle and apply changes back to the same pin.
   Only one annotation session is allowed at a time; repeated capture shortcuts bring it forward.
 
