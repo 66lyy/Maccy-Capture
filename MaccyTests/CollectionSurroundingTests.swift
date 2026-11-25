@@ -3,6 +3,15 @@ import Testing
 
 @MainActor
 struct CollectionSurroundingTests {
+  @Test("Shortcut positions are one-based and reject integer extremes")
+  func shortcutPositions() {
+    let values = ConcatenatedCollection(["first"], ["last"])
+    for number in [Int.min, -1, 0, 3, Int.max] { #expect(values.element(atOneBased: number) == nil) }
+    #expect(values.element(atOneBased: 1) == "first")
+    #expect(values.element(atOneBased: 2) == "last")
+    #expect(ConcatenatedCollection<Int>([], []).element(atOneBased: 1) == nil)
+  }
+
   let items = ["pin1", "pin2", "recent1", "recent2", "recent3"]
 
   @Test("Nearest item other than itself", arguments: [

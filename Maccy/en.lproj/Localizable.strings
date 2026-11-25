@@ -23,3 +23,5 @@
 "history_item_image_accessibility_label_no_app" = "Image, %dx%d";
 "history_item_image_accessibility_generic" = "Image";
 "toolbar_remove_paste_stack_action" = "Stop paste stack";
+"history_clear_failed" = "Couldn’t clear clipboard history. Your items have been kept.";
+"history_delete_failed" = "Couldn’t delete the selected items. Your items have been kept.";

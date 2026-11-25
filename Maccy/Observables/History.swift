@@ -94,7 +94,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   private var unpinnedSortBy = Defaults[.sortBy]
 
 #if DEBUG
-  static let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+  nonisolated static let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 #endif
 
   init(ocrCoordinator: HistoryOCRCoordinator = HistoryOCRCoordinator()) {
@@ -151,9 +151,8 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       return false
     }
     if !exceedingItems.isEmpty {
-      exceedingItems.forEach { deleteFromStorage($0) }
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
+      try persistDeletion { context in exceedingItems.forEach(context.delete) }
+      exceedingItems.forEach { forget($0) }
     }
     let decorators = retainedItems.map { HistoryItemDecorator($0) }
     pinManager.load(from: decorators)
@@ -171,15 +170,16 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  private func limitHistorySize(to maxSize: Int, saveToStorage: Bool = true) {
-    if allUnpinnedItems.count >= maxSize {
-      allUnpinnedItems[maxSize...].forEach { delete($0, saveToStorage: saveToStorage) }
+  private func limitHistorySize(to maxSize: Int) {
+    for row in allUnpinnedItems.dropFirst(maxSize) {
+      deleteFromStorage(row.item)
+      removeRow(row, pin: nil)
     }
   }
 
   @MainActor
   func insertIntoStorage(_ item: HistoryItem) throws {
-    logger.info("Inserting item with id '\(item.title)'")
+    logger.info("Saving history item")
     if item.modelContext == nil {
       Storage.shared.context.insert(item)
     }
@@ -209,7 +209,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       if !item.fromMaccy {
         item.application = existingHistoryItem.application
       }
-      logger.info("Removing duplicate item '\(item.title)'")
+      logger.info("Removing duplicate history item")
       if let existingDecorator = indexedItems[ObjectIdentifier(existingHistoryItem)]?.decorator {
         cleanup(existingDecorator)
         allUnpinnedItems.removeAll { $0 == existingDecorator }
@@ -219,14 +219,13 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       }
       deleteFromStorage(existingHistoryItem, replacingWith: item)
     } else {
-      Task {
-        Notifier.notify(body: item.title, sound: .write)
-      }
+      Notifier.notify(body: item.title, sound: .write)
     }
 
     // Remove exceeding items. Do this after the item is added to avoid removing something
     // if a duplicate was found as then the size already stayed the same.
-    limitHistorySize(to: item.pin == nil ? Defaults[.size] - 1 : Defaults[.size], saveToStorage: false)
+    let capacity = max(1, Defaults[.size])
+    limitHistorySize(to: item.pin == nil ? capacity - 1 : capacity)
 
     sessionLog[Clipboard.shared.changeCount] = item
 
@@ -254,7 +253,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       do {
         try insertIntoStorage(item)
       } catch {
-        logger.error("Failed to save history: \(String(reflecting: error))")
+        logger.error("Failed to save history")
       }
     }
     if indexImage || item.title.isEmpty {
@@ -264,111 +263,102 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  private func withLogging(_ msg: String, _ block: () throws -> Void) rethrows {
-    func dataCounts() -> String {
-      let historyItemCount = try? Storage.shared.context.fetchCount(FetchDescriptor<HistoryItem>())
-      let historyContentCount = try? Storage.shared.context.fetchCount(FetchDescriptor<HistoryItemContent>())
-      return "HistoryItem=\(historyItemCount ?? 0) HistoryItemContent=\(historyContentCount ?? 0)"
+  private func persistDeletion(_ stage: (ModelContext) throws -> Void) throws {
+    let context = Storage.shared.context
+    if context.hasChanges { try context.save() }
+    do {
+      try context.transaction {
+        try stage(context)
+        try context.save()
+      }
+    } catch {
+      context.rollback()
+      throw error
     }
-
-    logger.info("\(msg) Before: \(dataCounts())")
-    try? block()
-    logger.info("\(msg) After: \(dataCounts())")
   }
 
   @MainActor
-  func clear() {
-    withLogging("Clearing history") {
-      allUnpinnedItems.forEach {
-        ocrCoordinator.cancel($0.item)
-        unindex($0.item)
-        cleanup($0)
-      }
-      allUnpinnedItems.removeAll()
-      filteredUnpinnedItems.removeAll()
-      updateSessionLog(removing: { $0.pin == nil })
-
-      try? Storage.shared.context.transaction {
-        try? Storage.shared.context.delete(
-          model: HistoryItem.self,
-          where: #Predicate { $0.pin == nil }
-        )
-        try? Storage.shared.context.delete(
-          model: HistoryItemContent.self,
-          where: #Predicate { $0.item?.pin == nil }
-        )
-      }
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
-    }
-
-    Clipboard.shared.clear()
-    AppState.shared.popup.close()
-    Task {
-      AppState.shared.popup.needsResize = true
+  @discardableResult
+  func clear(includingPinned: Bool = false) -> Bool {
+    do {
+      try clearPersisted(includingPinned: includingPinned)
+      return true
+    } catch {
+      logger.error("Failed to clear clipboard history")
+      return false
     }
   }
 
   @MainActor
   func clearAll() {
-    withLogging("Clearing all history") {
-      ocrCoordinator.cancelAll()
-      allPinnedItems.forEach(cleanup)
-      allUnpinnedItems.forEach(cleanup)
-      allUnpinnedItems.removeAll()
-      filteredPinnedItems.removeAll()
-      filteredUnpinnedItems.removeAll()
-      pinManager.removeAll()
-      rebuildDuplicateIndex([])
-      updateSessionLog(removing: { _ in true })
-
-      do {
-        let context = Storage.shared.context
-        try context.transaction {
-          // Bulk deletion cannot remove children with live inverse relationships.
-          try context.delete(
-            model: HistoryItemContent.self,
-            where: #Predicate { $0.item == nil }
-          )
-          try context.delete(model: HistoryItem.self)
-          try context.delete(model: HistoryItemContent.self)
-        }
-      } catch {
-        logger.error("Failed to clear storage: \(String(reflecting: error))")
-      }
-      Storage.shared.context.processPendingChanges()
-      try? Storage.shared.context.save()
-    }
-
-    Clipboard.shared.clear()
-    AppState.shared.popup.close()
-    Task {
-      AppState.shared.popup.needsResize = true
-    }
+    clear(includingPinned: true)
   }
 
   @MainActor
-  func delete(_ item: HistoryItemDecorator?, saveToStorage: Bool = true) {
-    guard let item else { return }
-
-    cleanup(item)
-    withLogging("Removing history item") {
-      deleteFromStorage(item.item)
-      Storage.shared.context.processPendingChanges()
-      if saveToStorage {
-        try? Storage.shared.context.save()
-      }
+  func clearPersisted(includingPinned: Bool) throws {
+    let removed = includingPinned ? allPinnedItems + allUnpinnedItems : allUnpinnedItems
+    let removedAliases = sessionLog.compactMap { includingPinned || $0.value.pin == nil ? $0.key : nil }
+    let orphaned = FetchDescriptor<HistoryItemContent>(predicate: #Predicate { $0.item == nil })
+    let descriptor = includingPinned ? FetchDescriptor<HistoryItem>()
+      : FetchDescriptor(predicate: #Predicate<HistoryItem> { $0.pin == nil })
+    try persistDeletion { context in
+      for orphan in try context.fetch(orphaned) { context.delete(orphan) }
+      for item in try context.fetch(descriptor) { context.delete(item) }
     }
 
-    pinManager.remove(item)
+    for row in removed {
+      ocrCoordinator.cancel(row.item)
+      unindex(row.item)
+      cleanup(row)
+    }
+    for key in removedAliases { sessionLog.removeValue(forKey: key) }
+    allUnpinnedItems.removeAll()
+    filteredUnpinnedItems.removeAll()
+    if includingPinned {
+      pinManager.removeAll()
+      filteredPinnedItems.removeAll()
+    }
+    interruptPasteStack()
+    if self === Self.shared { AppState.shared.navigator.select() }
+    Clipboard.shared.clear()
+    AppState.shared.popup.close()
+    AppState.shared.popup.needsResize = true
+  }
+
+  @MainActor
+  func delete(_ item: HistoryItemDecorator?) {
+    guard let item else { return }
+    do { try deletePersisted([item]) } catch { reportDeleteFailure() }
+  }
+
+  func reportDeleteFailure() {
+    logger.error("Failed to delete history items")
+    let alert = NSAlert()
+    alert.messageText = NSLocalizedString("history_delete_failed", comment: "")
+    alert.runModal()
+  }
+
+  func deletePersisted(_ rows: [HistoryItemDecorator]) throws {
+    let removed = rows.map { ($0, $0.item.pin) }
+    try persistDeletion { context in rows.forEach { context.delete($0.item) } }
+    for (row, pin) in removed {
+      forget(row.item)
+      removeRow(row, pin: pin)
+    }
+    if let stack = pasteStack, rows.contains(where: stack.items.contains) { interruptPasteStack() }
+    if self === Self.shared && rows.contains(where: AppState.shared.navigator.selection.items.contains) {
+      AppState.shared.navigator.select()
+    }
+    updateUnpinnedShortcuts()
+    AppState.shared.popup.needsResize = true
+  }
+
+  private func removeRow(_ item: HistoryItemDecorator, pin: String?) {
+    cleanup(item)
+    pinManager.remove(item, pin: pin)
     allUnpinnedItems.removeAll { $0 == item }
     filteredPinnedItems.removeAll { $0 == item }
     filteredUnpinnedItems.removeAll { $0 == item }
-
-    updateUnpinnedShortcuts()
-    Task {
-      AppState.shared.popup.needsResize = true
-    }
   }
 
   @MainActor
@@ -380,6 +370,12 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   @MainActor
   private func deleteFromStorage(_ item: HistoryItem, replacingWith replacement: HistoryItem? = nil) {
+    forget(item, replacingWith: replacement)
+    deleteContents(of: item)
+    Storage.shared.context.delete(item)
+  }
+
+  private func forget(_ item: HistoryItem, replacingWith replacement: HistoryItem? = nil) {
     unindex(item)
     if let replacement {
       ocrCoordinator.replace(item, with: replacement, in: self)
@@ -387,8 +383,6 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       ocrCoordinator.cancel(item)
     }
     updateSessionLog(removing: { $0 === item }, replacingWith: replacement)
-    deleteContents(of: item)
-    Storage.shared.context.delete(item)
   }
 
   private func updateSessionLog(
@@ -456,7 +450,6 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     pasteStack = stack
 
     logger.info("Initialising PasteStack with \(stack.items.count) items")
-    logger.info("Copying \(item.item.title) from PasteStack")
 
     if modifierFlags.isEmpty {
       AppState.shared.popup.close()
@@ -488,13 +481,11 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       return
     }
 
-    guard let pasted = stack.items.first else {
+    guard !stack.items.isEmpty else {
       pasteStack = nil
       logger.info("PasteStack is empty")
       return
     }
-
-    logger.info("PasteStack pasted \(pasted.item.title)")
 
     stack.items.removeFirst()
 
@@ -504,9 +495,10 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       return
     }
 
-    logger.info("Copying \(item.item.title) from PasteStack. \(stack.items.count) items remaining in stack.")
+    logger.info("Copying from PasteStack. \(stack.items.count) items remaining.")
 
     Task {
+      guard self.pasteStack === stack else { return }
       if stack.modifierFlags.isEmpty {
         Clipboard.shared.copy(item.item, removeFormatting: Defaults[.removeFormattingByDefault])
       } else {
@@ -746,7 +738,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     do {
       try context.save()
     } catch {
-      logger.error("Failed to save recognized image text: \(String(reflecting: error))")
+      logger.error("Failed to save recognized image text")
     }
   }
 

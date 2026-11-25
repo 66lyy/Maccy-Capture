@@ -64,6 +64,14 @@ extension SharedStateTests {
       #expect(search.search(string: "greet", within: candidates).map(\.object) == [prose, code])
     }
 
+    @Test("Code tag validates the complete JSON document, not its prefix")
+    func longJSON() {
+      let text = "[\"" + String(repeating: "x", count: 8192) + "\"]"
+      let valid = HistoryItemDecorator(Self.historyItemWithTitle(text))
+      let invalid = HistoryItemDecorator(Self.historyItemWithTitle(text + "invalid"))
+      #expect(Search().search(string: "#code", within: [invalid, valid]).map(\.object) == [valid])
+    }
+
     @Test("Cycling filters preserves the text query")
     func cycleTags() {
       let imageQuery = Search.Query("harbor  view ").cyclingTag

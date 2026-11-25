@@ -74,6 +74,7 @@ jobs:
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -only-testing:MaccyTests/AppIdentityTests \
+            -only-testing:MaccyTests/CollectionSurroundingTests \
             -only-testing:MaccyTests/JSONFormatterTests \
             -only-testing:MaccyTests/LiquidGlassTests \
             -only-testing:MaccyTests/SoftwareUpdaterTests \
@@ -82,6 +83,7 @@ jobs:
             -only-testing:MaccyTests/ScreenshotSelectionTests \
             -only-testing:MaccyTests/ScreenshotAnnotationTests \
             -only-testing:MaccyTests/SharedStateTests/ClipboardTests \
+            -only-testing:MaccyTests/SharedStateTests/HistoryItemDecoratorTests \
             -only-testing:MaccyTests/SharedStateTests/HistoryTests \
             -only-testing:MaccyTests/SharedStateTests/HistoryItemTests \
             -only-testing:MaccyTests/SharedStateTests/SearchTests \
@@ -186,7 +188,7 @@ jobs:
           if [[ -f "docs/releases/$version.md" ]] &&
             gh api "repos/$GH_REPO/git/ref/tags/$tag" >/dev/null 2>&1 &&
             ! gh api "repos/$GH_REPO/releases/tags/$tag" >/dev/null 2>&1; then
-            MACCY_RELEASE_TAG="$tag" bash script/publish_stable.sh
+            MACCY_VERIFIED_BUILD_RUN=true MACCY_RELEASE_TAG="$tag" bash script/publish_stable.sh
           else
             echo "No unpublished stable tag for $version."
           fi

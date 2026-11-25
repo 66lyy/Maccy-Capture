@@ -57,13 +57,11 @@ class ApplicationImage {
           let event = source.data
           if event.contains(.delete) {
             // File was deleted.
-            print("Deleted", appURL.path)
             source.cancel()
             self.image = nil
             self.lastChecked = nil
           } else if event.contains(.write) {
             // File was modified. Fetch new icon
-            print("Modified", appURL.path)
             self.image = NSWorkspace.shared.icon(forFile: appURL.path)
           }
         }

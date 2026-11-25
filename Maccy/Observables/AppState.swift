@@ -100,10 +100,12 @@ class AppState: Sendable {
     let nextUnselectedItem = history.nearestVisible(to: leadItem) { !$0.isSelected }
 
     withTransaction(Transaction()) {
-      navigator.selection.forEach { _, item in
-        history.delete(item)
+      do {
+        try history.deletePersisted(navigator.selection.items)
+        navigator.select(item: nextUnselectedItem)
+      } catch {
+        history.reportDeleteFailure()
       }
-      navigator.select(item: nextUnselectedItem)
     }
   }
 

@@ -428,7 +428,7 @@ struct ScreenshotSelectionTests {
     let controller = ScreenshotSelectionController(
       displays: { Self.displays }, presentWindow: { _, _ in },
       captureRegion: { _, _, _ in throw ScreenshotCaptureSession.Failure.captureFailed },
-      freezeDisplays: { _ in [] }
+      freezeDisplays: { _ in [] }, listWindows: { [] }
     )
     defer { controller.cancel() }
     let task = Task { try await controller.select(pinImmediately: false) }
@@ -1328,9 +1328,7 @@ struct ScreenshotSelectionTests {
     pointer: NSPoint = .zero,
     displays: @escaping @MainActor () -> [ScreenshotSelectionController.Display] = { Self.displays },
     frozen: [CGImage?] = [],
-    listWindows: @escaping @Sendable () -> [ScreenshotElementDetection.Window] = {
-      ScreenshotElementDetection.windows()
-    },
+    listWindows: @escaping @Sendable () -> [ScreenshotElementDetection.Window] = { [] },
     presentWindow: @escaping @MainActor (ScreenshotSelectionWindow, Bool) -> Void = { _, _ in }
   ) -> ScreenshotSelectionController {
     ScreenshotSelectionController(

@@ -59,8 +59,8 @@ class Search {
     private static func looksLikeCode(_ text: String) -> Bool {
       let sample = String(text.prefix(4096)).trimmingCharacters(in: .whitespacesAndNewlines)
       if sample.hasPrefix("```") || sample.hasPrefix("#!") { return true }
-      if JSONFormatter.looksLikeContainer(sample),
-         (try? JSONSerialization.jsonObject(with: Data(sample.utf8))) != nil { return true }
+      if JSONFormatter.isCandidate(text),
+         (try? JSONSerialization.jsonObject(with: Data(text.utf8))) != nil { return true }
       return sample.range(
         of: "(?im)" + codePattern,
         options: .regularExpression

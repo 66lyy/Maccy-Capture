@@ -38,7 +38,7 @@ class Footer: ItemsContainer {
         suppressConfirmation: suppressClearAlert
       ) {
         Task { @MainActor in
-          AppState.shared.history.clear()
+          Self.clearHistory(includingPinned: false)
         }
       },
       FooterItem(
@@ -53,7 +53,7 @@ class Footer: ItemsContainer {
         suppressConfirmation: suppressClearAlert
       ) {
         Task { @MainActor in
-          AppState.shared.history.clearAll()
+          Self.clearHistory(includingPinned: true)
         }
       },
       FooterItem(
@@ -77,5 +77,12 @@ class Footer: ItemsContainer {
         AppState.shared.quit()
       }
     ]
+  }
+
+  private static func clearHistory(includingPinned: Bool) {
+    guard !AppState.shared.history.clear(includingPinned: includingPinned) else { return }
+    let alert = NSAlert()
+    alert.messageText = NSLocalizedString("history_clear_failed", comment: "")
+    alert.runModal()
   }
 }

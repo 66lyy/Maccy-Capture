@@ -1,6 +1,7 @@
 import AppKit
 import CryptoKit
 import Defaults
+import libxml2
 import Sauce
 import SwiftData
 
@@ -144,8 +145,8 @@ class HistoryItem {
       text
     } else if let rtf = rtf, !rtf.string.isEmpty {
       rtf.string
-    } else if let html = html, !html.string.isEmpty {
-      html.string
+    } else if let text = htmlData.map(ClipboardHTML.text), !text.isEmpty {
+      text
     } else {
       title
     }
@@ -157,23 +158,16 @@ class HistoryItem {
     }
 
     return allContentData([.fileURL])
-      .compactMap { URL(dataRepresentation: $0, relativeTo: nil, isAbsolute: true) }
+      .compactMap(URL.init(localClipboardData:))
   }
 
   var htmlData: Data? { contentData([.html]) }
-  var html: NSAttributedString? {
-    guard let data = htmlData else {
-      return nil
-    }
-
-    return NSAttributedString(html: data, documentAttributes: nil)
-  }
 
   var imageData: Data? {
     var data: Data?
     data = contentData(Self.imageTypes)
     if data == nil, universalClipboardImage, let url = fileURLs.first {
-      data = try? Data(contentsOf: url)
+      data = url.localClipboardFileData()
     }
 
     return data
@@ -252,6 +246,57 @@ class HistoryItem {
     return HistoryOCRCoordinator.Input(data: data, fileURL: fileURL)
   }
 
+}
+
+nonisolated extension URL {
+  init?(localClipboardData: Data) {
+    self.init(dataRepresentation: localClipboardData, relativeTo: nil, isAbsolute: true)
+    guard isLocalClipboardFile else { return nil }
+  }
+
+  var isLocalClipboardFile: Bool {
+    isFileURL && (host?.isEmpty != false || host?.lowercased() == "localhost") && path.hasPrefix("/")
+  }
+
+  func localClipboardFileData() -> Data? {
+    guard isLocalClipboardFile else { return nil }
+    return try? Data(contentsOf: self)
+  }
+}
+
+nonisolated enum ClipboardHTML {
+  private static let blocks: Set<String> = ["p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "pre", "blockquote"]
+
+  static func text(_ data: Data) -> String {
+    guard !data.isEmpty, let length = Int32(exactly: data.count) else { return "" }
+    let options = HTML_PARSE_NONET.rawValue | HTML_PARSE_NOERROR.rawValue | HTML_PARSE_NOWARNING.rawValue
+    let utf8 = String(data: data, encoding: .utf8) != nil
+    let document = data.withUnsafeBytes { bytes in
+      htmlReadMemory(bytes.bindMemory(to: CChar.self).baseAddress, length, nil, utf8 ? "UTF-8" : nil, Int32(options))
+    }
+    guard let document else { return "" }
+    defer { xmlFreeDoc(document) }
+    var result = ""
+    func visit(_ first: xmlNodePtr?) {
+      var current = first
+      while let node = current?.pointee {
+        current = node.next
+        if node.type == XML_TEXT_NODE, let content = node.content {
+          result += String(cString: content)
+        } else if node.type == XML_ELEMENT_NODE, let name = node.name {
+          let tag = String(cString: name)
+          if ["head", "script", "style", "template"].contains(tag) { continue }
+          let block = blocks.contains(tag)
+          if block && !result.isEmpty && !result.hasSuffix("\n") { result += "\n" }
+          if tag == "br" { result += "\n" }
+          visit(node.children)
+          if block && !result.hasSuffix("\n") { result += "\n" }
+        }
+      }
+    }
+    visit(xmlDocGetRootElement(document))
+    return result.trimmingCharacters(in: .newlines)
+  }
 }
 
 @MainActor

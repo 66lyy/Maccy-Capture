@@ -203,7 +203,7 @@ final class ScreenshotSelectionController {
     localEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       self?.handleFallbackEscape(event, target: event.window ?? NSApp?.keyWindow) == true ? nil : event
     }
-    if AXIsProcessTrusted() {
+    if !AppDelegate.isTesting, AXIsProcessTrusted() {
       globalEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
         _ = self?.handleFallbackEscape(event, target: nil)
       }
@@ -254,6 +254,7 @@ final class ScreenshotSelectionController {
     )
     window.onCancel = { [weak self, weak window] in self?.finish(nil, closingWindow: window) }
     window.selectionView.movePointer = { point in
+      guard !AppDelegate.isTesting else { return }
       CGWarpMouseCursorPosition(CGPoint(
         x: display.captureFrame.minX + point.x, y: display.captureFrame.maxY - point.y
       ))

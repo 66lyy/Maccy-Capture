@@ -9,6 +9,7 @@ class Storage {
   var container: ModelContainer
   var context: ModelContext { container.mainContext }
   var size: String {
+    guard !AppDelegate.isTesting else { return "" }
     guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).allValues.first?.value as? Int64, size > 1 else {
       return ""
     }

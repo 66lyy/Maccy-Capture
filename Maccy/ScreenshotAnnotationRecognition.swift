@@ -82,10 +82,18 @@ extension ScreenshotAnnotationWindow {
 
   @objc private func copyRecognizedText() {
     guard !recognizedText.isEmpty else { return }
-    NSPasteboard.general.clearContents()
-    if NSPasteboard.general.setString(recognizedText, forType: .string) {
+    if Clipboard.shared.copyRecognizedText(recognizedText) {
       recognitionResults?.copyButton.title = text("AnnotationTextCopied")
     }
+  }
+}
+
+@MainActor
+private final class RecognitionTextView: NSTextView {
+  override func copy(_ sender: Any?) {
+    let selection = selectedRange()
+    guard selection.length > 0 else { return }
+    Clipboard.shared.copyRecognizedText((string as NSString).substring(with: selection))
   }
 }
 
@@ -96,8 +104,14 @@ final class ScreenshotRecognitionResults: GlassSurfaceView {
 
   init(title: String, value: String, copyEnabled: Bool, copyTitle: String, closeTitle: String,
        target: AnyObject, copyAction: Selector, closeAction: Selector) {
-    let scroll = NSTextView.scrollableTextView()
-    textView = scroll.documentView as! NSTextView
+    let scroll = NSScrollView()
+    textView = RecognitionTextView(frame: .zero)
+    textView.isVerticallyResizable = true
+    textView.isHorizontallyResizable = false
+    textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+    textView.autoresizingMask = [.width]
+    textView.textContainer?.widthTracksTextView = true
+    scroll.documentView = textView
     copyButton = NSButton(title: copyTitle, target: target, action: copyAction)
     super.init(frame: .zero, cornerRadius: 14)
     setAccessibilityLabel(title)

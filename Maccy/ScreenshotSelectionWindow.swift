@@ -92,7 +92,7 @@ final class ScrollingScreenshotActivityMonitor {
       NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
     },
     addGlobal: @escaping (@escaping (NSEvent) -> Void) -> Any? = {
-      NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
+      AppDelegate.isTesting ? nil : NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
     },
     remove: @escaping (Any) -> Void = { NSEvent.removeMonitor($0) }
   ) {

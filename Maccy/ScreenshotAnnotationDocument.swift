@@ -616,7 +616,13 @@ final class ScreenshotAnnotationDocument {
       context.setFillColor(color)
       context.fill(mark.shapeBounds.integral)
     case .mosaic:
-      guard let mosaic = mark.mosaic else { return }
+      context.setShouldAntialias(false)
+      context.setBlendMode(.copy)
+      guard let mosaic = mark.mosaic else {
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(mark.shapeBounds.integral)
+        return
+      }
       context.interpolationQuality = .none
       context.draw(mosaic, in: mark.shapeBounds.integral)
     case .eraser:

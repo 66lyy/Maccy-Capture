@@ -22,7 +22,8 @@ private struct HistoryItemQuery {
 @MainActor
 class MaccyUITests: XCTestCase {
   let app = XCUIApplication()
-  let pasteboard = NSPasteboard.general
+  private let boardID = UUID()
+  private lazy var pasteboard = NSPasteboard(name: .init("local.maccy.uitest." + boardID.uuidString))
 
   let copy1 = UUID().uuidString
   let copy2 = UUID().uuidString
@@ -32,8 +33,9 @@ class MaccyUITests: XCTestCase {
   let image1 = NSImage(named: "NSAddTemplate")!
   let image2 = NSImage(named: "NSBluetoothTemplate")!
 
-  let file1 = URL.applicationSupportDirectory.appendingPathComponent("file1.txt")
-  let file2 = URL.applicationSupportDirectory.appendingPathComponent("file2.txt")
+  private let fixtureDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  private var file1: URL { fixtureDirectory.appendingPathComponent("file1.txt") }
+  private var file2: URL { fixtureDirectory.appendingPathComponent("file2.txt") }
 
   let rtf1 = NSAttributedString(string: "foo").rtf(
     from: NSRange(0...2),
@@ -62,10 +64,12 @@ class MaccyUITests: XCTestCase {
   override func setUp() async throws {
     try await super.setUp()
 
-    try? "Hello world".write(to: file1, atomically: true, encoding: .utf8)
-    try? "Hello world".write(to: file2, atomically: true, encoding: .utf8)
+    try FileManager.default.createDirectory(at: fixtureDirectory, withIntermediateDirectories: false)
+    try "Hello world".write(to: file1, atomically: true, encoding: .utf8)
+    try "Hello world".write(to: file2, atomically: true, encoding: .utf8)
 
     app.launchArguments.append("enable-testing")
+    app.launchEnvironment["MACCY_TEST_BOARD_ID"] = boardID.uuidString
     setKeyboardShortcut("popup", keyCode: kVK_ANSI_C, modifiers: cmdKey | shiftKey)
     setKeyboardShortcut("pin", keyCode: kVK_ANSI_P, modifiers: optionKey)
     setKeyboardShortcut("delete", keyCode: kVK_Delete, modifiers: optionKey)
@@ -77,9 +81,10 @@ class MaccyUITests: XCTestCase {
   }
 
   override func tearDown() async throws {
-    try await super.tearDown()
-
     app.terminate()
+    pasteboard.releaseGlobally()
+    try FileManager.default.removeItem(at: fixtureDirectory)
+    try await super.tearDown()
   }
 
   func testPopupWithHotkey() throws {

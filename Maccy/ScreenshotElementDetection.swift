@@ -18,6 +18,7 @@ enum ScreenshotElementDetection {
   }
 
   nonisolated static func windows() -> [Window] {
+    guard !AppDelegate.isTesting else { return [] }
     guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
                                                    kCGNullWindowID) as? [[String: Any]] else { return [] }
     let ownPID = ProcessInfo.processInfo.processIdentifier
@@ -44,7 +45,7 @@ enum ScreenshotElementDetection {
 
   nonisolated static func probe(at point: NSPoint, in window: Window) -> Result {
     let rectangle = window.frame
-    guard AXIsProcessTrusted() else { return Result(rectangles: [rectangle], outcome: .unavailable) }
+    guard !AppDelegate.isTesting, AXIsProcessTrusted() else { return Result(rectangles: [rectangle], outcome: .unavailable) }
     let application = AXUIElementCreateApplication(window.pid)
     let timeoutError = AXUIElementSetMessagingTimeout(application, applicationMessagingTimeout)
     guard timeoutError == .success else {

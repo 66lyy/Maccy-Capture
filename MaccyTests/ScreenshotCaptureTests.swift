@@ -1964,6 +1964,23 @@ struct ScreenshotCaptureTests {
     #expect(first.isVisible && first.thumbnailStack == nil && first.frame == original)
   }
 
+  @Test("Moving a thumbnail onto a neighboring display clamps it to the stack's display")
+  func thumbnailDisplayBoundary() {
+    let bounds = NSRect(x: -1000, y: 50, width: 1000, height: 700)
+    let frame = NSRect(x: 400, y: -300, width: 176, height: 112)
+    #expect(PinnedScreenshotStack.constrainedOrigin(of: frame, in: bounds) == NSPoint(x: -176, y: 50))
+  }
+
+  @Test("Shortcuts returns original image bytes with their actual file type")
+  func intentImageFormat() throws {
+    let bitmap = try #require(NSBitmapImageRep(data: generatedPNG()))
+    let jpeg = try #require(bitmap.representation(using: .jpeg, properties: [:]))
+    let file = try #require(Get.imageFile(jpeg))
+    #expect(file.filename == "image.jpeg" || file.filename == "image.jpg")
+    #expect(file.data == jpeg)
+    #expect(Get.imageFile(Data([0])) == nil)
+  }
+
   @Test("Click-through restores a pin and keeps it out of subsequent thumbnail stacks")
   func clickThroughRemovesThumbnail() {
     let first = pinnedZoomWindow()
@@ -2094,7 +2111,7 @@ struct ScreenshotCaptureTests {
     let result = try #require(NSBitmapImageRep(data: Data(contentsOf: file)))
     #expect(file != secondFile && file.pathExtension == "png")
     #expect(result.pixelsWide == source.width && result.pixelsHigh == source.height)
-    #expect((file as NSURL).writableTypes(for: .general).contains(.fileURL))
+    #expect((file as NSURL).writableTypes(for: Clipboard.shared.pasteboard).contains(.fileURL))
     PinnedScreenshotDragExport.remove(file)
     #expect(!FileManager.default.fileExists(atPath: file.path))
     #expect(FileManager.default.fileExists(atPath: secondFile.path))

@@ -305,8 +305,8 @@ final class ScreenshotSelectionView: NSView {
       updateLoupe()
       return
     }
-    let pasteboard = target ?? .general
-    pasteboard.clearContents()
+    let pasteboard = target ?? Clipboard.shared.pasteboard
+    pasteboard.prepareForNewContents(with: .currentHostOnly)
     guard pasteboard.setString(color.string(in: pick.format), forType: .string) else { return }
     loupe.copied = localized("AnnotationTextCopied")
     colorCopyTask = Task { [weak self] in

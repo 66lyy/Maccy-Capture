@@ -7,8 +7,8 @@ extension SharedStateTests {
   // swiftlint:disable type_body_length
   @MainActor
   final class ClipboardTests {
-    let clipboard = Clipboard.shared
-    let pasteboard = NSPasteboard.general
+    let clipboard: Clipboard
+    var pasteboard: NSPasteboard { clipboard.pasteboard }
     let image: NSImage
     let coloredString = NSAttributedString(string: "foo",
                                            attributes: [.foregroundColor: NSColor.red])
@@ -25,23 +25,25 @@ extension SharedStateTests {
 
     let savedEnabledTypes = Defaults[.enabledPasteboardTypes]
     let savedIgnoreEvents = Defaults[.ignoreEvents]
+    let savedIgnoreOnlyNextEvent = Defaults[.ignoreOnlyNextEvent]
     let savedIgnoreAllAppsExceptListed = Defaults[.ignoreAllAppsExceptListed]
     let savedIgnoredApps = Defaults[.ignoredApps]
     let savedIgnoredPasteboardTypes = Defaults[.ignoredPasteboardTypes]
     let savedIgnoreRegexp = Defaults[.ignoreRegexp]
 
     init() throws {
+      clipboard = Clipboard(pasteboard: .withUniqueName(), sourceIdentifier: { "local.maccy.fixture" })
       image = try #require(NSImage(named: "NSInfo"))
       Defaults[.ignoreAllAppsExceptListed] = false
       Defaults[.ignoreEvents] = false
       Defaults[.ignoreRegexp] = []
-      clipboard.clearHooks()
     }
 
     deinit {
+      Task { @MainActor [clipboard] in clipboard.pasteboard.releaseGlobally() }
       Defaults[.enabledPasteboardTypes] = savedEnabledTypes
       Defaults[.ignoreEvents] = savedIgnoreEvents
-      Defaults[.ignoreOnlyNextEvent] = false
+      Defaults[.ignoreOnlyNextEvent] = savedIgnoreOnlyNextEvent
       Defaults[.ignoreAllAppsExceptListed] = savedIgnoreAllAppsExceptListed
       Defaults[.ignoredApps] = savedIgnoredApps
       Defaults[.ignoredPasteboardTypes] = savedIgnoredPasteboardTypes
@@ -80,11 +82,37 @@ extension SharedStateTests {
 
     @Test("Changes listener and add hooks")
     func changesListenerAndAddHooks() async throws {
-      let copies = try await waitForCopies(after: {
+      let copies = try await waitForCopies(usingTimer: true, after: {
         pasteboard.declareTypes([.string], owner: nil)
         pasteboard.setString("bar", forType: .string)
       })
       #expect(copies.count == 1)
+    }
+
+    @Test("Mixed clipboard items do not retain disabled JPEG or HEIC representations")
+    func removesAllDisabledImages() {
+      Defaults[.enabledPasteboardTypes] = [.string]
+      let item = NSPasteboardItem()
+      item.setString("Fixture", forType: .string)
+      for type in StorageType.images.types { item.setData(Data([1, 2]), forType: type) }
+      var captured: HistoryItem?
+      clipboard.onNewCopy { captured = $0 }
+      pasteboard.clearContents()
+      pasteboard.writeObjects([item])
+      clipboard.checkForChangesInPasteboard()
+      #expect(captured?.contents.map(\.type) == [stringType.rawValue])
+    }
+
+    @Test("OCR copies and their history replay are marked local-only")
+    func localOCRCopy() throws {
+      var captured: HistoryItem?
+      clipboard.onNewCopy { captured = $0 }
+      #expect(clipboard.copyRecognizedText("Synthetic OCR"))
+      clipboard.checkForChangesInPasteboard()
+      let item = try #require(captured)
+      #expect(item.text == "Synthetic OCR")
+      clipboard.copy(item, removeFormatting: true)
+      #expect(pasteboard.types?.contains(Clipboard.hostOnlyType) == true)
     }
 
     @Test("Ignore string with only spaces")
@@ -155,7 +183,7 @@ extension SharedStateTests {
 
     @Test("Ignore application")
     func ignoreApplication() async throws {
-      Defaults[.ignoredApps] = [try frontmostAppBundleIdentifier()]
+      Defaults[.ignoredApps] = ["local.maccy.fixture"]
 
       let copies = try await waitForCopies(expectingCopy: false, after: {
         pasteboard.declareTypes([.string], owner: nil)
@@ -167,7 +195,7 @@ extension SharedStateTests {
     @Test("Ignore all applications except")
     func ignoreAllApplicationsExcept() async throws {
       Defaults[.ignoreAllAppsExceptListed] = true
-      Defaults[.ignoredApps] = [try frontmostAppBundleIdentifier()]
+      Defaults[.ignoredApps] = ["local.maccy.fixture"]
 
       let copies = try await waitForCopies(after: {
         pasteboard.declareTypes([.string], owner: nil)
@@ -211,7 +239,7 @@ extension SharedStateTests {
       let contents = [
         HistoryItemContent(type: stringType.rawValue, value: "foo".data(using: .utf8)!),
         HistoryItemContent(type: tiffType.rawValue, value: imageData),
-        HistoryItemContent(type: fileURLType.rawValue, value: "file://foo.bar".data(using: .utf8)!)
+        HistoryItemContent(type: fileURLType.rawValue, value: Data("file:///tmp/fixture.bar".utf8))
       ]
       let item = HistoryItem()
       Storage.shared.context.insert(item)
@@ -220,7 +248,7 @@ extension SharedStateTests {
       clipboard.copy(item)
       #expect(pasteboard.string(forType: .string) == "foo")
       #expect(pasteboard.data(forType: .tiff) == imageData)
-      #expect(pasteboard.string(forType: .fileURL) == "file://foo.bar")
+      #expect(pasteboard.string(forType: .fileURL) == "file:///tmp/fixture.bar")
       #expect(pasteboard.string(forType: .fromMaccy) == "")
       #expect(pasteboard.string(forType: .source) == "com.foo.bar")
     }
@@ -236,7 +264,7 @@ extension SharedStateTests {
     func copyWithoutFormatting() {
       let contents = [
         HistoryItemContent(type: stringType.rawValue, value: "foo".data(using: .utf8)!),
-        HistoryItemContent(type: fileURLType.rawValue, value: "file://foo.bar".data(using: .utf8)!),
+        HistoryItemContent(type: fileURLType.rawValue, value: Data("file:///tmp/fixture.bar".utf8)),
         HistoryItemContent(type: rtfType.rawValue,
                            value: coloredString.rtf(from: NSRange(location: 0, length: coloredString.length),
                                                     documentAttributes: [:]))
@@ -249,7 +277,7 @@ extension SharedStateTests {
       #expect(pasteboard.string(forType: .string) == "foo")
       #expect(pasteboard.string(forType: .fromMaccy) == "")
       #expect(pasteboard.string(forType: .source) == "com.foo.bar")
-      #expect(pasteboard.string(forType: .fileURL) == "file://foo.bar")
+      #expect(pasteboard.string(forType: .fileURL) == "file:///tmp/fixture.bar")
       #expect(pasteboard.data(forType: .rtf) == nil)
     }
 
@@ -291,7 +319,7 @@ extension SharedStateTests {
       let item = NSPasteboardItem()
       item.setString("foo", forType: .string)
       item.setData(image.tiffRepresentation!, forType: .tiff)
-      item.setData("file://foo.bar".data(using: .utf8)!, forType: .fileURL)
+      item.setData(Data("file:///tmp/fixture.bar".utf8), forType: .fileURL)
 
       let copies = try await waitForCopies(after: {
         pasteboard.clearContents()
@@ -334,10 +362,16 @@ extension SharedStateTests {
       #expect(Set(copied.contents.map(\.type)) == [stringType.rawValue])
     }
 
-    private func waitForCopies(expectingCopy: Bool = true, after trigger: () -> Void) async throws -> [HistoryItem] {
+    private func waitForCopies(expectingCopy: Bool = true, usingTimer: Bool = false, after trigger: () -> Void) async throws -> [HistoryItem] {
       var copies: [HistoryItem] = []
       clipboard.onNewCopy { copies.append($0) }
+      guard usingTimer else {
+        trigger()
+        clipboard.checkForChangesInPasteboard()
+        return copies
+      }
       clipboard.start()
+      defer { clipboard.stop() }
       trigger()
       let deadline = ContinuousClock.now + .seconds(2)
       while (!expectingCopy || copies.isEmpty) && ContinuousClock.now < deadline {
@@ -346,13 +380,6 @@ extension SharedStateTests {
       return copies
     }
 
-    private func frontmostAppBundleIdentifier() throws -> String {
-      guard let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else {
-        try Test.cancel("No frontmost application to attribute a copy to")
-      }
-
-      return bundleIdentifier
-    }
   }
   // swiftlint:enable type_body_length
 }

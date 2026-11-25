@@ -65,7 +65,7 @@ final class ScreenshotCaptureSession {
     }
   }
 
-  typealias ProcessFactory = (Mode, URL) -> Process
+  typealias ProcessFactory = (Mode, URL) throws -> Process
 
   private(set) var isCapturing = false
   private var process: Process?
@@ -77,6 +77,7 @@ final class ScreenshotCaptureSession {
   init(
     temporaryRoot: URL = FileManager.default.temporaryDirectory,
     processFactory: @escaping ProcessFactory = { mode, output in
+      guard !AppDelegate.isTesting else { throw Failure.captureFailed }
       let process = Process()
       process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
       process.arguments = mode.arguments(output: output)
@@ -94,6 +95,7 @@ final class ScreenshotCaptureSession {
   static func captureSelection(
     on display: ScreenshotSelectionController.Display, rectangle: NSRect, excluding overlayIDs: Set<CGWindowID>
   ) async throws -> NSImage {
+    guard !AppDelegate.isTesting else { throw Failure.captureFailed }
     let source = sourceRectangle(rectangle, displayFrame: display.captureFrame)
     guard source.width >= 3, source.height >= 3, !overlayIDs.isEmpty else { throw Failure.captureFailed }
     var content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
@@ -124,6 +126,7 @@ final class ScreenshotCaptureSession {
     _ targets: [ScreenshotElementDetection.Window], on display: ScreenshotSelectionController.Display,
     snapshots: [CGWindowID: WindowLayer], removeShadow: Bool, addBackdrop: Bool
   ) async throws -> (image: CGImage, frame: NSRect) {
+    guard !AppDelegate.isTesting else { throw Failure.captureFailed }
     let bounds = targets.reduce(NSRect.null) { $0.union($1.frame) }
     guard !bounds.isEmpty else { throw Failure.captureFailed }
     let image: CGImage
@@ -194,6 +197,7 @@ final class ScreenshotCaptureSession {
     _ targets: [ScreenshotElementDetection.Window], on displays: [ScreenshotSelectionController.Display],
     removeShadow: Bool
   ) async -> [CGWindowID: WindowLayer] {
+    guard !AppDelegate.isTesting else { return [:] }
     var snapshots: [CGWindowID: WindowLayer] = [:]
     for target in targets where target.layer == Int(CGWindowLevelForKey(.popUpMenuWindow)) {
       guard !Task.isCancelled else { break }
@@ -301,6 +305,7 @@ final class ScreenshotCaptureSession {
   }
 
   private static func captureDisplay(_ display: ScreenshotSelectionController.Display) async -> CGImage? {
+    guard !AppDelegate.isTesting else { return nil }
     let image = await captureDisplayImage(rectangleCapture: {
       if #available(macOS 15.2, *) {
         let image = try await SCScreenshotManager.captureImage(in: display.captureFrame)
@@ -359,7 +364,7 @@ final class ScreenshotCaptureSession {
       attributes: [.posixPermissions: 0o700]
     )
     let output = directory.appendingPathComponent("capture.png")
-    let process = processFactory(mode, output)
+    let process = try processFactory(mode, output)
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice
     self.process = process

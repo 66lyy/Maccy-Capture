@@ -4,8 +4,6 @@ import Defaults
 import SwiftData
 @testable import Maccy
 
-private final class BundleToken {}
-
 // Match the on-disk schema immediately before recognizedText was added.
 private enum HistoryBeforeOCRIndex {
   @Model
@@ -167,6 +165,24 @@ extension SharedStateTests {
       #expect(historyItem(image).title == "")
     }
 
+    @Test("HTML extracts visible text and ignores resource references")
+    func offlineHTML() {
+      let html = "<head><title>Hidden</title></head><p>合成 &amp; text<img src='https://fixture.invalid/a'></p><style>hidden</style><script>hidden</script><div>next<br>end</div>"
+      #expect(ClipboardHTML.text(Data(html.utf8)) == "合成 & text\nnext\nend")
+    }
+
+    @Test("Non-local file representations never become preview or OCR inputs",
+          arguments: ["https://fixture.invalid/image.jpeg", "file://fixture.invalid/image.jpeg"])
+    func nonLocalFile(value: String) throws {
+      let url = try #require(URL(string: value))
+      let item = HistoryItem(contents: [
+        HistoryItemContent(type: NSPasteboard.PasteboardType.fileURL.rawValue, value: url.dataRepresentation),
+        HistoryItemContent(type: NSPasteboard.PasteboardType.universalClipboard.rawValue, value: Data())
+      ])
+      #expect(!url.isLocalClipboardFile)
+      #expect(item.fileURLs.isEmpty && item.textRecognitionInput == nil && item.imageData == nil)
+    }
+
     @Test("Image title becomes the recognized text")
     func imageTitleBecomesRecognizedText() async throws {
       let item = historyItem(textImage("Hello Maccy"))
@@ -239,7 +255,10 @@ extension SharedStateTests {
 
     @Test("Image from Universal Clipboard")
     func imageFromUniversalClipboard() throws {
-      let url = try #require(Bundle(for: BundleToken.self).url(forResource: "guy", withExtension: "jpeg"))
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpeg")
+      let bitmap = try #require(textImage("Fixture").tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+      try #require(bitmap.representation(using: .jpeg, properties: [:])).write(to: url)
+      defer { try? FileManager.default.removeItem(at: url) }
       let fileURLContent = HistoryItemContent(
         type: NSPasteboard.PasteboardType.fileURL.rawValue,
         value: url.dataRepresentation

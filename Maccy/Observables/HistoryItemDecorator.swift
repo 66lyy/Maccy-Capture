@@ -147,6 +147,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
       return
     }
     thumbnailImageGenerationTask = Task { [weak self] in
+      guard !Task.isCancelled else { return }
       self?.generateThumbnailImage()
     }
   }
@@ -163,6 +164,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
       return
     }
     previewImageGenerationTask = Task { [weak self] in
+      guard !Task.isCancelled else { return }
       self?.generatePreviewImage()
     }
   }
@@ -242,7 +244,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
       item.pin
     } onChange: { [weak self] in
       DispatchQueue.main.async {
-        guard let self else { return }
+        guard let self, self.item.modelContext != nil, !self.item.isDeleted else { return }
         if let pin = self.item.pin {
           self.shortcuts = KeyShortcut.create(character: pin)
         }
@@ -258,7 +260,7 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
       item.title
     } onChange: { [weak self] in
       DispatchQueue.main.async {
-        guard let self else { return }
+        guard let self, self.item.modelContext != nil, !self.item.isDeleted else { return }
         self.title = self.item.title
         self.synchronizeItemTitle()
       }

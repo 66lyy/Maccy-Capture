@@ -1,10 +1,13 @@
 import Defaults
 import KeyboardShortcuts
-import Sparkle
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-  nonisolated static let isTesting = CommandLine.arguments.contains("enable-testing")
+  #if DEBUG
+  nonisolated static let isTesting = CommandLine.arguments.contains("enable-testing") || History.isRunningUnitTests
+  #else
+  nonisolated static let isTesting = false
+  #endif
   var panel: FloatingPanel<ContentView>!
 
   @objc
@@ -68,11 +71,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     #if DEBUG
     if Self.isTesting {
-      SPUUpdater(hostBundle: Bundle.main,
-                 applicationBundle: Bundle.main,
-                 userDriver: SPUStandardUserDriver(hostBundle: Bundle.main, delegate: nil),
-                 delegate: nil)
-      .automaticallyChecksForUpdates = false
       // Start from a clean slate for the isolated testing preferences.
       UserDefaults.standard.removePersistentDomain(forName: Defaults.Keys.testingSuiteName)
     }
@@ -82,13 +80,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     AppState.shared.appDelegate = self
 
     Clipboard.shared.onNewCopy { History.shared.add($0) }
-    if !Self.isTesting {
+    if !Self.isTesting || Clipboard.testBoardName != nil {
       Clipboard.shared.start()
-    }
-
-    Task {
-      for await _ in Defaults.updates(.clipboardCheckInterval, initial: false) {
-        Clipboard.shared.restart()
+      Task {
+        for await _ in Defaults.updates(.clipboardCheckInterval, initial: false) {
+          Clipboard.shared.restart()
+        }
       }
     }
 
@@ -146,7 +143,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ aNotification: Notification) {
     guard !rejectedDuplicateLaunch else { return }
-    migrateUserDefaults()
+    if !Self.isTesting { migrateUserDefaults() }
     disableUnusedGlobalHotkeys()
 
     if !Self.isTesting {

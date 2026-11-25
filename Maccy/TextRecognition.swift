@@ -85,7 +85,6 @@ nonisolated enum TextRecognition {
         do {
           continuation.resume(returning: try performClipboardRecognition(imageData: imageData, fileURL: fileURL))
         } catch {
-          print("Unable to perform the request: \(error).")
           continuation.resume(returning: nil)
         }
       }
@@ -99,7 +98,7 @@ nonisolated enum TextRecognition {
   }
 
   static func performClipboardRecognition(imageData: Data?, fileURL: URL?) throws -> String? {
-    guard let data = imageData ?? fileURL.flatMap({ $0.isFileURL ? try? Data(contentsOf: $0) : nil }) else { return nil }
+    guard let data = imageData ?? fileURL?.localClipboardFileData() else { return nil }
     let request = accurateRequest()
     request.automaticallyDetectsLanguage = true
     return try recognize(using: VNImageRequestHandler(data: data), request: request)?.joined(separator: "\n")

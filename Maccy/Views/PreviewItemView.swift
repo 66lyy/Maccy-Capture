@@ -241,8 +241,7 @@ struct HistoryImagePreview: View {
         status = localized("AnnotationNoText")
         return
       }
-      Clipboard.shared.copyInMaccy(text)
-      status = localized("AnnotationTextCopied")
+      status = localized(Clipboard.shared.copyRecognizedText(text) ? "AnnotationTextCopied" : "AnnotationOutputFailedShort")
     }
   }
 
@@ -270,7 +269,7 @@ struct HistoryImagePreview: View {
       Task {
         let saved = await Task.detached(priority: .userInitiated) {
           do {
-            guard let source = input.data ?? input.fileURL.flatMap({ try? Data(contentsOf: $0) }),
+            guard let source = input.data ?? input.fileURL?.localClipboardFileData(),
                   let png = Self.pngData(from: source) else { return false }
             try png.write(to: url, options: .atomic)
             return true

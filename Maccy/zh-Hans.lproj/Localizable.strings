@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "图像，%d×%d";
 "history_item_image_accessibility_generic" = "图像";
 "toolbar_remove_paste_stack_action" = "停止粘贴堆栈";
+"history_clear_failed" = "未能清空剪贴板历史，原有记录已保留。";
+"history_delete_failed" = "未能删除所选记录，原有记录已保留。";

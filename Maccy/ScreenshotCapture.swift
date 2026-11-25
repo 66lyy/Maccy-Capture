@@ -95,7 +95,7 @@ final class ScreenshotCapture {
   }
 
   func pinClipboardImage() {
-    guard let image = NSImage(pasteboard: .general), image.isValid else {
+    guard let image = NSImage(pasteboard: Clipboard.shared.pasteboard), image.isValid else {
       showError("ScreenshotClipboardEmpty")
       return
     }
@@ -138,6 +138,7 @@ final class ScreenshotCapture {
       editor.present()
       return
     }
+    let source = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
     switch permission.authorize() {
     case .granted:
       break
@@ -205,13 +206,13 @@ final class ScreenshotCapture {
         let data = result.data
         let image = NSImage(cgImage: result.image, size: imageFrame?.size ?? .zero)
         if shouldAnnotate {
-          annotateImage(image, imageFrame: imageFrame, originalWasCopied: false)
+          annotateImage(image, imageFrame: imageFrame, originalWasCopied: false, sourceApp: source)
         } else {
-          try deliverScreenshot(data) {
+          try deliverScreenshot(data, sourceApp: source) {
             if shouldPin {
-              pinImage(image, imageFrame: imageFrame)
+              pinImage(image, imageFrame: imageFrame, sourceApp: source)
             } else {
-              showPreview(image, imageFrame: imageFrame, thumbnail: preview)
+              showPreview(image, imageFrame: imageFrame, thumbnail: preview, sourceApp: source)
             }
           }
         }
@@ -226,12 +227,12 @@ final class ScreenshotCapture {
     }
   }
 
-  private func deliverScreenshot(_ pngData: Data, present: () -> Void) throws {
+  private func deliverScreenshot(_ pngData: Data, sourceApp: String?, present: () -> Void) throws {
     let historyResult = try Self.deliverScreenshot(
-      pngData, copy: Clipboard.shared.copyScreenshot, saveHistory: saveInHistory, present: present
+      pngData, copy: Clipboard.shared.copyScreenshot, saveHistory: { try saveInHistory($0, sourceApp: sourceApp) }, present: present
     )
-    if case .failure(let error) = historyResult {
-      History.shared.logger.error("Failed to save screenshot history: \(String(reflecting: error))")
+    if case .failure = historyResult {
+      History.shared.logger.error("Failed to save screenshot history")
       Task { [weak self] in
         self?.showError("ScreenshotHistorySaveWarning", title: "ScreenshotHistorySaveWarningTitle")
       }
@@ -248,8 +249,14 @@ final class ScreenshotCapture {
   }
 
   func saveInHistory(_ pngData: Data) throws {
+    try saveInHistory(pngData, sourceApp: Bundle.main.bundleIdentifier)
+  }
+
+  func saveInHistory(_ pngData: Data, sourceApp: String?) throws {
+    guard Clipboard.shared.permitsHistory(types: [.png, .fromMaccy], source: sourceApp) else { return }
     let item = HistoryItem(contents: [
-      HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData)
+      HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: pngData),
+      HistoryItemContent(type: Clipboard.hostOnlyType.rawValue, value: Data())
     ])
     item.application = Bundle.main.bundleIdentifier
     item.title = text("ScreenshotTitle")
@@ -258,7 +265,8 @@ final class ScreenshotCapture {
     try History.shared.insertIntoStorage(item)
   }
 
-  func pinImage(_ image: NSImage, imageFrame: NSRect? = nil) {
+  func pinImage(_ image: NSImage, imageFrame: NSRect? = nil,
+                sourceApp: String? = NSWorkspace.shared.frontmostApplication?.bundleIdentifier) {
     guard let bytes = PinnedImageBudget.estimatedBytes(for: image) else {
       showError("PinnedImageTooLarge")
       return
@@ -279,7 +287,7 @@ final class ScreenshotCapture {
     let sourceID = ObjectIdentifier(window)
     window.onAnnotate = { [weak self, weak window] image in
       guard let window else { return }
-      self?.annotateImage(image, source: window)
+      self?.annotateImage(image, source: window, sourceApp: sourceApp)
     }
     window.onClose = { [weak self] in
       if let editorID = self?.annotationSources[sourceID] {
@@ -325,15 +333,15 @@ final class ScreenshotCapture {
     return NSImage(cgImage: thumbnail, size: NSSize(width: size.width * scale, height: size.height * scale))
   }
 
-  private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil, thumbnail: CGImage? = nil) {
+  private func showPreview(_ image: NSImage, imageFrame: NSRect? = nil, thumbnail: CGImage? = nil, sourceApp: String?) {
     let pointer = imageFrame.map { NSPoint(x: $0.midX, y: $0.maxY - min(1, $0.height / 2)) } ?? NSEvent.mouseLocation
     let screen = NSScreen.screens.first(where: { $0.frame.contains(pointer) }) ?? NSScreen.main
     guard let screen else { return }
     let window = ScreenshotPreviewWindow(
       image: Self.previewImage(for: image, thumbnail: thumbnail), visibleFrame: screen.visibleFrame,
-      onAnnotate: { [weak self] in self?.annotateImage(image, imageFrame: imageFrame) }
+      onAnnotate: { [weak self] in self?.annotateImage(image, imageFrame: imageFrame, sourceApp: sourceApp) }
     ) {
-      [weak self] in self?.pinImage(image, imageFrame: imageFrame)
+      [weak self] in self?.pinImage(image, imageFrame: imageFrame, sourceApp: sourceApp)
     }
     window.onClose = { [weak self] in
       self?.previewWindow = nil
@@ -344,7 +352,7 @@ final class ScreenshotCapture {
 
   private func annotateImage(
     _ image: NSImage, source: PinnedScreenshotWindow? = nil, imageFrame: NSRect? = nil,
-    originalWasCopied: Bool = true
+    originalWasCopied: Bool = true, sourceApp: String?
   ) {
     let sourceID = source.map(ObjectIdentifier.init)
     if let sourceID, let identifier = annotationSources[sourceID], let window = annotationWindows[identifier] {
@@ -373,17 +381,17 @@ final class ScreenshotCapture {
       switch action {
       case .copy:
         guard let data else { throw CancellationError() }
-        try deliverScreenshot(data) {
+        try deliverScreenshot(data, sourceApp: sourceApp) {
           if let source {
             replacePinnedImage(rendered, in: source)
           } else {
-            showPreview(rendered, imageFrame: targetFrame)
+            showPreview(rendered, imageFrame: targetFrame, sourceApp: sourceApp)
           }
         }
       case .pin:
         guard let data else { throw CancellationError() }
-        try deliverScreenshot(data) {
-          pinImage(rendered, imageFrame: targetFrame)
+        try deliverScreenshot(data, sourceApp: sourceApp) {
+          pinImage(rendered, imageFrame: targetFrame, sourceApp: sourceApp)
         }
       case .apply:
         if let source { replacePinnedImage(rendered, in: source) }

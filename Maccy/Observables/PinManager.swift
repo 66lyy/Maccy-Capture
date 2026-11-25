@@ -106,8 +106,8 @@ final class PinManager {
     sortPinnedItems()
   }
 
-  func remove(_ item: HistoryItemDecorator) {
-    guard let pin = item.item.pin else { return }
+  func remove(_ item: HistoryItemDecorator, pin: String?) {
+    guard let pin else { return }
 
     pinnedItems.removeAll { $0 == item }
     if !pinnedItems.contains(where: { $0.item.pin == pin }) {

@@ -13,6 +13,11 @@ nonisolated struct ConcatenatedCollection<Element>: RandomAccessCollection {
   var startIndex: Int { 0 }
   var endIndex: Int { leading.count + trailing.count }
 
+  func element(atOneBased number: Int) -> Element? {
+    guard number > 0, number <= count else { return nil }
+    return self[number - 1]
+  }
+
   subscript(position: Int) -> Element {
     precondition(position >= startIndex && position < endIndex, "Index out of bounds")
     if position < leading.count {

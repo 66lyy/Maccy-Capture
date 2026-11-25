@@ -308,6 +308,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
   }
 
+  func windowDidMove(_ notification: Notification) {
+    thumbnailStack?.constrain(self)
+  }
+
   func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
     thumbnailStack != nil ? frame.size : frameSize
   }
@@ -450,8 +454,9 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   @objc private func copyImage() {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.writeObjects([image])
+    let board = Clipboard.shared.pasteboard
+    board.prepareForNewContents(with: .currentHostOnly)
+    if board.writeObjects([image]) { board.setString("", forType: Clipboard.hostOnlyType) }
   }
 
   static func localized(_ key: String) -> String {
@@ -550,10 +555,24 @@ final class PinnedScreenshotStack {
   private func show(_ pin: PinnedScreenshotWindow) {
     guard let index = pins.firstIndex(where: { $0 === pin }) else { return }
     var frame = Self.thumbnailFrame(in: visibleFrame)
-    if let visiblePin { frame.origin = visiblePin.frame.origin }
+    if let visiblePin {
+      frame.origin = visiblePin.frame.origin
+      frame.origin = Self.constrainedOrigin(of: frame, in: visibleFrame)
+    }
     for other in pins where other !== pin && other.isVisible { other.orderOut(nil) }
     visiblePin = pin
     pin.showThumbnail(in: frame, page: index + 1, total: pins.count)
+  }
+
+  func constrain(_ pin: PinnedScreenshotWindow) {
+    guard pin === visiblePin else { return }
+    let origin = Self.constrainedOrigin(of: pin.frame, in: visibleFrame)
+    if pin.frame.origin != origin { pin.setFrameOrigin(origin) }
+  }
+
+  static func constrainedOrigin(of frame: NSRect, in bounds: NSRect) -> NSPoint {
+    NSPoint(x: max(bounds.minX, min(frame.minX, bounds.maxX - frame.width)),
+            y: max(bounds.minY, min(frame.minY, bounds.maxY - frame.height)))
   }
 
   static func thumbnailFrame(in visibleFrame: NSRect) -> NSRect {

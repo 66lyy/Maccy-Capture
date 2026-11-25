@@ -13,17 +13,14 @@ struct Delete: AppIntent, CustomIntentMigratedAppIntent {
     Summary("Delete \(\.$number) Item from Clipboard History")
   }
 
-  private let positionOffset = 1
-
   func perform() async throws -> some IntentResult {
     try await MainActor.run {
       let items = AppState.shared.history.items
-      let index = number - positionOffset
-      guard items.count >= index else {
+      guard let item = items.element(atOneBased: number) else {
         throw AppIntentError.notFound
       }
 
-      AppState.shared.history.delete(items[index])
+      try AppState.shared.history.deletePersisted([item])
     }
 
     return .result()

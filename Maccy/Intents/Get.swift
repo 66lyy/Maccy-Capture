@@ -1,5 +1,7 @@
 import Foundation
 import AppIntents
+import ImageIO
+import UniformTypeIdentifiers
 
 private nonisolated struct ItemContents: Sendable {
   let text: String?
@@ -24,8 +26,6 @@ struct Get: AppIntent, CustomIntentMigratedAppIntent {
   @Parameter(title: "Number", default: 1)
   var number: Int
 
-  private let positionOffset = 1
-
   static var parameterSummary: some ParameterSummary {
     When(\.$selected, .equalTo, false) {
       Summary {
@@ -45,10 +45,7 @@ struct Get: AppIntent, CustomIntentMigratedAppIntent {
       if selected {
         item = AppState.shared.navigator.selection.first?.item
       } else {
-        let index = number - positionOffset
-        if AppState.shared.history.items.count >= index {
-          item = AppState.shared.history.items[index].item
-        }
+        item = AppState.shared.history.items.element(atOneBased: number)?.item
       }
 
       guard let item else {
@@ -75,16 +72,19 @@ struct Get: AppIntent, CustomIntentMigratedAppIntent {
       intentItem.file = fileURL
     }
 
-    if let imageData = contents.image {
-      let file = URL.documentsDirectory.appending(path: "image.png")
-      try imageData.write(to: file, options: [.atomic, .completeFileProtection])
-      intentItem.image = file
-    }
+    intentItem.image = contents.image.flatMap(Self.imageFile)
 
     if let rtf = contents.rtf {
       intentItem.richText = String(data: rtf, encoding: .utf8)
     }
 
     return .result(value: intentItem)
+  }
+
+  nonisolated static func imageFile(_ data: Data) -> IntentFile? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let identifier = CGImageSourceGetType(source), let type = UTType(identifier as String),
+          let suffix = type.preferredFilenameExtension else { return nil }
+    return IntentFile(data: data, filename: "image.\(suffix)", type: type)
   }
 }

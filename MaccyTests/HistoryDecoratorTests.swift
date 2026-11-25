@@ -9,17 +9,8 @@ extension SharedStateTests {
     let savedHighlightMatch = Defaults[.highlightMatch]
     let savedImageMaxHeight = Defaults[.imageMaxHeight]
 
-    var firstCopiedAt: Date! {
-      let formatter = DateFormatter()
-      formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"
-      return formatter.date(from: "2020/07/10 12:31:34")
-    }
-
-    var lastCopiedAt: Date! {
-      let formatter = DateFormatter()
-      formatter.dateFormat = "yyyy/MM/dd HH:mm:ss"
-      return formatter.date(from: "2020/07/10 12:41:34")
-    }
+    let firstCopiedAt = Date(timeIntervalSince1970: 1_594_384_294)
+    var lastCopiedAt: Date { firstCopiedAt.addingTimeInterval(600) }
 
     init() {
       Defaults[.highlightMatch] = .bold

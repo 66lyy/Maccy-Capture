@@ -14,6 +14,45 @@ from generate_update_feed import SPARKLE, create_appcast, create_metadata
 
 
 class UpdateFeedTests(unittest.TestCase):
+    def test_stable_uses_current_verified_build_only_for_the_matching_revision(self):
+        script = pathlib.Path(__file__).with_name("publish_stable.sh").resolve()
+        mock = self.root / "gh"
+        mock.write_text('''#!/usr/bin/env bash
+set -eu
+case "$1:$2" in
+  api:*/releases/tags/*) exit 1;;
+  api:*/commits/tags/*) echo "$FIXTURE_SHA";;
+  api:*/compare/*) echo identical;;
+  api:*/actions/workflows/*) [[ "$2" == *status=success* ]] || exit 1; echo '21 8';;
+  run:download)
+    printf '%s %s' "$3" "$5" > "$RUNNER_TEMP/selected"
+    mkdir -p "$7"; echo 'invalid fixture checksum' > "$7/SHA256SUMS.txt";;
+  *) exit 99;;
+esac
+''')
+        mock.chmod(0o755)
+        for workflow, revision, expected in [
+            ("build-capture", self.revision, "42 13"),
+            ("build-capture", "b" * 40, "21 8"),
+            ("publish-stable", self.revision, "21 8"),
+        ]:
+            with self.subTest(workflow=workflow, revision=revision):
+                run, number = expected.split()
+                environment = {
+                    'PATH': f"{self.root}:{os.environ['PATH']}", 'RUNNER_TEMP': str(self.root),
+                    'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': 'refs/heads/master',
+                    'GH_REPO': 'fixture/capture', 'MACCY_DEFAULT_BRANCH': 'master', 'MACCY_VERIFIED_BUILD_RUN': 'true',
+                    'MACCY_RELEASE_TAG': 'maccy-capture-v2.11.0', 'FIXTURE_SHA': revision, 'GITHUB_SHA': self.revision,
+                    'GITHUB_RUN_ID': '42', 'GITHUB_RUN_NUMBER': '13',
+                    'GITHUB_WORKFLOW_REF': f'fixture/capture/.github/workflows/{workflow}.yml@refs/heads/master',
+                }
+                selected = self.root / 'selected'
+                selected.unlink(missing_ok=True)
+                result = subprocess.run(['bash', str(script)], env=environment, capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotEqual(result.returncode, 99)
+                self.assertEqual(selected.read_text(), f'{run} Maccy-Capture-macOS-universal-{number}')
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

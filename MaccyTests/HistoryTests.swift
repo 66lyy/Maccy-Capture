@@ -522,8 +522,8 @@ extension SharedStateTests {
       #expect(saved.title == NSLocalizedString("ScreenshotTitle", tableName: "GeneralSettings", comment: ""))
       #expect(saved.application == Bundle.main.bundleIdentifier)
       #expect(saved.numberOfCopies == (scenario == "duplicate" ? 2 : 1))
-      #expect(saved.contents.count == 1)
-      #expect(saved.contents.first?.value == data)
+      #expect(saved.imageData == data)
+      #expect(saved.contents.contains { $0.type == Clipboard.hostOnlyType.rawValue })
       #expect(!context.hasChanges)
     }
 
@@ -578,7 +578,7 @@ extension SharedStateTests {
         return
       }
       #expect(presented)
-      #expect(NSPasteboard.general.data(forType: .png) == data)
+      #expect(Clipboard.shared.pasteboard.data(forType: .png) == data)
     }
 
     @MainActor
@@ -595,7 +595,7 @@ extension SharedStateTests {
       let tiff = try #require(textImage(text).tiffRepresentation)
       let bitmap = try #require(NSBitmapImageRep(data: tiff))
       let data = try #require(bitmap.representation(using: .png, properties: [:]))
-      let clipboardBeforeOCR = NSPasteboard.general.changeCount
+      let clipboardBeforeOCR = Clipboard.shared.pasteboard.changeCount
       var presented = false
       let result = try ScreenshotCapture.deliverScreenshot(
         data, copy: { _ in true }, saveHistory: ScreenshotCapture.shared.saveInHistory,
@@ -610,7 +610,7 @@ extension SharedStateTests {
       #expect(row.item.recognizedText?.contains(keyword) == true)
       #expect(row.item.imageData == data)
       #expect(row.item.text == nil)
-      #expect(NSPasteboard.general.changeCount == clipboardBeforeOCR)
+      #expect(Clipboard.shared.pasteboard.changeCount == clipboardBeforeOCR)
       let saved = try #require(ModelContext(Storage.shared.container).fetch(FetchDescriptor<HistoryItem>()).first)
       let reloaded = HistoryItemDecorator(saved)
       let match = try #require(Search().search(string: keyword, within: [reloaded]).first)
@@ -858,6 +858,76 @@ extension SharedStateTests {
 
       #expect(history.items.toArray() == [pinned])
       try assertStorageCounts(items: 1, contents: 1)
+    }
+
+    @Test("A failed removal retains the visible row, selection, clipboard and persistent record", arguments: ["delete", "clear", "clearAll"])
+    func clearFailure(operation: String) async throws {
+      let original = Storage.shared.container
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+      let url = directory.appendingPathComponent("Fixture.sqlite")
+      let savedClear = Defaults[.clearSystemClipboard]
+      defer {
+        Defaults[.clearSystemClipboard] = savedClear
+        AppState.shared.navigator.select()
+        Storage.shared.container = original
+        history.clearAll()
+        try? FileManager.default.removeItem(at: directory)
+      }
+      do {
+        let writable = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(url: url))
+        let record = HistoryItem()
+        record.title = "Retained fixture"
+        writable.mainContext.insert(record)
+        try writable.mainContext.save()
+      }
+      Storage.shared.container = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(url: url, allowsSave: false))
+      try await history.load()
+      let row = try #require(history.firstUnpinnedItem)
+      AppState.shared.navigator.select(item: row)
+      Defaults[.clearSystemClipboard] = true
+      let board = Clipboard.shared.pasteboard
+      board.clearContents()
+      board.setString("Fixture", forType: .string)
+      #expect(throws: (any Error).self) {
+        if operation == "delete" { try history.deletePersisted([row]) }
+        else { try history.clearPersisted(includingPinned: operation == "clearAll") }
+      }
+      #expect(history.firstUnpinnedItem === row)
+      #expect(AppState.shared.navigator.selection.first === row)
+      #expect(board.string(forType: .string) == "Fixture")
+      #expect(try ModelContext(Storage.shared.container).fetchCount(FetchDescriptor<HistoryItem>()) == 1)
+    }
+
+    @Test("Screenshot delivery respects storage, pause, one-shot and source filters without starting OCR",
+          arguments: ["images-disabled", "paused", "once", "ignored-app", "allowlist", "ignored-type"])
+    func screenshotAdmission(rule: String) throws {
+      let enabled = Defaults[.enabledPasteboardTypes], ignored = Defaults[.ignoredApps]
+      let paused = Defaults[.ignoreEvents], once = Defaults[.ignoreOnlyNextEvent]
+      let allowlist = Defaults[.ignoreAllAppsExceptListed], ignoredTypes = Defaults[.ignoredPasteboardTypes]
+      defer {
+        Defaults[.enabledPasteboardTypes] = enabled; Defaults[.ignoredApps] = ignored
+        Defaults[.ignoreEvents] = paused; Defaults[.ignoreOnlyNextEvent] = once
+        Defaults[.ignoreAllAppsExceptListed] = allowlist; Defaults[.ignoredPasteboardTypes] = ignoredTypes
+      }
+      let source = "local.capture.fixture"
+      Defaults[.enabledPasteboardTypes] = rule == "images-disabled" ? [.string] : [.png]
+      Defaults[.ignoreEvents] = rule == "paused" || rule == "once"
+      Defaults[.ignoreOnlyNextEvent] = rule == "once"
+      Defaults[.ignoredApps] = rule == "ignored-app" ? [source] : []
+      Defaults[.ignoreAllAppsExceptListed] = rule == "allowlist"
+      Defaults[.ignoredPasteboardTypes] = rule == "ignored-type" ? [NSPasteboard.PasteboardType.png.rawValue] : []
+      let bytes = Data([1, 2, 3])
+      var presented = false
+      try ScreenshotCapture.deliverScreenshot(bytes, copy: Clipboard.shared.copyScreenshot, saveHistory: {
+        try ScreenshotCapture.shared.saveInHistory($0, sourceApp: source)
+      }, present: { presented = true }).get()
+      Clipboard.shared.checkForChangesInPasteboard()
+      #expect(presented && Clipboard.shared.pasteboard.data(forType: .png) == bytes)
+      #expect(history.items.isEmpty && !history.ocrCoordinator.isRunning)
+      #expect(try Storage.shared.context.fetchCount(FetchDescriptor<HistoryItem>()) == 0)
+      #expect(Defaults[.ignoreEvents] == (rule == "paused"))
+      #expect(!Defaults[.ignoreOnlyNextEvent])
     }
 
     @Test("Clearing all")

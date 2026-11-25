@@ -45,10 +45,16 @@ if [[ "$STATUS" != "identical" && "$STATUS" != "ahead" ]]; then
   exit 2
 fi
 
-read -r RUN_ID RUN_NUMBER < <(gh api \
-  "repos/$GH_REPO/actions/workflows/build-capture.yml/runs?branch=$MACCY_DEFAULT_BRANCH&event=push&status=success&head_sha=$SHA&per_page=1" \
-  --jq '.workflow_runs[0] | select(. != null) | "\(.id) \(.run_number)"') || true
-if [[ ! "${RUN_ID:-}" =~ ^[0-9]+$ ]]; then
+if [[ "${MACCY_VERIFIED_BUILD_RUN:-}" == true && "$SHA" == "${GITHUB_SHA:-}" &&
+  "${GITHUB_WORKFLOW_REF:-}" == "$GH_REPO/.github/workflows/build-capture.yml@$GITHUB_REF" ]]; then
+  RUN_ID="${GITHUB_RUN_ID:-}"
+  RUN_NUMBER="${GITHUB_RUN_NUMBER:-}"
+else
+  read -r RUN_ID RUN_NUMBER < <(gh api \
+    "repos/$GH_REPO/actions/workflows/build-capture.yml/runs?branch=$MACCY_DEFAULT_BRANCH&event=push&status=success&head_sha=$SHA&per_page=1" \
+    --jq '.workflow_runs[0] | select(. != null) | "\(.id) \(.run_number)"') || true
+fi
+if [[ ! "${RUN_ID:-}" =~ ^[0-9]+$ || ! "${RUN_NUMBER:-}" =~ ^[0-9]+$ ]]; then
   echo "No successful default-branch build of $SHA." >&2
   exit 2
 fi

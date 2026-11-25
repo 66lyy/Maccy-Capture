@@ -728,13 +728,13 @@ struct ScreenshotAnnotationTests {
 
   @Test("The magnifier enlarges the mosaic, not the content it hides", arguments: [false, true])
   func magnifierRespectsMosaic(mosaicAfterLens: Bool) throws {
-    let image = NSImage(size: NSSize(width: 240, height: 160), flipped: false) { rect in
-      NSColor.white.setFill()
-      rect.fill()
-      NSColor.black.setFill()
-      NSRect(x: 111, y: 87, width: 7, height: 7).fill()
-      return true
-    }
+    let context = try #require(CGContext(data: nil, width: 240, height: 160, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 240, height: 160))
+    context.setFillColor(CGColor(gray: 0, alpha: 1))
+    context.fill(CGRect(x: 111, y: 87, width: 7, height: 7))
+    let image = NSImage(cgImage: try #require(context.makeImage()), size: NSSize(width: 240, height: 160))
     let magnifier = ScreenshotAnnotationDocument.Mark(
       tool: .magnifier, points: [NSPoint(x: 60, y: 30), NSPoint(x: 160, y: 130)], lineWidth: 2, zoom: 3
     )
@@ -798,6 +798,16 @@ struct ScreenshotAnnotationTests {
     document.draw(in: context)
     document.draw(in: context)
     #expect(document.lensSourceRenders == 4)
+  }
+
+  @Test("Missing mosaic pixels are replaced by an opaque cover")
+  func missingMosaicIsOpaque() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    let mark = ScreenshotAnnotationDocument.Mark(tool: .mosaic, points: [NSPoint(x: 10, y: 20), NSPoint(x: 50, y: 50)])
+    let snapshot = ScreenshotAnnotationDocument.RenderSnapshot(source: document.sourceImage, marks: [.init(mark)])
+    let rep = NSBitmapImageRep(cgImage: try #require(snapshot.render()))
+    let sample = try color(rep, x: 30, y: 159 - 30)
+    #expect(sample.redComponent == 0 && sample.alphaComponent == 1)
   }
 
   @Test("A finished mark is selected and can be moved, resized and deleted with one undo step each")
@@ -1136,6 +1146,10 @@ struct ScreenshotAnnotationTests {
     #expect(result.textView.string == sample)
     #expect(result.textView.isSelectable && !result.textView.isEditable)
     #expect(result.textView.enclosingScrollView?.hasVerticalScroller == true)
+    result.textView.setSelectedRange(NSRange(location: 0, length: 4))
+    result.textView.copy(nil)
+    #expect(Clipboard.shared.pasteboard.string(forType: .string) == "示例文字")
+    #expect(Clipboard.shared.pasteboard.types?.contains(Clipboard.hostOnlyType) == true)
     #expect(result.copyButton.isEnabled)
     window.cancelOperation(nil)
     #expect(window.recognitionResults == nil)

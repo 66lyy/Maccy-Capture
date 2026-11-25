@@ -100,7 +100,9 @@ Dock, menu bar and Space changes (for example another app launching or activatin
 
 Captures are temporarily stored locally in a directory with `0700` permissions.
 Temporary files are cleaned up on completion, cancellation, and failure.
-Successful capture output is copied to the clipboard and saved to local Maccy history.
+Successful capture output is copied to this Mac. Pausing collection, ignoring the next copy or source app,
+or disabling image storage skips history and automatic OCR without suppressing the preview or pin.
+Copying OCR results also uses this Mac’s clipboard only, not Universal Clipboard.
 Screenshots and screen pins added to history are indexed by Apple Vision in the background.
 Search for text in the image to find the original screenshot; the image and its title are unchanged.
 If the history write fails after the clipboard succeeds, the preview or pinned image still appears,
@@ -119,7 +121,7 @@ Its maximum size is limited by both five times the original logical image size
 and the current display's visible area.
 Zoom changes only the display size; it does not resample the source image or rewrite the clipboard.
 Multiple pins on the same display automatically form one thumbnail stack at the bottom-right.
-Drag the card to move it; paging and adding pins keep it in its new position.
+Drag the card within its display; paging and adding pins keep it there. Expand a pin to move it between displays.
 Scroll over the card (or use arrow keys when focused) to browse currently pinned images.
 Click the expand button to keep that pin separate until it closes, even when more pins are added.
 A lone remaining pin restores its previous size. Click-through pins stay outside the stack.
@@ -398,9 +400,9 @@ The compact toolbar groups drawing tools on the left and output actions on the r
 row for the palette and the contextual size slider.
 Narrow displays wrap the controls; display-configuration changes close the overlay without exporting.
 
-Copy and Finish writes only the flattened PNG to the local clipboard and history;
+Copy and Finish copies only the flattened PNG to the local clipboard and saves it if history rules permit;
 when editing a pinned image, it also updates that image.
-For a new capture, Pin to Screen exports the flattened image, adds it to local history,
+For a new capture, Pin to Screen exports the flattened image, applies the same history rules,
 and creates a pinned image.
 For an existing pinned image, Apply to Current Pin updates only that image in memory
 without overwriting the clipboard.
