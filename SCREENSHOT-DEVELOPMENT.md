@@ -53,7 +53,6 @@ Click its pin button to keep the image on screen.
 Capture and Pin creates a pinned image directly, without an additional preview.
 Starting another capture first closes the old preview so it is not included in the next screenshot.
 Previews are held only in memory.
-The success sound can be disabled in General settings; canceled and failed captures do not play it.
 
 Region capture uses the app's own crosshair and selection overlay.
 After releasing the mouse, drag inside the box to move it or drag a corner to resize.
@@ -178,28 +177,26 @@ instead of running two versions together.
 ## GitHub Actions Packaging
 
 The workflow is `.github/workflows/build-capture.yml`.
-It runs on pushes to `master` / `main`, `capture-v*` tags, pull requests, and manual dispatch.
+It runs on pushes to `master` / `main`, pull requests, and manual dispatch.
 The build job has read-only source permissions.
 After a successful default-branch build, a separate publishing job creates a
 `maccy-capture-vMAJOR.MINOR.PATCH-buildBUILD` prerelease with its changes.
-Only that publishing job can write repository contents.
+Build jobs cannot write repository contents.
 Pull requests never publish. In-app updates require the release to be publicly accessible.
 
 Branch pushes and pull requests that change only Markdown, `docs/`, `LICENSE`,
 issue or pull request templates, `.gitignore`, or `.gitattributes` do not trigger builds.
 Changes that also affect code still trigger a build.
-Version tags and manual dispatch are not subject to this documentation filter.
+Stable tag pushes and manual dispatch are not subject to this documentation filter.
 
 The pipeline uses Xcode 26.6 on GitHub's hosted `macos-26` runner.
 It first runs the six regression suites listed below using generated images and simulated input,
 without accessing the developer's desktop, clipboard, history, or keychain.
-On this runner, Apple Swift 6.3.3's Release optimizer has been observed to crash
-in the upstream `FloatingPanel` deinitializer on both `arm64` and `x86_64`.
-Only when that compiler version is detected, the packaging script passes `-Onone`
-for both architectures.
-Other compiler versions retain the project's default optimization settings.
-This workaround may reduce application performance and is recorded in the build information.
-It does not remove features, change window lifecycles, or weaken permission checks.
+With Apple Swift 6.3.3, the Release optimizer's `EarlyPerfInliner` pass crashes
+in the synthesized `FloatingPanel` deinitializer on both `arm64` and `x86_64`.
+An explicit empty `FloatingPanel` deinitializer marked `@_optimize(none)` works around
+the crash without adding any cleanup or changing the window lifecycle. Release builds
+retain the project's whole-module `-O` optimization for the rest of the app on both architectures.
 
 After tests pass, `script/package_release.sh` builds a universal Release application
 and verifies its signature, modified bundle identifier, and `arm64` / `x86_64` architectures.
@@ -225,16 +222,17 @@ Successful artifacts are retained for 14 days and failure diagnostics for 7 days
 Successful default-branch builds each publish a separate test build in Releases
 with the ZIP, DMG, `SHA256SUMS.txt`, and `BUILD-INFO.txt`.
 The release stays a draft until the signed ZIP, supporting files, and `capture-appcast.xml` upload.
-Promote a verified default-branch build to stable by creating a separate draft Release with a
-`maccy-capture-vMAJOR.MINOR.PATCH` tag at its source commit. Upload the unchanged signed ZIP and DMG
-with their build information and update metadata. Use `script/generate_update_feed.py appcast`
-with the **stable Release's ZIP asset ID**, not the preview asset ID, and upload the new appcast and
-checksums before publishing as Latest (not a prerelease). Default-branch builds never replace that release.
+To publish a stable release, commit the matching app version and `docs/releases/VERSION.md`,
+wait for a successful default-branch push build, then push `maccy-capture-vMAJOR.MINOR.PATCH`
+at that commit. **Publish stable release** verifies the commit and reuses its signed ZIP and DMG
+without rebuilding. It generates the appcast using the **stable Release's ZIP asset ID**,
+uploads the checksums, then publishes as Latest (not a prerelease).
+The workflow can also be dispatched manually from the default branch.
 
 Open Actions → Build Maccy Capture in this repository to view runs and download artifacts;
 select Run workflow to build manually.
 Manual builds on the default branch also update the test release;
-other branches, version tags, and pull requests provide artifacts only.
+other branches and pull requests provide artifacts only.
 Private-repository macOS builds may count against GitHub Actions usage;
 consult your account's current limits and billing settings.
 
@@ -314,7 +312,7 @@ CI assigns `CFBundleVersion` as `1100 + GITHUB_RUN_NUMBER`, followed by the run 
 For example `1142.1` and `1142.2` are different upgradable builds even when the marketing version remains `2.8.0`.
 Local developer builds default to build `1000`; `MACCY_BUILD_VERSION` can override packaged build numbers.
 Keep the workflow's build counter monotonic; do not reset it or reuse the same version for different archives.
-The unsigned legacy upstream `appcast.xml` is not used by this modified app.
+Maccy Capture only uses its release-hosted `capture-appcast.xml` and ships no local appcast.
 Clients without the new updater need one manual installation before subsequent in-app upgrades.
 
 After the bundle identifier changes, grant screen recording and any required accessibility permissions

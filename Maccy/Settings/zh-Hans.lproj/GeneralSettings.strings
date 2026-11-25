@@ -98,7 +98,6 @@
 "AnnotationOutputFailed" = "无法打开或导出图片。若编辑器已经打开，当前编辑仍会保留，请重试或另存为 PNG。";
 "AnnotationOutputFailedShort" = "导出失败，请重试";
 "AnnotationInlineHelp" = "直接在截图原位标注。点按标注可选中，拖动可移动，拖动控制点可调整大小，按删除键可移除。导出的图片不包含工具条。";
-"AnnotationMoveToolbar" = "拖动工具条可移开遮挡";
 "ScreenshotTitle" = "截图";
 "ScreenshotSection" = "截图与贴图";
 "ScreenshotMenu" = "截屏";
@@ -130,7 +129,6 @@
 "AnnotationTextCopied" = "已复制";
 "ScreenshotSelectionPinInstructions" = "拖动框选 · 松开即贴屏 · Esc 取消";
 "ScreenshotClipboardHint" = "将剪贴板中已有的图片悬浮显示，不会重新截屏。";
-"ScreenshotSound" = "截图成功时播放提示音";
 "ScreenshotAutoStackPins" = "自动堆叠截图贴图";
 "ScreenshotSuccess" = "截图已复制";
 "ScreenshotSavedLocally" = "已加入本地剪贴板历史";
@@ -159,7 +157,7 @@
 "ScreenshotTimedOut" = "截屏已超时取消，现在可以重新开始。";
 "ScreenshotClipboardWriteFailed" = "未能将截图复制到剪贴板，请重试。";
 "ScreenshotHistorySaveWarningTitle" = "截图已复制，保存历史时出错";
-"ScreenshotHistorySaveWarning" = "截图已复制到剪贴板。Maccy 保存本地历史时出错；如果历史里找不到这张图，可以粘贴到其他应用中保存。";
+"ScreenshotHistorySaveWarning" = "截图已复制到剪贴板。Maccy Capture 保存本地历史时出错；如果历史里找不到这张图，可以粘贴到其他应用中保存。";
 "LaunchAtLogin" = "登录时启动";
 "CheckForUpdates" = "自动检查更新";
 "CheckNow" = "检查更新";

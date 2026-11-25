@@ -1,8 +1,10 @@
 import AppKit
 import CoreData
 import Defaults
+import ImageIO
 import KeyboardShortcuts
 import Testing
+import UniformTypeIdentifiers
 @testable import Maccy
 
 private extension ScrollingScreenshotStitcher {
@@ -11,6 +13,69 @@ private extension ScrollingScreenshotStitcher {
 
 @MainActor
 struct ScreenshotCaptureTests {
+  private final class FixtureBundleLocator {}
+
+  private func scrollingFixture(_ name: String) throws -> CGImage {
+    let bundle = Bundle(for: FixtureBundleLocator.self)
+    let url = try #require(bundle.url(forResource: name, withExtension: "png", subdirectory: "Scrolling"))
+    let data = try Data(contentsOf: url)
+    return try #require(NSBitmapImageRep(data: data)?.cgImage)
+  }
+
+  @Test("Oversized composite bounds fail before allocating the canvas")
+  func auditOversizeComposite() {
+    let bounds = CGRect(x: -16_000, y: -16_000, width: 32_000, height: 32_000)
+    #expect(ScreenshotCaptureSession.compositeWindows([], bounds: bounds, scale: 2) == nil)
+  }
+
+  @Test("Small long frames remain exportable after narrow edge mosaics")
+  func auditNarrowScrollingFrames() async throws {
+    for width in [1, 2, 3, 7, 16] {
+      for height in [1, 2, 4, 5, 12, 24] {
+        var source = ScrollingScreenshotStitcher(width: width, height: height, maximumPixels: 800)
+        #expect(!{ source.append(rgba: []) }())
+        let frame = (0..<(width * height)).flatMap {
+          [UInt8(truncatingIfNeeded: $0 * 139), UInt8(truncatingIfNeeded: $0 * 89), 20, 255]
+        } as [UInt8]
+        #expect({ source.append(rgba: frame) }())
+        let processor = ScrollingScreenshotProcessor()
+        let image = try #require(source.image)
+        _ = try await processor.append(image, refreshPreview: true, maximumPixels: 800)
+        _ = try await processor.append(image, refreshPreview: true, maximumPixels: 800)
+        var edit = ScrollingScreenshotEdit(width: width, height: height, blockSize: 3)
+        edit.paint(CGRect(x: 0.8, y: 0.8, width: 0.4, height: 0.4))
+        edit.crop(at: 1, top: true)
+        let output = try #require(try await processor.export(includePreview: true, edit: edit))
+        #expect(output.image.width == width && output.image.height == 1 && output.preview != nil)
+      }
+    }
+  }
+
+  @Test("Extreme TIFF point dimensions still create a finite pin that closes")
+  func auditExtremeClipboardPin() throws {
+    let raster = try ScreenshotCaptureSession.ValidatedImage.validate(generatedPNG()).image
+    let tiff = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(tiff, UTType.tiff.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(
+      destination, raster, [kCGImagePropertyDPIWidth: 0.0000001, kCGImagePropertyDPIHeight: 72] as CFDictionary
+    )
+    #expect(CGImageDestinationFinalize(destination))
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    #expect(pasteboard.setData(tiff as Data, forType: .tiff))
+    let image = try #require(NSImage(pasteboard: pasteboard))
+    #expect(image.isValid && image.size.width > 1_000_000_000)
+    #expect(PinnedImageBudget.estimatedBytes(for: image) == 4 * raster.width * raster.height)
+    let frame = try #require(NSScreen.main?.visibleFrame)
+    let pin = PinnedScreenshotWindow(image: image, visibleFrame: frame, anchor: .zero)
+    var closes = 0
+    pin.onClose = { closes += 1 }
+    pin.present()
+    #expect(pin.frame.width.isFinite && pin.frame.height.isFinite)
+    pin.close()
+    #expect(closes == 1)
+  }
+
   @Test("Window compositing keeps transparent gaps, stacking order and the backdrop padding")
   func windowCompositing() throws {
     func layer(_ color: NSColor) throws -> CGImage {
@@ -82,8 +147,8 @@ struct ScreenshotCaptureTests {
       Dictionary(uniqueKeysWithValues: votes.sorted { $0.key > $1.key })) == expected)
   }
 
-  @Test("Removing a scrollbar does not reveal its stale pixels in already stored rows")
-  func scrollingHistoricalScrollbarCrop() throws {
+  @Test("Removing a scrollbar does not reveal its stale pixels in already stored rows", arguments: [false, true])
+  func scrollingHistoricalScrollbarCrop(fileBacked: Bool) throws {
     let width = 800, frameHeight = 800, stride = width * 4
     let page = scrollingTextContent(width: width, height: 1280)
     var stitcher = ScrollingScreenshotStitcher(width: width, height: frameHeight,
@@ -108,6 +173,73 @@ struct ScreenshotCaptureTests {
     #expect(try scrollingImagePixels(image) == expected)
     #expect({ stitcher.pixels != page }())
     #expect({ Array(stitcher.pixels.suffix(frameHeight * stride)) == Array(page.suffix(frameHeight * stride)) }())
+    let rows = 761..<1001
+    let cropped = try #require(try stitcher.takeImage(rows: rows, fileBacked: fileBacked))
+    #expect(stitcher.chunks.isEmpty)
+    #expect(cropped.width == image.width && cropped.height == rows.count)
+    let outputStride = image.width * 4
+    let retained = (rows.lowerBound * outputStride)..<(rows.upperBound * outputStride)
+    #expect(try scrollingImagePixels(cropped) == Array(expected[retained]))
+  }
+
+  @Test("Mapped raster rows match in-memory rows with odd widths and padded source strides",
+        arguments: [1, 3, 899, 1001])
+  func scrollingMappedRasterParity(width: Int) throws {
+    let input = try scrollingPaddedRaster(width: width, height: 37)
+    try #require(input.bytesPerRow > width * 4)
+    var inMemory = ScrollingScreenshotStitcher(width: width, height: input.height, maximumPixels: width * input.height)
+    let accepted = inMemory.append(input)
+    try #require(accepted)
+    var mapped = inMemory
+    let rows = 3..<34
+    let reference = try #require(try inMemory.takeImage(rows: rows))
+    let actual = try #require(try mapped.takeImage(rows: rows, fileBacked: true))
+    try #require(actual.width == width && actual.height == rows.count)
+    #expect(actual.bytesPerRow == width * 4)
+    let source = try scrollingImagePixels(input)
+    let expected = Array(source[(rows.lowerBound * width * 4)..<(rows.upperBound * width * 4)])
+    let referenceMatches = try scrollingImagePixels(reference) == expected
+    let mappedMatches = try scrollingImagePixels(actual) == expected
+    #expect(referenceMatches)
+    #expect(mappedMatches)
+  }
+
+  @Test("Long PNG export above the disk-backing cutoff decodes to the same RGBA as in-memory assembly")
+  func scrollingMappedPNGParity() async throws {
+    let width = 2049, height = 8192
+    let pixelCount = width * height
+    try #require(pixelCount > 16 * 1024 * 1024)
+    let input = try scrollingPaddedRaster(width: width, height: height)
+    var inMemory = ScrollingScreenshotStitcher(width: width, height: height, maximumPixels: pixelCount + width)
+    let accepted = inMemory.append(input)
+    try #require(accepted)
+    let reference = try #require(try inMemory.takeImage(rows: 0..<height))
+    let expected = try scrollingImagePixels(reference)
+
+    let processor = ScrollingScreenshotProcessor()
+    let update = try await processor.append(input, refreshPreview: false, maximumPixels: pixelCount + width)
+    try #require(update.width == width && update.height == height)
+    let output = try #require(try await processor.export())
+    let decoded = try ScreenshotCaptureSession.ValidatedImage.validate(output.data).image
+    for image in [output.image, decoded] {
+      try #require(image.width == width && image.height == height)
+      let matches = try scrollingImagePixels(image) == expected
+      #expect(matches)
+    }
+  }
+
+  private func scrollingPaddedRaster(width: Int, height: Int) throws -> CGImage {
+    let context = try #require(CGContext(data: nil, width: width, height: height,
+      bitsPerComponent: 8, bytesPerRow: (width * 4 + 63) / 64 * 64, space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+    for row in 0..<height {
+      let green = CGFloat(row % 251) / 250
+      context.setFillColor(red: 1, green: green, blue: 0, alpha: 1)
+      context.fill(CGRect(x: 0, y: row, width: width, height: 1))
+      context.setFillColor(red: 0, green: green, blue: 1, alpha: 1)
+      context.fill(CGRect(x: width / 2, y: row, width: width - width / 2, height: 1))
+    }
+    return try #require(context.makeImage())
   }
 
   @Test("Static corner replacement retains exact pixels across short and tall edge overlays",
@@ -237,11 +369,8 @@ struct ScreenshotCaptureTests {
   @Test("Low-contrast browser text provides anchors without changing exported pixels",
         arguments: ["chrome-dim", "chrome-low", "safari-dim", "safari-low"])
   func scrollingLowContrast(name: String) throws {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("Fixtures/Scrolling")
     func image(_ suffix: String) throws -> CGImage {
-      let data = try Data(contentsOf: directory.appendingPathComponent("contrast-\(name)-\(suffix).png"))
-      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+      try scrollingFixture("contrast-\(name)-\(suffix)")
     }
     let first = try image("start")
     let next = try image("next")
@@ -263,11 +392,8 @@ struct ScreenshotCaptureTests {
   @Test("A disappearing floating bar releases its replacement tail and restores the full match range",
         arguments: ["chrome", "safari"])
   func scrollingDisappearingTail(browser: String) throws {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("Fixtures/Scrolling")
     func image(_ y: Int) throws -> CGImage {
-      let data = try Data(contentsOf: directory.appendingPathComponent("tail-\(browser)-\(y).png"))
-      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+      try scrollingFixture("tail-\(browser)-\(y)")
     }
     let first = try image(0)
     let last = try image(960)
@@ -296,11 +422,8 @@ struct ScreenshotCaptureTests {
   @Test("Recorded sparse content rejects aliased jumps without losing rows and recovers nearby frames",
         arguments: ["chat", "table", "safari-table"])
   func scrollingSolidContentAliases(name: String) throws {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("Fixtures/Scrolling")
     func image(_ suffix: String) throws -> CGImage {
-      let data = try Data(contentsOf: directory.appendingPathComponent("solid-\(name)-\(suffix).png"))
-      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+      try scrollingFixture("solid-\(name)-\(suffix)")
     }
     let first = try image("before")
     let nearby = try image("near")
@@ -323,11 +446,8 @@ struct ScreenshotCaptureTests {
 
   @Test("The article fixture documents a pixel-identical periodic overlap")
   func scrollingPeriodicArticleOverlap() throws {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("Fixtures/Scrolling")
     func pixels(_ suffix: String) throws -> [UInt8] {
-      let data = try Data(contentsOf: directory.appendingPathComponent("solid-article-\(suffix).png"))
-      return try scrollingImagePixels(#require(NSBitmapImageRep(data: data)?.cgImage))
+      try scrollingImagePixels(scrollingFixture("solid-article-\(suffix)"))
     }
     let first = try pixels("before")
     let jump = try pixels("jump")
@@ -372,11 +492,8 @@ struct ScreenshotCaptureTests {
   @Test("Recorded full-window Safari headers preserve neutral body rows and exact output",
         arguments: ["bands", "text"])
   func scrollingLiveSafariHeader(name: String) throws {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("Fixtures/Scrolling")
     func image(_ suffix: String) throws -> CGImage {
-      let data = try Data(contentsOf: directory.appendingPathComponent("live-safari-\(name)-\(suffix).png"))
-      return try #require(NSBitmapImageRep(data: data)?.cgImage)
+      try scrollingFixture("live-safari-\(name)-\(suffix)")
     }
     let first = try image("before")
     let next = try image("after")
@@ -426,12 +543,8 @@ struct ScreenshotCaptureTests {
   @Test("Recorded Safari toolbar and Chrome scrollbar frames retain exact output pixels",
         arguments: ["safari-toolbar", "chrome-scrollbar"])
   func scrollingRecordedBrowserUI(name: String) throws {
-    let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("Fixtures/Scrolling")
     func image(_ suffix: String) throws -> CGImage {
-      let data = try Data(contentsOf: directory.appendingPathComponent("\(name)-\(suffix).png"))
-      let bitmap = try #require(NSBitmapImageRep(data: data))
-      return try #require(bitmap.cgImage)
+      try scrollingFixture("\(name)-\(suffix)")
     }
     let first = try image("before")
     let next = try image("after")
@@ -478,6 +591,35 @@ struct ScreenshotCaptureTests {
       context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
     }
     return bytes
+  }
+
+  @Test("Large PNG history previews have bounded pixel dimensions without changing the stored PNG")
+  func largePNGHistoryPreviews() throws {
+    let width = 2048, height = 8193
+    let context = try #require(CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+    ))
+    context.setFillColor(gray: 0.5, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    let image = try #require(context.makeImage())
+    let data = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+    let content = HistoryItemContent(type: NSPasteboard.PasteboardType.png.rawValue, value: data)
+    let decorator = HistoryItemDecorator(HistoryItem(contents: [content]))
+    decorator.sizeImages()
+    let pixelScale = NSScreen.forPopup?.backingScaleFactor ?? 1
+    for (preview, bounds) in [
+      (decorator.thumbnailImage, HistoryItemDecorator.thumbnailImageSize),
+      (decorator.previewImage, HistoryItemDecorator.previewImageSize)
+    ] {
+      let resized = try #require(preview)
+      let representation = try #require(resized.representations.first)
+      #expect(representation.pixelsWide > 0 && representation.pixelsHigh > 0)
+      #expect(representation.pixelsWide <= Int(ceil(bounds.width * pixelScale)))
+      #expect(representation.pixelsHigh <= Int(ceil(bounds.height * pixelScale)))
+      #expect(abs(resized.size.width / resized.size.height - Double(width) / Double(height)) < 0.001)
+    }
+    #expect(decorator.item.imageData == data)
   }
 
   @Test("Forty bands retain exact pixels across thirteen joins with rounded corners, shading and a moving thumb")
@@ -637,6 +779,14 @@ struct ScreenshotCaptureTests {
       #expect(update.thumbnail != nil)
     }
     print("RETINA_PROCESSOR scale=\(scale) pixels=\(width)x\(frameHeight) milliseconds=\(processorMilliseconds)")
+    try #require(stitcher.chunks.count > 1)
+    let rows = 3..<(stitcher.height - 5)
+    var mapped = stitcher
+    let reference = try #require(try stitcher.takeImage(rows: rows))
+    let actual = try #require(try mapped.takeImage(rows: rows, fileBacked: true))
+    try #require(actual.width == reference.width && actual.height == reference.height)
+    let matches = try scrollingImagePixels(actual) == scrollingImagePixels(reference)
+    #expect(matches)
   }
 
   private func scrollingFrame(_ start: Int, header: Int = 0, footer: Int = 0) -> [UInt8] {
@@ -1269,6 +1419,23 @@ struct ScreenshotCaptureTests {
     #expect(try await processor.export() == nil)
   }
 
+  @Test("A failed export consumes the stitched frames", arguments: [false, true])
+  func scrollingFailedExportReleasesFrames(invalidEdit: Bool) async throws {
+    let processor = ScrollingScreenshotProcessor()
+    var source = ScrollingScreenshotStitcher(width: 8, height: 24, maximumPixels: 800)
+    source.append(rgba: scrollingFrame(0))
+    let image = try #require(source.image)
+    _ = try await processor.append(image, refreshPreview: false, maximumPixels: 800)
+    let edit = invalidEdit ? ScrollingScreenshotEdit(width: 7, height: 24, blockSize: 5) : nil
+    let output = try await processor.export(edit: edit) { _ in
+      #expect(!invalidEdit)
+      return nil
+    }
+    #expect(output == nil)
+    #expect(try await processor.editingPreview() == nil)
+    #expect(try await processor.export() == nil)
+  }
+
   @Test("Long screenshot crop handles map top-down to full-resolution rows and cannot cross")
   func scrollingCropMapping() {
     var edit = ScrollingScreenshotEdit(width: 700, height: 941, blockSize: 20)
@@ -1781,6 +1948,73 @@ struct ScreenshotCaptureTests {
     #expect(frame == capture)
   }
 
+  @Test("A capture pin from a disconnected display opens on the remaining screen")
+  func capturePinFromDisconnectedDisplay() {
+    let capture = NSRect(x: -640, y: 400, width: 320, height: 160)
+    let remainingScreen = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let frame = PinnedScreenshotWindow.initialFrame(
+      imageSize: capture.size, visibleFrame: remainingScreen,
+      anchor: NSPoint(x: capture.midX, y: capture.midY), captureFrame: capture
+    )
+    #expect(frame == NSRect(x: 0, y: 400, width: 320, height: 160))
+  }
+
+  @Test("A lost pin moves to the nearest remaining display")
+  func lostPinUsesNearestDisplay() {
+    let main = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let secondary = NSRect(x: -800, y: -100, width: 800, height: 600)
+    let pin = NSRect(x: -1280, y: 300, width: 320, height: 160)
+    let recovered = PinnedScreenshotWindow.reachableFrame(pin, in: [main, secondary])
+    #expect(recovered == NSRect(x: -800, y: 300, width: 320, height: 160))
+    #expect(PinnedScreenshotWindow.reachableFrame(pin, in: []) == pin)
+  }
+
+  @Test("Pins with only a sliver visible are recovered without moving reachable pins")
+  func partiallyVisiblePins() {
+    let main = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let secondary = NSRect(x: -800, y: -100, width: 800, height: 600)
+    let sliver = NSRect(x: 795, y: 200, width: 320, height: 160)
+    #expect(PinnedScreenshotWindow.reachableFrame(sliver, in: [main, secondary])
+      == NSRect(x: 480, y: 200, width: 320, height: 160))
+    for pin in [
+      NSRect(x: 100, y: 100, width: 320, height: 160),
+      NSRect(x: -700, y: -50, width: 320, height: 160),
+      NSRect(x: 700, y: 200, width: 320, height: 160)
+    ] {
+      #expect(PinnedScreenshotWindow.reachableFrame(pin, in: [main, secondary]) == pin)
+    }
+  }
+
+  @Test("A pin too large for the remaining display shrinks without changing its aspect ratio")
+  func oversizedPinOnRemainingDisplay() {
+    let screen = NSRect(x: 0, y: 50, width: 800, height: 600)
+    let pin = NSRect(x: -1400, y: 500, width: 1600, height: 800)
+    #expect(PinnedScreenshotWindow.reachableFrame(pin, in: [screen])
+      == NSRect(x: 0, y: 250, width: 800, height: 400))
+  }
+
+  @Test("A screen change recovers open pins and their saved expanded frames", arguments: [false, true])
+  func screenChangeRecoversOpenPin(thumbnail: Bool) throws {
+    let screens = NSScreen.screens.map(\.visibleFrame)
+    let rightEdge = try #require(screens.map(\.maxX).max())
+    let pin = pinnedZoomWindow()
+    defer { pin.close() }
+    pin.present()
+    pin.setFrameOrigin(NSPoint(x: rightEdge + 200, y: pin.frame.minY))
+    let lostFrame = pin.frame
+    if thumbnail { pin.showThumbnail(in: lostFrame, page: 1, total: 2) }
+    try #require(!screens.contains { $0.intersects(lostFrame) })
+    try #require(pin.frame == lostFrame && pin.editingFrame == lostFrame)
+
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+
+    #expect(pin.isVisible && screens.contains { $0.contains(pin.frame) })
+    #expect(screens.contains { $0.contains(pin.editingFrame) })
+    if thumbnail { pin.restoreExpandedPresentation() }
+    #expect(screens.contains { $0.contains(pin.frame) })
+    #expect(pin.frame.size == lostFrame.size)
+  }
+
   @Test("Clipboard pins use representation point size rather than bitmap pixels")
   func clipboardPinPointSize() throws {
     let bitmap = try #require(NSBitmapImageRep(data: generatedPNG()))
@@ -1906,8 +2140,8 @@ struct ScreenshotCaptureTests {
     let first = pinnedZoomWindow()
     let second = pinnedZoomWindow(size: NSSize(width: 300, height: 200))
     let third = pinnedZoomWindow(size: NSSize(width: 400, height: 100))
-    let stack = PinnedScreenshotStack()
     let screen = NSRect(x: -900, y: -600, width: 900, height: 600)
+    let stack = PinnedScreenshotStack(visibleFrames: { [screen] })
     let original = first.frame
     first.alphaValue = 0.45
     defer { third.close(); second.close(); first.close() }
@@ -1979,6 +2213,84 @@ struct ScreenshotCaptureTests {
     #expect(file.filename == "image.jpeg" || file.filename == "image.jpg")
     #expect(file.data == jpeg)
     #expect(Get.imageFile(Data([0])) == nil)
+  }
+
+  @Test("Stack paging does not reuse a moved thumbnail's origin on a disconnected display")
+  func thumbnailStackPagingAfterDisplayRemoval() {
+    let first = pinnedZoomWindow()
+    let second = pinnedZoomWindow()
+    let originalScreen = NSRect(x: -900, y: -600, width: 900, height: 600)
+    let remainingScreen = NSRect(x: 0, y: 50, width: 800, height: 600)
+    var screens = [originalScreen, remainingScreen]
+    let stack = PinnedScreenshotStack(visibleFrames: { screens })
+    defer { second.close(); first.close() }
+
+    stack.add(first, alongside: [], visibleFrame: originalScreen)
+    stack.add(second, alongside: [first], visibleFrame: originalScreen)
+    second.setFrameOrigin(NSPoint(x: -500, y: -300))
+    #expect(originalScreen.contains(second.frame))
+    screens = [remainingScreen]
+
+    stack.step(by: -1, from: second)
+    stack.constrain(first)
+
+    #expect(first.isVisible && remainingScreen.contains(first.frame))
+  }
+
+  @Test("Empty stacks are released when a pin closes or expands", arguments: [false, true])
+  func emptyThumbnailStackIsReleased(expand: Bool) throws {
+    let controller = ScreenshotCapture()
+    let (first, second) = try stackTwoPins(using: controller)
+    defer { second.close(); first.close() }
+    weak var stack = second.thumbnailStack
+    try #require(stack != nil && first.thumbnailStack === stack)
+
+    if expand { second.restoreFromThumbnail() } else { second.close() }
+
+    #expect(first.isVisible && first.thumbnailStack == nil)
+    #expect(stack == nil)
+    withExtendedLifetime(controller) {}
+  }
+
+  @Test("A display change prunes disconnected stacks without closing their pins")
+  func disconnectedThumbnailStackIsReleased() throws {
+    let screen = try #require(NSScreen.main)
+    let displayNumber = try #require(screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
+    var connectedDisplayIDs: Set<CGDirectDisplayID> = [displayNumber.uint32Value]
+    let controller = ScreenshotCapture(connectedDisplayIDs: { connectedDisplayIDs })
+    let (first, second) = try stackTwoPins(using: controller)
+    defer { second.close(); first.close() }
+    weak var stack = second.thumbnailStack
+    try #require(stack != nil && first.thumbnailStack === stack)
+    let expandedFrames = [first.editingFrame, second.editingFrame]
+
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+    #expect(stack != nil && !first.isVisible && second.isVisible)
+
+    connectedDisplayIDs = [displayNumber.uint32Value ^ 1]
+    NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+
+    #expect(stack == nil)
+    #expect(first.isVisible && second.isVisible)
+    #expect(first.thumbnailStack == nil && second.thumbnailStack == nil)
+    #expect([first.frame, second.frame] == expandedFrames)
+  }
+
+  private func stackTwoPins(using controller: ScreenshotCapture) throws
+    -> (PinnedScreenshotWindow, PinnedScreenshotWindow) {
+    let screen = try #require(NSScreen.main?.visibleFrame)
+    let key = Defaults.Keys.automaticPinStackingEnabled
+    let previous = Defaults[key]
+    Defaults[key] = true
+    defer { Defaults[key] = previous }
+    let png = try generatedPNG()
+    func pin(offset: CGFloat) throws -> PinnedScreenshotWindow {
+      let image = try #require(NSImage(data: png))
+      let frame = NSRect(x: (screen.midX + offset).rounded(), y: screen.midY.rounded(), width: 120, height: 120)
+      controller.pinImage(image, imageFrame: frame)
+      return try #require(NSApp.windows.compactMap { $0 as? PinnedScreenshotWindow }.first { $0.image === image })
+    }
+    return try (pin(offset: -180), pin(offset: 60))
   }
 
   @Test("Click-through restores a pin and keeps it out of subsequent thumbnail stacks")
@@ -2101,6 +2413,30 @@ struct ScreenshotCaptureTests {
     if let other { #expect(other.isVisible && other.thumbnailStack == nil) }
   }
 
+  @Test("Only Option at mouse-down selects pin export, and export requires at least four points of movement")
+  func pinnedExportGesture() throws {
+    let origin = NSPoint(x: 10, y: 20)
+    func event(
+      _ type: NSEvent.EventType, at point: NSPoint, flags: NSEvent.ModifierFlags = [], clicks: Int = 1
+    ) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: point, modifierFlags: flags, timestamp: 0,
+        windowNumber: 0, context: nil, eventNumber: 0, clickCount: clicks, pressure: 1
+      ))
+    }
+    let plain = try event(.leftMouseDown, at: origin)
+    let doubleClick = try event(.leftMouseDown, at: origin, clicks: 2)
+    let option = try event(.leftMouseDown, at: origin, flags: [.option])
+    #expect(PinnedScreenshotDragGesture.action(for: plain) == .move)
+    #expect(PinnedScreenshotDragGesture.action(for: doubleClick) == .close)
+    #expect(PinnedScreenshotDragGesture.action(for: option) == .export)
+    let gesture = PinnedScreenshotDragGesture(origin: option.locationInWindow)
+    let tiny = try event(.leftMouseDragged, at: NSPoint(x: 13, y: 22), flags: [.option])
+    let released = try event(.leftMouseDragged, at: NSPoint(x: 14, y: 20))
+    #expect(!gesture.crossedThreshold(with: tiny))
+    #expect(gesture.crossedThreshold(with: released))
+  }
+
   @Test("Pin drag stages a real PNG file at the source pixel size and cleans up on cancellation")
   func pinnedFileExport() throws {
     let root = try temporaryDirectory()
@@ -2108,13 +2444,120 @@ struct ScreenshotCaptureTests {
     let source = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
     let file = try PinnedScreenshotDragExport.stage(source, in: root)
     let secondFile = try PinnedScreenshotDragExport.stage(source, in: root)
-    let result = try #require(NSBitmapImageRep(data: Data(contentsOf: file)))
+    let data = try Data(contentsOf: file)
+    let result = try #require(NSBitmapImageRep(data: data))
     #expect(file != secondFile && file.pathExtension == "png")
     #expect(result.pixelsWide == source.width && result.pixelsHigh == source.height)
-    #expect((file as NSURL).writableTypes(for: Clipboard.shared.pasteboard).contains(.fileURL))
-    PinnedScreenshotDragExport.remove(file)
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    #expect((file as NSURL).writableTypes(for: pasteboard).contains(.fileURL))
+    try #require(pasteboard.writeObjects([file as NSURL]))
+    #expect(pasteboard.string(forType: .fileURL).flatMap(URL.init(string:)) == file)
+    let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+    #expect(urls == [file])
+    let filenames = NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    #expect(pasteboard.propertyList(forType: filenames) as? [String] == [file.path])
+
+    PinnedScreenshotDragExport.finish(file, copied: false)
+    PinnedScreenshotDragExport.finish(secondFile, copied: true)
     #expect(!FileManager.default.fileExists(atPath: file.path))
     #expect(FileManager.default.fileExists(atPath: secondFile.path))
+    #expect(try Data(contentsOf: secondFile) == data)
+  }
+
+  @Test("Pruning removes stale export directories without deleting recent exports or unrelated folders")
+  func pinnedFileExportPruning() throws {
+    let root = try temporaryDirectory()
+    let files = FileManager.default
+    defer { try? files.removeItem(at: root) }
+    let source = try #require(NSBitmapImageRep(data: generatedPNG())?.cgImage)
+    let expired = try PinnedScreenshotDragExport.stage(source, in: root)
+    let recent = try PinnedScreenshotDragExport.stage(source, in: root)
+    let unrelated = root.appendingPathComponent("unrelated", isDirectory: true)
+    try files.createDirectory(at: unrelated, withIntermediateDirectories: false)
+    let old = Date(timeIntervalSinceNow: -172_800)
+    for directory in [expired.deletingLastPathComponent(), unrelated] {
+      try files.setAttributes([.modificationDate: old], ofItemAtPath: directory.path)
+    }
+
+    PinnedScreenshotDragExport.removeExpired(in: root)
+
+    #expect(!files.fileExists(atPath: expired.deletingLastPathComponent().path))
+    #expect(files.fileExists(atPath: recent.path))
+    #expect(files.fileExists(atPath: unrelated.path))
+  }
+
+  @Test("Pin export fails without leaving a staged file when the export root is not writable as a directory")
+  func pinnedFileExportFailure() throws {
+    let root = try temporaryDirectory()
+    let files = FileManager.default
+    defer { try? files.removeItem(at: root) }
+    let obstruction = root.appendingPathComponent("obstruction")
+    let data = try generatedPNG()
+    try data.write(to: obstruction)
+    let source = try #require(NSBitmapImageRep(data: data)?.cgImage)
+
+    #expect(throws: (any Error).self) { try PinnedScreenshotDragExport.stage(source, in: obstruction) }
+    #expect(try files.contentsOfDirectory(atPath: root.path) == ["obstruction"])
+    #expect(try Data(contentsOf: obstruction) == data)
+  }
+
+  @Test("Releasing the mouse or closing the pin cancels in-flight PNG staging", arguments: [false, true])
+  func cancelInFlightPinExport(closePin: Bool) async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (window, view) = try pinForStagingTest()
+    defer { window.close() }
+    let gate = PinExportStagingGate(root: root, pauseBeforeWrite: true)
+    defer { gate.resume.signal() }
+    var paused = gate.paused.makeAsyncIterator()
+    var observations = gate.observations.makeAsyncIterator()
+    let pending = try startPinExport(in: window, view: view, gate: gate)
+    await paused.next()
+
+    if closePin {
+      window.cancelOperation(nil)
+      #expect(!window.isVisible)
+    } else {
+      view.mouseUp(with: try pinMouseEvent(.leftMouseUp, in: window))
+    }
+    #expect(pending.isCancelled)
+    gate.resume.signal()
+    await pending.value
+
+    let observation = try #require(await observations.next())
+    #expect(observation.cancelled)
+    #expect(observation.stagedDirectories == 0)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+  }
+
+  @Test("A superseded pin export removes its already written PNG without resetting the new drag")
+  func rapidPinExports() async throws {
+    let root = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let (window, view) = try pinForStagingTest()
+    defer { window.close() }
+    let first = PinExportStagingGate(root: root, pauseBeforeWrite: false)
+    let second = PinExportStagingGate(root: root, pauseBeforeWrite: true)
+    defer { first.resume.signal(); second.resume.signal() }
+    var firstPaused = first.paused.makeAsyncIterator()
+    var secondPaused = second.paused.makeAsyncIterator()
+    let superseded = try startPinExport(in: window, view: view, gate: first)
+    await firstPaused.next()
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).count == 1)
+
+    let latest = try startPinExport(in: window, view: view, gate: second)
+    await secondPaused.next()
+    first.resume.signal()
+    await superseded.value
+
+    #expect(superseded.isCancelled)
+    #expect(!latest.isCancelled && view.exportTask != nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
+    view.mouseUp(with: try pinMouseEvent(.leftMouseUp, in: window))
+    second.resume.signal()
+    await latest.value
+    #expect(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
   }
 
   @Test("A remapped pinned-window shortcut works without keeping its old binding")
@@ -2570,6 +3013,33 @@ struct ScreenshotCaptureTests {
     )
   }
 
+  private func pinForStagingTest() throws -> (PinnedScreenshotWindow, PinnedScreenshotImageView) {
+    let image = try #require(NSImage(data: generatedPNG()))
+    let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: visibleFrame, anchor: NSPoint(x: visibleFrame.midX, y: visibleFrame.midY)
+    )
+    let view = try #require(window.contentView?.subviews.compactMap { $0 as? PinnedScreenshotImageView }.first)
+    window.present()
+    return (window, view)
+  }
+
+  private func startPinExport(
+    in window: PinnedScreenshotWindow, view: PinnedScreenshotImageView, gate: PinExportStagingGate
+  ) throws -> Task<Void, Never> {
+    view.stageExport = gate.stage
+    view.mouseDown(with: try pinMouseEvent(.leftMouseDown, in: window))
+    view.mouseDragged(with: try pinMouseEvent(.leftMouseDragged, in: window))
+    return try #require(view.exportTask)
+  }
+
+  private func pinMouseEvent(_ type: NSEvent.EventType, in window: NSWindow) throws -> NSEvent {
+    try #require(NSEvent.mouseEvent(
+      with: type, location: NSPoint(x: type == .leftMouseDown ? 4 : 12, y: 4), modifierFlags: [.option],
+      timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+    ))
+  }
+
   private func process(_ executable: String, arguments: [String] = []) -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: executable)
@@ -2604,6 +3074,47 @@ struct ScreenshotCaptureTests {
     }
     Issue.record("Capture did not start")
     throw CancellationError()
+  }
+}
+
+nonisolated private final class PinExportStagingGate: Sendable {
+  struct Observation: Sendable {
+    let cancelled: Bool
+    let stagedDirectories: Int?
+  }
+
+  let resume = DispatchSemaphore(value: 0)
+  private let pause = AsyncStream<Void>.makeStream()
+  private let result = AsyncStream<Observation>.makeStream()
+  private let root: URL
+  private let pauseBeforeWrite: Bool
+
+  var paused: AsyncStream<Void> { pause.stream }
+  var observations: AsyncStream<Observation> { result.stream }
+
+  init(root: URL, pauseBeforeWrite: Bool) {
+    self.root = root
+    self.pauseBeforeWrite = pauseBeforeWrite
+  }
+
+  func stage(_ image: CGImage) throws -> URL {
+    defer {
+      result.continuation.yield(.init(
+        cancelled: Task.isCancelled,
+        stagedDirectories: try? FileManager.default.contentsOfDirectory(atPath: root.path).count
+      ))
+      result.continuation.finish()
+      pause.continuation.finish()
+    }
+    if pauseBeforeWrite { wait() }
+    let file = try PinnedScreenshotDragExport.stage(image, in: root)
+    if !pauseBeforeWrite { wait() }
+    return file
+  }
+
+  private func wait() {
+    pause.continuation.yield(())
+    _ = resume.wait(timeout: .now() + 10)
   }
 }
 

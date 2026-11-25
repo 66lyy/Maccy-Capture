@@ -7,7 +7,7 @@
 "clear_all" = "Pulisci tutto";
 "about" = "Informazioni";
 "quit" = "Chiudi";
-"preferences" = "Preferenze…";
+"preferences" = "Preferenze";
 "clear_alert_message" = "Sei sicuro di voler cancellare la cronologia?";
 "clear_alert_comment" = "Questa azione non può essere annullata.";
 "clear_alert_cancel" = "Annulla";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "Privacy e sicurezza";
 "system_preferences_name" = "Preferenze di Sistema";
 "system_preferences_pane" = "Sicurezza e Privacy";
-"status_item_accessibility_label" = "Maccy — cronologia degli appunti";
+"status_item_accessibility_label" = "Maccy Capture — cronologia degli appunti";
 "status_item_disabled_accessibility_suffix" = "in pausa";
 "search_clear_accessibility_label" = "Cancella ricerca";
 "history_item_pin_action" = "Blocca";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Immagine, %d×%d";
 "history_item_image_accessibility_generic" = "Immagine";
 "toolbar_remove_paste_stack_action" = "Arresta la pila di incollaggio";
+"check_for_updates" = "Controlla aggiornamenti";
+"check_for_updates_tooltip" = "Controlla se è disponibile una nuova versione dell'applicazione.";

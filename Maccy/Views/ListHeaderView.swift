@@ -14,7 +14,7 @@ struct ListHeaderView: View {
   var body: some View {
     HStack(spacing: 8) {
       if showTitle {
-        Text("Maccy")
+        Text(verbatim: "Maccy Capture")
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.secondary)
           .padding(.leading, 5)

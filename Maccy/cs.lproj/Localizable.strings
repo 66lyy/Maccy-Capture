@@ -3,7 +3,7 @@
 "clear_all_tooltip" = "Odebrat všechny položky.";
 "clear_all" = "Odebrat všechny";
 "quit" = "Ukončit";
-"preferences" = "Předvolby…";
+"preferences" = "Předvolby";
 "clear_alert_message" = "Opravdu chceš vymazat historii?";
 "clear_alert_comment" = "Tuto akci nemůžeš vrátit.";
 "clear_alert_cancel" = "Zrušit";
@@ -14,7 +14,7 @@
 "about" = "O aplikaci";
 "copy_modifiers_config" = "• Vyber se stisknutím %@ pro zkopírování položky.";
 "format_modifiers_config" = "• Vyber se stisknutím %@ pro zkopírování, odstranění formátování a vložení položky.";
-"status_item_accessibility_label" = "Maccy — historie schránky";
+"status_item_accessibility_label" = "Maccy Capture — historie schránky";
 "status_item_disabled_accessibility_suffix" = "pozastaveno";
 "search_clear_accessibility_label" = "Vymazat hledání";
 "history_item_pin_action" = "Připnout";
@@ -25,3 +25,5 @@
 "history_item_image_accessibility_label_no_app" = "Obrázek, %d×%d";
 "history_item_image_accessibility_generic" = "Obrázek";
 "toolbar_remove_paste_stack_action" = "Zastavit zásobník vložení";
+"check_for_updates" = "Zkontrolovat aktualizace";
+"check_for_updates_tooltip" = "Zkontrolovat, zda je k dispozici nová verze aplikace.";

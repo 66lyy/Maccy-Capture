@@ -180,6 +180,14 @@ struct SoftwareUpdaterTests {
     }
   }
 
+  @Test("The history footer offers Check for Updates right below About")
+  func footerOffersUpdateCheck() throws {
+    let titles = Footer().items.map(\.title)
+    let about = try #require(titles.firstIndex(of: "about"))
+    #expect(titles[about + 1] == "check_for_updates")
+    #expect(titles.last == "quit")
+  }
+
   @Test("Startup checks default to enabled, respect local preferences, and stay offline during tests")
   func isolatedPreferences() throws {
     let domain = "local.maccy.updates.fixture.\(UUID().uuidString)"
@@ -370,14 +378,62 @@ struct SoftwareUpdaterTests {
     }
   }
 
+  @Test("A manual check shows the checking window before discovery and closes it when discovery fails")
+  func manualCheckShowsProgressAtOnce() async throws {
+    let progress = CheckProgress()
+    let (response, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    var requests = 0
+    let updater = try makeUpdater(clock: CheckClock(), enabled: false, progress: progress) { _ in
+      requests += 1
+      for await _ in response { break }
+      throw URLError(.notConnectedToInternet)
+    }
+    defer { updater.stop() }
+
+    updater.checkForUpdates()
+    #expect(progress.events == ["show"])
+    try await waitUntil { requests == 1 }
+    #expect(progress.events == ["show"])
+    continuation.yield(())
+    try await waitUntil { !updater.isChecking }
+    #expect(progress.events == ["show", "hide"])
+    #expect(updater.statusKey == "UpdateCheckFailed")
+  }
+
+  @Test("Cancelling the checking window stops discovery")
+  func cancellingProgressStopsDiscovery() async throws {
+    let progress = CheckProgress()
+    let (response, continuation) = AsyncStream<Void>.makeStream()
+    defer { continuation.finish() }
+    var requests = 0
+    let updater = try makeUpdater(clock: CheckClock(), enabled: false, progress: progress) { _ in
+      requests += 1
+      for await _ in response { break }
+      try Task.checkCancellation()
+      throw URLError(.notConnectedToInternet)
+    }
+    defer { updater.stop() }
+
+    updater.checkForUpdates()
+    try await waitUntil { requests == 1 }
+    progress.cancel()
+    continuation.yield(())
+    try await waitUntil { !updater.isChecking }
+    #expect(progress.events == ["show", "hide"])
+    #expect(updater.statusKey == "UpdateReady")
+  }
+
   private func makeUpdater(
     clock: CheckClock, enabled: Bool = true, hasActiveCapture: @escaping () -> Bool = { false },
+    progress: (any UpdateCheckProgress)? = nil,
     load: @escaping (URLRequest) async throws -> (Data, URLResponse)
   ) throws -> SoftwareUpdater {
     let defaults = try #require(UserDefaults(suiteName: "local.maccy.updates.clock.\(UUID().uuidString)"))
     defaults.register(defaults: [SoftwareUpdater.automaticChecksKey: enabled])
     return SoftwareUpdater(
-      defaults: defaults, load: load, canCheck: { true }, hasActiveCapture: hasActiveCapture, sleep: clock.sleep
+      defaults: defaults, load: load, canCheck: { true }, hasActiveCapture: hasActiveCapture, sleep: clock.sleep,
+      progress: progress
     )
   }
 
@@ -387,6 +443,25 @@ struct SoftwareUpdaterTests {
       try await Task.sleep(for: .milliseconds(5))
     }
     try #require(condition())
+  }
+
+  @MainActor
+  private final class CheckProgress: UpdateCheckProgress {
+    private(set) var events: [String] = []
+    private var cancellation: (() -> Void)?
+
+    func showChecking(cancellation: @escaping () -> Void) {
+      events.append("show")
+      self.cancellation = cancellation
+    }
+
+    func hideChecking() {
+      events.append("hide")
+    }
+
+    func cancel() {
+      cancellation?()
+    }
   }
 
   @MainActor

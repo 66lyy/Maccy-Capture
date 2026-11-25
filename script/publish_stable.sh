@@ -6,10 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 : "${MACCY_DEFAULT_BRANCH:?MACCY_DEFAULT_BRANCH must identify the default branch}"
 : "${MACCY_RELEASE_TAG:?MACCY_RELEASE_TAG must name the stable release tag}"
 
-if [[ "${GITHUB_ACTIONS:-}" != "true" ||
-  ( "${GITHUB_EVENT_NAME:-}" != "push" && "${GITHUB_EVENT_NAME:-}" != "workflow_dispatch" ) ||
-  "${GITHUB_REF:-}" != "refs/heads/$MACCY_DEFAULT_BRANCH" ]]; then
-  echo "Stable releases can only be published by default-branch push or manual workflow runs." >&2
+if [[ "${GITHUB_ACTIONS:-}" != "true" ]] || ! {
+  [[ "${GITHUB_EVENT_NAME:-}" == "push" && "${GITHUB_REF:-}" == "refs/tags/$MACCY_RELEASE_TAG" ]] ||
+  [[ "${GITHUB_EVENT_NAME:-}" == "workflow_dispatch" && "${GITHUB_REF:-}" == "refs/heads/$MACCY_DEFAULT_BRANCH" ]]
+}; then
+  echo "Stable releases require a matching tag push or a manual run on the default branch." >&2
   exit 2
 fi
 if [[ ! "$MACCY_RELEASE_TAG" =~ ^maccy-capture-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
@@ -27,13 +28,15 @@ if gh api "repos/$GH_REPO/releases/tags/$MACCY_RELEASE_TAG" >/dev/null 2>&1; the
   exit 2
 fi
 
-# Use an existing tag, or tag the default branch head.
-TARGET=()
+# Only a manual run may tag the default branch head.
 if SHA="$(gh api "repos/$GH_REPO/commits/tags/$MACCY_RELEASE_TAG" --jq .sha 2>/dev/null)"; then
-  :
-else
+  TARGET=(--verify-tag)
+elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
   SHA="$(gh api "repos/$GH_REPO/commits/heads/$MACCY_DEFAULT_BRANCH" --jq .sha)"
   TARGET=(--target "$SHA")
+else
+  echo "Could not resolve the release tag $MACCY_RELEASE_TAG." >&2
+  exit 2
 fi
 if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Could not resolve the release commit." >&2
@@ -45,15 +48,9 @@ if [[ "$STATUS" != "identical" && "$STATUS" != "ahead" ]]; then
   exit 2
 fi
 
-if [[ "${MACCY_VERIFIED_BUILD_RUN:-}" == true && "$SHA" == "${GITHUB_SHA:-}" &&
-  "${GITHUB_WORKFLOW_REF:-}" == "$GH_REPO/.github/workflows/build-capture.yml@$GITHUB_REF" ]]; then
-  RUN_ID="${GITHUB_RUN_ID:-}"
-  RUN_NUMBER="${GITHUB_RUN_NUMBER:-}"
-else
-  read -r RUN_ID RUN_NUMBER < <(gh api \
-    "repos/$GH_REPO/actions/workflows/build-capture.yml/runs?branch=$MACCY_DEFAULT_BRANCH&event=push&status=success&head_sha=$SHA&per_page=1" \
-    --jq '.workflow_runs[0] | select(. != null) | "\(.id) \(.run_number)"') || true
-fi
+read -r RUN_ID RUN_NUMBER < <(gh api \
+  "repos/$GH_REPO/actions/workflows/build-capture.yml/runs?branch=$MACCY_DEFAULT_BRANCH&event=push&status=success&head_sha=$SHA&per_page=1" \
+  --jq '.workflow_runs[0] | select(. != null) | "\(.id) \(.run_number)"') || true
 if [[ ! "${RUN_ID:-}" =~ ^[0-9]+$ || ! "${RUN_NUMBER:-}" =~ ^[0-9]+$ ]]; then
   echo "No successful default-branch build of $SHA." >&2
   exit 2

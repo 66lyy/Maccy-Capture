@@ -147,6 +147,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     imageView.menu = menu
     contentView = container
     initialFirstResponder = imageView
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(screenParametersDidChange(_:)),
+      name: NSApplication.didChangeScreenParametersNotification, object: nil
+    )
   }
 
   override var canBecomeKey: Bool { isRequestingKeyboardFocus || isKeyWindow }
@@ -184,10 +188,7 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     self.expandedPresentation = nil
     backgroundColor = .clear
     alphaValue = expandedPresentation.opacity
-    contentAspectRatio = image.size
-    contentMinSize = Self.minimumSize(for: image.size, in: expandedPresentation.frame)
-    setFrame(expandedPresentation.frame, display: true)
-    imageScale = min(frame.width / image.size.width, frame.height / image.size.height)
+    setExpandedFrame(Self.reachableFrame(expandedPresentation.frame, in: NSScreen.screens.map(\.visibleFrame)))
     thumbnailControls.isHidden = true
     pageLabel.isHidden = true
     imageView.toolTip = Self.localized("ScreenshotZoomHelp")
@@ -266,6 +267,10 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    imageView.cancelPendingExport()
+    NotificationCenter.default.removeObserver(
+      self, name: NSApplication.didChangeScreenParametersNotification, object: nil
+    )
     thumbnailStack?.remove(self)
     closeClickThroughControls()
     onAnnotate = nil
@@ -280,22 +285,41 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     guard replacement.isValid, replacement.size.width > 0, replacement.size.height > 0 else { return }
     let oldFrame = editingFrame
     let displayScale = min(oldFrame.width / replacement.size.width, oldFrame.height / replacement.size.height)
-    let newFrame = NSRect(
+    let replacementFrame = NSRect(
       x: oldFrame.midX - replacement.size.width * displayScale / 2,
       y: oldFrame.midY - replacement.size.height * displayScale / 2,
       width: replacement.size.width * displayScale,
       height: replacement.size.height * displayScale
     )
+    let newFrame = Self.reachableFrame(replacementFrame, in: NSScreen.screens.map(\.visibleFrame))
     image = replacement
     imageView.image = replacement
     if let expandedPresentation {
       self.expandedPresentation = (newFrame, expandedPresentation.opacity)
     } else {
-      contentAspectRatio = replacement.size
-      contentMinSize = Self.minimumSize(for: replacement.size, in: newFrame)
-      setFrame(newFrame, display: true)
-      imageScale = displayScale
+      setExpandedFrame(newFrame)
     }
+  }
+
+  private func setExpandedFrame(_ frame: NSRect) {
+    contentAspectRatio = image.size
+    contentMinSize = Self.minimumSize(for: image.size, in: frame)
+    setFrame(frame, display: true)
+    imageScale = min(self.frame.width / image.size.width, self.frame.height / image.size.height)
+  }
+
+  @objc private func screenParametersDidChange(_ notification: Notification) {
+    let visibleFrames = NSScreen.screens.map(\.visibleFrame)
+    let reachable = Self.reachableFrame(frame, in: visibleFrames)
+    if let expandedPresentation {
+      self.expandedPresentation = (
+        Self.reachableFrame(expandedPresentation.frame, in: visibleFrames), expandedPresentation.opacity
+      )
+      if reachable != frame { setFrame(reachable, display: true) }
+    } else if reachable != frame {
+      setExpandedFrame(reachable)
+    }
+    positionClickThroughControls()
   }
 
   @objc func annotateImage() {
@@ -321,11 +345,38 @@ final class PinnedScreenshotWindow: NSPanel, NSWindowDelegate {
     return NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
   }
 
+  nonisolated static func reachableFrame(_ frame: NSRect, in visibleFrames: [NSRect]) -> NSRect {
+    guard !frame.isEmpty else { return frame }
+    let screens = visibleFrames.filter { !$0.isEmpty }
+    let grabWidth = min(40, frame.width)
+    let grabHeight = min(40, frame.height)
+    if screens.contains(where: { screen in
+      let intersection = screen.intersection(frame)
+      return frame.width <= screen.width && frame.height <= screen.height
+        && intersection.width >= grabWidth && intersection.height >= grabHeight
+    }) { return frame }
+
+    func distance(to screen: NSRect) -> CGFloat {
+      let dx = max(screen.minX - frame.midX, 0, frame.midX - screen.maxX)
+      let dy = max(screen.minY - frame.midY, 0, frame.midY - screen.maxY)
+      return hypot(dx, dy)
+    }
+    guard let screen = screens.min(by: { distance(to: $0) < distance(to: $1) }) else { return frame }
+    let scale = min(1, screen.width / frame.width, screen.height / frame.height)
+    let size = NSSize(width: frame.width * scale, height: frame.height * scale)
+    return NSRect(
+      x: max(screen.minX, min(frame.minX, screen.maxX - size.width)),
+      y: max(screen.minY, min(frame.minY, screen.maxY - size.height)),
+      width: size.width,
+      height: size.height
+    )
+  }
+
   nonisolated static func initialFrame(
     imageSize: NSSize, visibleFrame: NSRect, anchor: NSPoint, captureFrame: NSRect? = nil
   ) -> NSRect {
     if let captureFrame, captureFrame.width <= visibleFrame.width, captureFrame.height <= visibleFrame.height {
-      return captureFrame
+      return reachableFrame(captureFrame, in: [visibleFrame])
     }
     guard imageSize.width.isFinite, imageSize.height.isFinite,
           imageSize.width > 0, imageSize.height > 0,
@@ -475,6 +526,14 @@ final class PinnedScreenshotStack {
   private var visibleFrame: NSRect = .zero
   private var scrollDistance: CGFloat = 0
   private var pagedInGesture = false
+  private let visibleFrames: () -> [NSRect]
+  private let onEmpty: (() -> Void)?
+
+  init(visibleFrames: @escaping () -> [NSRect] = { NSScreen.screens.map(\.visibleFrame) },
+       onEmpty: (() -> Void)? = nil) {
+    self.visibleFrames = visibleFrames
+    self.onEmpty = onEmpty
+  }
 
   func add(_ pin: PinnedScreenshotWindow, alongside candidates: [PinnedScreenshotWindow], visibleFrame: NSRect) {
     self.visibleFrame = visibleFrame
@@ -525,6 +584,7 @@ final class PinnedScreenshotStack {
     } else {
       visiblePin = nil
     }
+    if pins.isEmpty { onEmpty?() }
   }
 
   func step(by direction: Int, from pin: PinnedScreenshotWindow) {
@@ -561,11 +621,12 @@ final class PinnedScreenshotStack {
     }
     for other in pins where other !== pin && other.isVisible { other.orderOut(nil) }
     visiblePin = pin
-    pin.showThumbnail(in: frame, page: index + 1, total: pins.count)
+    let reachable = PinnedScreenshotWindow.reachableFrame(frame, in: visibleFrames())
+    pin.showThumbnail(in: reachable, page: index + 1, total: pins.count)
   }
 
   func constrain(_ pin: PinnedScreenshotWindow) {
-    guard pin === visiblePin else { return }
+    guard pin === visiblePin, visibleFrames().contains(visibleFrame) else { return }
     let origin = Self.constrainedOrigin(of: pin.frame, in: visibleFrame)
     if pin.frame.origin != origin { pin.setFrameOrigin(origin) }
   }
@@ -587,10 +648,29 @@ private final class PinnedScreenshotPageLabel: NSTextField {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
-  private var dragStart: NSPoint?
+struct PinnedScreenshotDragGesture {
+  enum MouseDownAction: Equatable {
+    case move, close, export
+  }
+
+  let origin: NSPoint
+
+  static func action(for event: NSEvent) -> MouseDownAction {
+    if event.modifierFlags.contains(.option) { return .export }
+    return event.clickCount == 2 ? .close : .move
+  }
+
+  func crossedThreshold(with event: NSEvent) -> Bool {
+    let point = event.locationInWindow
+    return hypot(point.x - origin.x, point.y - origin.y) >= 4
+  }
+}
+
+final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
+  private var exportGesture: PinnedScreenshotDragGesture?
   private var lastDragEvent: NSEvent?
-  private var exportTask: Task<Void, Never>?
+  private(set) var exportTask: Task<Void, Never>?
+  var stageExport: @Sendable (CGImage) throws -> URL = { try PinnedScreenshotDragExport.stage($0) }
   private var exportedFile: URL?
 
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -606,55 +686,62 @@ private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
 
   override func mouseDown(with event: NSEvent) {
     guard let window = window as? PinnedScreenshotWindow else { return }
-    resetDrag()
+    cancelPendingExport()
     window.focusForInteraction()
-    if event.modifierFlags.contains(.option) {
-      dragStart = event.locationInWindow
-    } else if event.clickCount == 2 {
+    switch PinnedScreenshotDragGesture.action(for: event) {
+    case .export:
+      exportGesture = PinnedScreenshotDragGesture(origin: event.locationInWindow)
+    case .close:
       window.close()
-    } else {
+    case .move:
       window.performDrag(with: event)
     }
   }
 
   override func mouseDragged(with event: NSEvent) {
-    guard let dragStart, exportedFile == nil else { return }
+    guard let exportGesture, exportedFile == nil else { return }
     lastDragEvent = event
-    let point = event.locationInWindow
-    guard exportTask == nil, hypot(point.x - dragStart.x, point.y - dragStart.y) >= 4,
+    guard exportTask == nil, exportGesture.crossedThreshold(with: event),
           let image, let raster = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
-    exportTask = Task { [weak self] in
-      let file = await Task.detached(priority: .userInitiated) { try? PinnedScreenshotDragExport.stage(raster) }.value
+    exportTask = Task { [weak self, stageExport] in
+      guard !Task.isCancelled else { return }
+      let worker = Task.detached(priority: .userInitiated) { try? stageExport(raster) }
+      let file = await withTaskCancellationHandler {
+        await worker.value
+      } onCancel: {
+        worker.cancel()
+      }
       if Task.isCancelled {
         if let file { PinnedScreenshotDragExport.remove(file) }
         return
       }
       guard let self, canStartDrag else {
-        self?.resetDrag()
+        self?.cancelPendingExport()
         if let file { PinnedScreenshotDragExport.remove(file) }
         return
       }
-      exportTask = nil
       let dragEvent = lastDragEvent
-      resetDrag()
-      guard let file else { NSSound.beep(); return }
+      exportTask = nil
+      cancelPendingExport()
+      guard let file else { return }
       guard let dragEvent else { PinnedScreenshotDragExport.remove(file); return }
       startDrag(file, image: image, with: dragEvent)
     }
   }
 
   private var canStartDrag: Bool {
-    window?.isVisible == true && dragStart != nil && NSEvent.pressedMouseButtons & 1 != 0
+    window?.isVisible == true && window?.ignoresMouseEvents == false && exportGesture != nil
+      && NSEvent.pressedMouseButtons & 1 != 0
   }
 
   override func mouseUp(with event: NSEvent) {
-    resetDrag()
+    cancelPendingExport()
   }
 
-  private func resetDrag() {
+  func cancelPendingExport() {
     exportTask?.cancel()
     exportTask = nil
-    dragStart = nil
+    exportGesture = nil
     lastDragEvent = nil
   }
 
@@ -676,8 +763,10 @@ private final class PinnedScreenshotImageView: NSImageView, NSDraggingSource {
     context == .outsideApplication ? .copy : []
   }
 
+  func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+
   func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
-    if operation.isEmpty, let exportedFile { PinnedScreenshotDragExport.remove(exportedFile) }
+    if let exportedFile { PinnedScreenshotDragExport.finish(exportedFile, copied: operation.contains(.copy)) }
     exportedFile = nil
   }
 }
@@ -687,15 +776,23 @@ nonisolated enum PinnedScreenshotDragExport {
     .appendingPathComponent("MaccyCapturePinExports", isDirectory: true)
 
   static func stage(_ image: CGImage, in root: URL = root) throws -> URL {
+    try Task.checkCancellation()
     let files = FileManager.default
-    let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-    try files.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    try files.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     removeExpired(in: root)
+    try Task.checkCancellation()
+    let directory = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try files.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
     let file = directory.appendingPathComponent("Screenshot.png")
+    var completed = false
+    defer { if !completed { remove(file) } }
     guard let destination = CGImageDestinationCreateWithURL(file as CFURL, UTType.png.identifier as CFString, 1, nil)
-    else { remove(file); throw CocoaError(.fileWriteUnknown) }
+    else { throw CocoaError(.fileWriteUnknown) }
     CGImageDestinationAddImage(destination, image, nil)
-    guard CGImageDestinationFinalize(destination) else { remove(file); throw CocoaError(.fileWriteUnknown) }
+    try Task.checkCancellation()
+    guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+    try Task.checkCancellation()
+    completed = true
     return file
   }
 
@@ -703,14 +800,19 @@ nonisolated enum PinnedScreenshotDragExport {
     try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
   }
 
+  static func finish(_ file: URL, copied: Bool) {
+    if !copied { remove(file) }
+  }
+
   // A receiving app may read the file asynchronously after accepting the drop.
-  private static func removeExpired(in root: URL) {
+  static func removeExpired(in root: URL = root) {
     let files = FileManager.default
-    let keys: Set<URLResourceKey> = [.contentModificationDateKey]
+    let keys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey]
     let directories = try? files.contentsOfDirectory(at: root, includingPropertiesForKeys: Array(keys))
     let cutoff = Date(timeIntervalSinceNow: -86_400)
     for directory in directories ?? [] where UUID(uuidString: directory.lastPathComponent) != nil {
-      if let date = try? directory.resourceValues(forKeys: keys).contentModificationDate, date < cutoff {
+      if let values = try? directory.resourceValues(forKeys: keys), values.isDirectory == true,
+         values.isSymbolicLink == false, let date = values.contentModificationDate, date < cutoff {
         try? files.removeItem(at: directory)
       }
     }

@@ -433,15 +433,12 @@ final class ScreenshotSelectionController {
             let active = scrollingLastActivity.map { $0.duration(to: .now) < .milliseconds(200) } ?? false
             let delay = cadence.delay(after: update.appendResult, elapsed: started.duration(to: .now),
               scrollIsActive: active)
-            if delay == .zero {
-              await Task.yield()
-              continue
-            }
+            let earliestNextCapture = ContinuousClock.now + ScrollingScreenshotCadence.minimumDelay
             let sleeper = Task { try await Task.sleep(for: delay) }
             scrollingDelayTask = sleeper
             do { try await sleeper.value }
             catch {
-              try Task.checkCancellation()
+              try await ContinuousClock().sleep(until: earliestNextCapture)
             }
             scrollingDelayTask = nil
           } catch {

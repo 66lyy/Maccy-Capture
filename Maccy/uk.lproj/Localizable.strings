@@ -7,7 +7,7 @@
 "clear_all" = "Очистити все";
 "about" = "Про додаток";
 "quit" = "Вийти";
-"preferences" = "Налаштування…";
+"preferences" = "Налаштування";
 "clear_alert_message" = "Ви впевнені, що бажаєте очистити історію?";
 "clear_alert_comment" = "Ви не можете скасувати цю дію.";
 "clear_alert_cancel" = "Скасувати";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "«Безпека та конфіденційність»";
 "system_preferences_name" = "«Налаштуваннях системи»";
 "system_preferences_pane" = "«Безпека та конфіденційність»";
-"status_item_accessibility_label" = "Maccy — історія буфера обміну";
+"status_item_accessibility_label" = "Maccy Capture — історія буфера обміну";
 "status_item_disabled_accessibility_suffix" = "призупинено";
 "search_clear_accessibility_label" = "Очистити пошук";
 "history_item_pin_action" = "Закріпити";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Зображення, %d×%d";
 "history_item_image_accessibility_generic" = "Зображення";
 "toolbar_remove_paste_stack_action" = "Зупинити стос вставлення";
+"check_for_updates" = "Перевірити оновлення";
+"check_for_updates_tooltip" = "Перевірити, чи є нова версія додатку.";

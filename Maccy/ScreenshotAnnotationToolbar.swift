@@ -4,7 +4,46 @@ import Defaults
 nonisolated enum ScreenshotToolbarItem: String, CaseIterable, Sendable {
   case undo, redo, longScreenshot, recognizeText, pin, save, copy, cancel, palette, customColor, size
 
-  enum Group: CaseIterable, Sendable { case history, output, style }
+  enum Group: String, CaseIterable, Sendable {
+    case tools, history, output, style
+
+    var titleKey: String {
+      switch self {
+      case .tools: "AnnotationTools"
+      case .history: "ToolbarHistoryGroup"
+      case .output: "ToolbarOutputGroup"
+      case .style: "ToolbarStyleGroup"
+      }
+    }
+
+    static func ordered(_ order: [String]) -> [Self] {
+      var groups: [Self] = []
+      for group in order.compactMap(Self.init(rawValue:)) + allCases where !groups.contains(group) {
+        groups.append(group)
+      }
+      return groups
+    }
+
+    func reordered(translation: CGFloat, positions: [Self: CGFloat], order: [String]) -> [String]? {
+      guard translation.isFinite, let position = positions[self] else { return nil }
+      var groups = Self.ordered(order)
+      guard let source = groups.firstIndex(of: self) else { return nil }
+      var destination = source
+      var distance = abs(translation)
+      for (index, group) in groups.enumerated() {
+        guard let target = positions[group] else { continue }
+        let targetDistance = abs((target - position) - translation)
+        if targetDistance < distance {
+          destination = index
+          distance = targetDistance
+        }
+      }
+      guard source != destination else { return nil }
+      groups.remove(at: source)
+      groups.insert(self, at: destination)
+      return groups.map(\.rawValue)
+    }
+  }
 
   var group: Group {
     switch self {
@@ -46,7 +85,7 @@ nonisolated enum ScreenshotToolbarItem: String, CaseIterable, Sendable {
     }
   }
 
-  // Items follow the order chosen in Settings within their toolbar row; items added later are appended.
+  // Items follow the order chosen in Settings within their toolbar group; items added later are appended.
   static func items(in group: Group, order: [String], disabled: [String]) -> [Self] {
     var items: [Self] = []
     for item in order.compactMap(Self.init(rawValue:)) + allCases where item.group == group && !items.contains(item) {
@@ -164,20 +203,12 @@ extension ScreenshotAnnotationWindow {
     statusLabel.isHidden = true
     statusLabel.lineBreakMode = .byTruncatingTail
     statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    let grip = ScreenshotToolbarGrip(image: NSImage(
-      systemSymbolName: "line.3.horizontal", accessibilityDescription: text("AnnotationMoveToolbar")
-    ) ?? NSImage())
-    grip.toolTip = text("AnnotationMoveToolbar")
-    grip.contentTintColor = .secondaryLabelColor
     controls[.palette] = row(swatches.map { $0 as NSView })
     controls[.customColor] = colorWell
     controls[.size] = row([styleLabel, styleSlider, styleValue])
     let order = Defaults[.toolbarItemOrder], disabled = Defaults[.disabledToolbarItems]
     func items(_ group: ScreenshotToolbarItem.Group) -> [ScreenshotToolbarItem] {
       ScreenshotToolbarItem.items(in: group, order: order, disabled: disabled).filter { controls[$0] != nil }
-    }
-    func joined(_ groups: [[NSView]]) -> [NSView] {
-      groups.filter { !$0.isEmpty }.map { row($0) as NSView }.enumerated().flatMap { $0.offset == 0 ? [$0.element] : [separator(), $0.element] }
     }
     var tools: [NSView] = toolButtons
     if editingPin {
@@ -193,16 +224,37 @@ extension ScreenshotAnnotationWindow {
       .map { $0.compactMap { controls[$0] } }
     if styleRows.isEmpty { styleRows = [[]] }
     styleRows[styleRows.count - 1].append(info)
-    var rows: [NSView]
-    if narrow {
-      rows = [row([grip] + joined([tools]))]
-      let actions = joined([history, output])
-      if !actions.isEmpty { rows.append(row(actions)) }
-    } else {
-      rows = compact ? [row([grip] + joined([tools, history]))] : [row([grip] + joined([tools, history, output]))]
-      if compact, !output.isEmpty { rows.append(row(output)) }
+    var rows: [NSView] = []
+    var pending: [NSView] = []
+    var pendingGroup: ScreenshotToolbarItem.Group?
+    func flushRow() {
+      guard !pending.isEmpty else { return }
+      rows.append(row(pending))
+      pending = []
     }
-    rows.append(contentsOf: styleRows.map { row($0) })
+    for group in ScreenshotToolbarItem.Group.ordered(Defaults[.toolbarGroupOrder]) {
+      let views: [NSView]
+      switch group {
+      case .tools: views = tools
+      case .history: views = history
+      case .output: views = output
+      case .style:
+        flushRow()
+        rows.append(contentsOf: styleRows.map { row($0) })
+        continue
+      }
+      guard !views.isEmpty else { continue }
+      let startsRow = if narrow {
+        group == .tools || pendingGroup == .tools
+      } else {
+        compact && (group == .output || pendingGroup == .output)
+      }
+      if startsRow { flushRow() }
+      if !pending.isEmpty { pending.append(separator()) }
+      pending.append(row(views))
+      pendingGroup = group
+    }
+    flushRow()
     rows.append(statusLabel)
     let stack = NSStackView(views: rows)
     stack.orientation = .vertical
@@ -457,11 +509,6 @@ final class ScreenshotToolbarButton: NSButton {
     image.isTemplate = false
     return image
   }
-}
-
-@MainActor
-private final class ScreenshotToolbarGrip: NSImageView {
-  override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 @MainActor

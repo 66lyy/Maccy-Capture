@@ -5,7 +5,7 @@
 "quit_tooltip" = "Έξοδος από την εφαρμογή.";
 "clear" = "Καθαρισμός";
 "clear_all" = "Καθαρισμός όλων";
-"preferences" = "Ρυθμίσεις…";
+"preferences" = "Ρυθμίσεις";
 "clear_alert_message" = "Είσαι σίγουρος πως θέλεις να καθαρίσεις το ιστορικό;";
 "search_placeholder" = "πληκτρολόγησε για αναζήτηση…";
 "about" = "Σχετικά";
@@ -16,7 +16,7 @@
 "accessibility_alert_open" = "Άνοιγμα Προτιμήσεων Συστήματος";
 "screen" = "Οθόνη";
 "system_settings_name" = "Ρυθμίσεις Συστήματος";
-"status_item_accessibility_label" = "Maccy — ιστορικό προχείρου";
+"status_item_accessibility_label" = "Maccy Capture — ιστορικό προχείρου";
 "status_item_disabled_accessibility_suffix" = "σε παύση";
 "search_clear_accessibility_label" = "Εκκαθάριση αναζήτησης";
 "history_item_pin_action" = "Καρφίτσωμα";
@@ -27,3 +27,5 @@
 "history_item_image_accessibility_label_no_app" = "Εικόνα, %d×%d";
 "history_item_image_accessibility_generic" = "Εικόνα";
 "toolbar_remove_paste_stack_action" = "Διακοπή στοίβας επικόλλησης";
+"check_for_updates" = "Έλεγχος για ενημερώσεις";
+"check_for_updates_tooltip" = "Έλεγξε αν υπάρχει νέα έκδοση της εφαρμογής.";

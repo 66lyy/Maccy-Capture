@@ -4,7 +4,7 @@
 "clear" = "សម្អាត";
 "clear_alert_confirm" = "សម្អាត";
 "quit" = "បិទ";
-"preferences" = "ការកំណត់ចំណូលចិត្ត…";
+"preferences" = "ការកំណត់ចំណូលចិត្ត";
 "clear_alert_comment" = "អ្នកមិនអាចត្រឡប់វាវិញបានទេ។";
 "clear_tooltip" = "សម្អាតធាតុដែលមិនបានខ្ទាស់។\nជ្រើសដោយចុច ⇧ ដើម្បីសម្អាតទាំងអស់។";
 "about" = "អំពី";
@@ -12,7 +12,7 @@
 "clear_alert_message" = "តើអ្នកប្រាកដថាចង់សម្អាតប្រវត្តិមែនទេ?";
 "clear_alert_cancel" = "បោះបង់";
 "clear_all_tooltip" = "សម្អាតធាតុទាំងអស់។";
-"status_item_accessibility_label" = "Maccy — ប្រវត្តិក្ដារតម្បៀតខ្ទាស់";
+"status_item_accessibility_label" = "Maccy Capture — ប្រវត្តិក្ដារតម្បៀតខ្ទាស់";
 "status_item_disabled_accessibility_suffix" = "បានផ្អាក";
 "search_clear_accessibility_label" = "សម្អាតការស្វែងរក";
 "history_item_pin_action" = "ខ្ទាស់";
@@ -23,3 +23,5 @@
 "history_item_image_accessibility_label_no_app" = "រូបភាព %d×%d";
 "history_item_image_accessibility_generic" = "រូបភាព";
 "toolbar_remove_paste_stack_action" = "បញ្ឈប់ជង់បិទភ្ជាប់";
+"check_for_updates" = "ពិនិត្យរកបច្ចុប្បន្នភាព";
+"check_for_updates_tooltip" = "ពិនិត្យមើលថាតើមានកំណែថ្មីនៃកម្មវិធីឬអត់។";

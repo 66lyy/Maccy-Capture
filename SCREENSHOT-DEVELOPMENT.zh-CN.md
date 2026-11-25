@@ -31,7 +31,6 @@ macOS 26 及更新版本使用原生液态玻璃，旧版系统使用磨砂材�
 预览不抢键盘焦点，2 秒后自动收起，鼠标停留不会延长显示时间。
 点击缩略图的图钉按钮可转为持久贴图。截图并贴屏成功时直接保留贴图，不再额外显示缩略图。
 开始下一次截图前会先关闭旧预览，避免把预览截入新图。预览只存在于内存中。
-成功提示音可在通用设置中关闭；选区取消和失败不会播放成功提示音。
 
 区域截图使用应用自己的十字准星和选区。松手后拖动框内可移动，拖动四角可调整大小。
 方向键每次移动准星或已选框 1 个屏幕点，按住 Shift 时移动 10 个点。
@@ -111,20 +110,19 @@ bash script/setup_local_signing.sh
 ## GitHub Actions 自动打包
 
 工作流位于 `.github/workflows/build-capture.yml`，在推送到 `master` / `main`、
-推送 `capture-v*` 标签、提交 Pull Request 或手动触发时运行。构建任务只有读取源码的权限，
+提交 Pull Request 或手动触发时运行。构建任务只有读取源码的权限，
 主分支成功构建后，由独立的发布任务创建 `maccy-capture-v主版本.次版本.补丁版本-build构建号` 测试版 Release，并附上更新内容。
 只有发布任务具有写入仓库内容的权限；Pull Request 不发布，仓库可保持私有。
 分支推送与 Pull Request 仅涉及 Markdown、`docs/`、`LICENSE`、Issue/PR 模板、
 `.gitignore` 或 `.gitattributes` 时不触发构建；混合代码改动仍会构建。
-版本标签与手动触发不受此文档过滤影响。
+稳定版标签推送与手动触发不受此文档过滤影响。
 
 流水线在 GitHub 托管的 `macos-26` 运行器上使用 Xcode 26.6，先运行本文列出的六组回归测试，
 只使用生成图片和模拟输入，不读取开发者机器上的桌面、剪贴板、历史或钥匙串。
-已在该运行器上观察到 Apple Swift 6.3.3 的 Release 优化器在原项目
-`FloatingPanel` 析构函数内崩溃，`arm64` 与 `x86_64` 均受影响。
-打包脚本仅检测到这一编译器版本时，通过构建参数对两种架构统一使用 `-Onone`；
-其他编译器版本保留项目原有优化级别。此兼容设置可能降低应用性能，构建信息中会明确记录；
-不通过删除功能、修改窗口生命周期或降低权限检查来规避编译器问题。
+Apple Swift 6.3.3 的 Release 优化器在优化编译器自动生成的 `FloatingPanel` 析构函数时，
+会在 `EarlyPerfInliner` 阶段崩溃，`arm64` 与 `x86_64` 均受影响。
+显式定义空的 `FloatingPanel` 析构函数并标记为 `@_optimize(none)` 可规避此问题，
+不会增加清理操作或改变窗口生命周期。两种架构的 Release 构建均对应用的其余部分保留项目的全模块 `-O` 优化。
 通过后使用 `script/package_release.sh` 构建 Release 通用架构应用，检查代码签名、修改版标识
 和 `arm64` / `x86_64` 架构，然后生成：
 
@@ -144,12 +142,13 @@ ZIP、DMG 及应用自身均保留上游原始 `LICENSE`、
 主分支每次成功构建后都会在 Releases 中发布独立测试版，
 附带 ZIP、DMG、`SHA256SUMS.txt`、`BUILD-INFO.txt` 及更新元数据；
 新包、支持文件及 `capture-appcast.xml` 上传完成前，Release 保持草稿状态。
-发布稳定版时，从已验证的默认分支构建提取原样签名的 ZIP 和 DMG，按源码提交创建
-`maccy-capture-v主版本.次版本.补丁版本` 标签的独立 Release 草稿，上传安装包、构建信息及更新元数据。
-用 `script/generate_update_feed.py appcast` 和**稳定版自身的 ZIP 附件 ID**生成更新源，
-上传更新源及校验文件后，发布为 Latest（非预发布）。默认分支构建不会覆盖它。
+发布稳定版时，先提交对应的应用版本与 `docs/releases/版本号.md`，等默认分支的推送构建成功后，
+在同一个提交上推送 `maccy-capture-v主版本.次版本.补丁版本` 标签。
+**Publish stable release** 会验证该提交并复用已签名的 ZIP 和 DMG，不会重新打包。
+工作流使用**稳定版自身的 ZIP 附件 ID**生成更新源，上传校验文件后发布为 Latest（非预发布），
+也可以在默认分支手动触发。
 仓库首页的 Actions → Build Maccy Capture 可查看运行和下载，Run workflow 可手动构建；
-在默认分支上手动构建也会更新测试版 Release，其他分支、版本标签及 Pull Request 只提供 Artifacts。
+在默认分支上手动构建也会更新测试版 Release，其他分支及 Pull Request 只提供 Artifacts。
 GitHub 对私有仓库的 macOS 构建可能计入账号 Actions 用量，额度与计费以该账号设置为准。
 
 默认分支的发布包复用已配置的 CI 专用自签名证书，指定要求校验包标识与证书指纹。
@@ -216,7 +215,8 @@ Info.plist 固定 `SUPublicEDKey` 并启用 `SUVerifyUpdateBeforeExtraction`，
 CI 构建号使用 `1100 + GITHUB_RUN_NUMBER`，再加运行尝试次数，如 `1142.1`、`1142.2`（仓库重建后计数归零，偏移改为 1100，以高于此前最高的 1058）。
 即使展示版本同为 `2.8.0`，也能检测后续构建。请保持该工作流计数递增，不重置计数或复用构建号。
 本地开发默认构建号为 `1000`，打包时可用 `MACCY_BUILD_VERSION` 覆盖。
-保留的上游 `appcast.xml` 不作为修改版更新源；不带本更新器的旧客户端需先手动安装一次。
+Maccy Capture 只使用 Release 附件中的 `capture-appcast.xml`，应用包内不附带更新源。
+不带本更新器的旧客户端需先手动安装一次。
 
 更换应用标识后，需要为 `Maccy Capture` 重新授予屏幕录制和需要的辅助功能权限。
 一次进程内最多主动请求一次录屏授权；首次请求后不再紧接着弹出应用自己的权限说明。

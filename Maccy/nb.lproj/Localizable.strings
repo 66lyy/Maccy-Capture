@@ -7,7 +7,7 @@
 "clear_all" = "Slett alt";
 "about" = "Om";
 "quit" = "Avslutt";
-"preferences" = "Valg…";
+"preferences" = "Valg";
 "clear_alert_message" = "Er du sikker på at du vil tømme historikken?";
 "clear_alert_comment" = "Du kan ikke angre denne handlingen.";
 "clear_alert_cancel" = "Avbryt";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "Personvern og sikkerhet";
 "system_preferences_name" = "System Valg";
 "system_preferences_pane" = "Sikkerhet & Personvern";
-"status_item_accessibility_label" = "Maccy — utklippstavlehistorikk";
+"status_item_accessibility_label" = "Maccy Capture — utklippstavlehistorikk";
 "status_item_disabled_accessibility_suffix" = "satt på pause";
 "search_clear_accessibility_label" = "Tøm søk";
 "history_item_pin_action" = "Fest";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Bilde, %d×%d";
 "history_item_image_accessibility_generic" = "Bilde";
 "toolbar_remove_paste_stack_action" = "Stopp innlimingsstabelen";
+"check_for_updates" = "Se etter oppdateringer";
+"check_for_updates_tooltip" = "Se etter en ny versjon av programmet.";

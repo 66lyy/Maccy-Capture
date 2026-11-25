@@ -1,12 +1,15 @@
 import AppKit.NSWorkspace
 import Defaults
 import Foundation
+import ImageIO
 import Observation
 import Sauce
+import UniformTypeIdentifiers
 
 @Observable
 class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
   private static let previewMaxParagraphSize = 10_000
+  private static let largePNGPixelLimit = 16 * 1024 * 1024
 
   static func == (lhs: HistoryItemDecorator, rhs: HistoryItemDecorator) -> Bool {
     return lhs.id == rhs.id
@@ -192,18 +195,34 @@ class HistoryItemDecorator: Identifiable, Hashable, HasVisibility {
 
   @MainActor
   private func generateThumbnailImage() {
-    guard let image = item.image else {
-      return
-    }
-    thumbnailImage = image.resized(to: HistoryItemDecorator.thumbnailImageSize)
+    thumbnailImage = resizedImage(to: Self.thumbnailImageSize)
   }
 
   @MainActor
   private func generatePreviewImage() {
-    guard let image = item.image else {
-      return
+    previewImage = resizedImage(to: Self.previewImageSize)
+  }
+
+  private func resizedImage(to bounds: NSSize) -> NSImage? {
+    if let data = item.imageData,
+       let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+       CGImageSourceGetType(source) == UTType.png.identifier as CFString,
+       CGImageSourceGetCount(source) == 1,
+       let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+       let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+       let height = properties[kCGImagePropertyPixelHeight] as? CGFloat,
+       width > 0, height > 0, width * height > CGFloat(Self.largePNGPixelLimit) {
+      let scale = min(bounds.width / width, bounds.height / height)
+      let size = NSSize(width: width * scale, height: height * scale)
+      let pixelScale = NSScreen.forPopup?.backingScaleFactor ?? 1
+      if scale < 1, let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceThumbnailMaxPixelSize: max(1, Int(ceil(max(size.width, size.height) * pixelScale)))
+      ] as CFDictionary) {
+        return NSImage(cgImage: thumbnail, size: size)
+      }
     }
-    previewImage = image.resized(to: HistoryItemDecorator.previewImageSize)
+    return item.image?.resized(to: bounds)
   }
 
   @MainActor

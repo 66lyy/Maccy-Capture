@@ -7,12 +7,12 @@
 "clear_all" = "Limpiar todo";
 "about" = "Acerca de";
 "quit" = "Salir";
-"preferences" = "Preferencias…";
+"preferences" = "Preferencias";
 "clear_alert_message" = "¿Seguro que deseas borrar el historial?";
 "clear_alert_comment" = "Esta acción no puede deshacerse.";
 "clear_alert_cancel" = "Cancelar";
 "clear_alert_confirm" = "Limpiar";
-"status_item_accessibility_label" = "Maccy — historial del portapapeles";
+"status_item_accessibility_label" = "Maccy Capture — historial del portapapeles";
 "status_item_disabled_accessibility_suffix" = "en pausa";
 "search_clear_accessibility_label" = "Borrar búsqueda";
 "history_item_pin_action" = "Anclar";
@@ -23,3 +23,5 @@
 "history_item_image_accessibility_label_no_app" = "Imagen, %d por %d";
 "history_item_image_accessibility_generic" = "Imagen";
 "toolbar_remove_paste_stack_action" = "Detener la pila para pegar";
+"check_for_updates" = "Buscar actualizaciones";
+"check_for_updates_tooltip" = "Comprobar si hay una nueva versión de la aplicación.";

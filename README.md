@@ -25,7 +25,8 @@ Each successful default-branch build publishes its own pre-release with a list o
 Alternatively, use **Actions → Build Maccy Capture → a successful run → Artifacts**.
 You can also select **Run workflow** on the workflow page to build manually.
 Manual builds on the default branch also publish a test release;
-other branches, version tags, and pull requests provide artifacts only.
+other branches and pull requests provide artifacts only.
+Pushing a stable tag such as `maccy-capture-v2.11.0` publishes the verified default-branch build at that commit.
 
 Published builds reuse a fixed self-signed certificate when configured. Other builds are ad-hoc signed.
 Neither is Developer ID signed or notarized by Apple, so Gatekeeper may block the first launch.
@@ -36,7 +37,7 @@ for details.
 
 Documentation-only branch pushes and pull requests do not trigger automatic builds or releases.
 Code, build configuration, and application resource changes still trigger builds.
-Version tags and manual builds are not subject to the documentation filter.
+Stable tag pushes and manual builds are not subject to the documentation filter.
 
 ## In-App Updates
 

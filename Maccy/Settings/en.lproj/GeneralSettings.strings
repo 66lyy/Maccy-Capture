@@ -103,7 +103,6 @@
 "AnnotationOutputFailed" = "Could not open or export the image. Your current editor remains available if it is already open; try again or save a PNG.";
 "AnnotationOutputFailedShort" = "Export failed. Retry.";
 "AnnotationInlineHelp" = "Annotate directly on the captured image. Click an annotation to select it, drag it to move it, drag its handles to resize it, and press Delete to remove it. The toolbar is not included in the exported image.";
-"AnnotationMoveToolbar" = "Drag the toolbar to uncover the image";
 "ScreenshotTitle" = "Screenshot";
 "ScreenshotSection" = "Screenshots and pinned images";
 "ScreenshotMenu" = "Capture";
@@ -135,7 +134,6 @@
 "AnnotationTextCopied" = "Copied";
 "ScreenshotSelectionPinInstructions" = "Drag to select · Release to pin · Esc cancels";
 "ScreenshotClipboardHint" = "Float an image already on the clipboard, without taking a new screenshot.";
-"ScreenshotSound" = "Play a sound after a successful capture";
 "ScreenshotAutoStackPins" = "Automatically stack pinned screenshots";
 "ScreenshotSuccess" = "Screenshot copied";
 "ScreenshotSavedLocally" = "Added to local clipboard history";
@@ -164,7 +162,7 @@
 "ScreenshotTimedOut" = "The capture timed out and was cancelled. You can start another capture.";
 "ScreenshotClipboardWriteFailed" = "The screenshot could not be copied to the clipboard. Please try again.";
 "ScreenshotHistorySaveWarningTitle" = "Screenshot Copied, History Save Failed";
-"ScreenshotHistorySaveWarning" = "The screenshot is on your clipboard. Maccy encountered an error while saving to local history. If the image is missing from history, you can paste it into another app to save it.";
+"ScreenshotHistorySaveWarning" = "The screenshot is on your clipboard. Maccy Capture encountered an error while saving to local history. If the image is missing from history, you can paste it into another app to save it.";
 "LaunchAtLogin" = "Launch at login";
 "CheckForUpdates" = "Check for updates automatically";
 "CheckNow" = "Check now";

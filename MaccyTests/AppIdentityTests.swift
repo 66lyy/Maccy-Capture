@@ -5,6 +5,33 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct AppIdentityTests {
+  @Test("Exception diagnostics describe windows without exposing their private titles or user-info values")
+  func exceptionReportPrivacy() {
+    let window = NSWindow(
+      contentRect: NSRect(x: 20, y: 30, width: 160, height: 100),
+      styleMask: [.titled], backing: .buffered, defer: false
+    )
+    window.isReleasedWhenClosed = false
+    window.title = "Private title sentinel"
+    defer { window.close() }
+
+    let exception = NSException(
+      name: .internalInconsistencyException, reason: "Layout failed for \(window.title)",
+      userInfo: ["DiagnosticKey": "Private value sentinel"]
+    )
+    let frame = "AppKit __NSWindowGetDisplayCycleObserverForLayout_block_invoke"
+    let report = ExceptionDiagnosticText(exception, [frame])
+    #expect(report.contains("Exception: NSInternalInconsistencyException"))
+    #expect(report.contains("Reason: Layout failed for [redacted]"))
+    #expect(report.contains("DiagnosticKey"))
+    #expect(report.contains("NSWindow title=[redacted] frame="))
+    #expect(report.contains("visible=no key=no contentView="))
+    #expect(report.contains(frame))
+    #expect(!report.contains("Private title sentinel"))
+    #expect(!report.contains("Private value sentinel"))
+    #expect(ExceptionDiagnosticText(exception, []).contains("Reason: [redacted outside window layout]"))
+  }
+
   @Test("An existing screen recording grant never opens a request dialog")
   func existingGrant() {
     var requests = 0
@@ -63,11 +90,27 @@ struct AppIdentityTests {
     #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String == "CaptureIcon")
     #expect(AppIdentity.isCustomizedBuild)
     #expect(SoftwareUpdater().isAvailable)
-    #expect(
-      (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String)?
-        .contains(RepositoryUpdateFeed.repository) == true
-    )
+    let feedURL = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String
+    #expect(feedURL == "https://github.com/66lyy/Maccy-Capture/releases/latest/download/capture-appcast.xml")
+    #expect(Bundle.main.url(forResource: "appcast", withExtension: "xml") == nil)
     #expect(Bundle.main.object(forInfoDictionaryKey: "SUVerifyUpdateBeforeExtraction") as? Bool == true)
+  }
+
+  @Test("The About panel links to Maccy Capture and preserves contributor credit")
+  func aboutLinks() {
+    let credits = About().credits
+    var links: [String: String] = [:]
+    credits.enumerateAttribute(.link, in: NSRange(location: 0, length: credits.length)) { value, range, _ in
+      if let url = value as? String {
+        links[credits.attributedSubstring(from: range).string] = url
+      }
+    }
+    #expect(links == [
+      "Releases": "https://github.com/66lyy/Maccy-Capture/releases",
+      "GitHub": "https://github.com/66lyy/Maccy-Capture",
+      "Issues": "https://github.com/66lyy/Maccy-Capture/issues",
+      "Sasha Koss": "https://koss.nocorp.me"
+    ])
   }
 
   @Test("The app and default menu item use the capture artwork")
@@ -92,17 +135,17 @@ struct AppIdentityTests {
       defaults.removePersistentDomain(forName: source)
       defaults.removePersistentDomain(forName: destination)
     }
-    defaults.setPersistentDomain(["screenshotSoundEnabled": false, "showFooter": false], forName: source)
+    defaults.setPersistentDomain(["formatJSON": false, "showFooter": false], forName: source)
     defaults.setPersistentDomain(["showFooter": true], forName: destination)
     AppIdentity.migratePreferences(defaults: defaults, destination: destination, source: source)
     let migrated = try #require(defaults.persistentDomain(forName: destination))
-    #expect(migrated["screenshotSoundEnabled"] as? Bool == false)
+    #expect(migrated["formatJSON"] as? Bool == false)
     #expect(migrated["showFooter"] as? Bool == true)
     #expect(migrated[AppIdentity.migrationKey] as? Bool == true)
     #expect(defaults.persistentDomain(forName: source)?["showFooter"] as? Bool == false)
-    defaults.setPersistentDomain(["screenshotSoundEnabled": true], forName: source)
+    defaults.setPersistentDomain(["formatJSON": true], forName: source)
     AppIdentity.migratePreferences(defaults: defaults, destination: destination, source: source)
-    #expect(defaults.persistentDomain(forName: destination)?["screenshotSoundEnabled"] as? Bool == false)
+    #expect(defaults.persistentDomain(forName: destination)?["formatJSON"] as? Bool == false)
   }
 
   @Test("Restart uses the exact application path as an argument, not a bundle lookup")

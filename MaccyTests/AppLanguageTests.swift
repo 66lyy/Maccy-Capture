@@ -226,6 +226,35 @@ struct AppLanguageTests {
     )
   }
 
+  @Test("The status item accessibility label uses the app's display name in every shipped locale")
+  func statusItemAccessibilityName() throws {
+    let displayName = try #require(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+    for localization in Bundle.main.localizations where localization != "Base" {
+      let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
+      let bundle = try #require(Bundle(path: path))
+      let label = bundle.localizedString(forKey: "status_item_accessibility_label", value: nil, table: nil)
+      #expect(label.hasPrefix("\(displayName) — "), "\(localization): \(label)")
+    }
+  }
+
+  @Test("Advanced settings shell examples target the running app's defaults domain")
+  func advancedSettingsShellExamples() throws {
+    let identifier = try #require(Bundle.main.bundleIdentifier)
+    var checkedExamples = 0
+    for localization in Bundle.main.localizations {
+      guard let path = Bundle.main.path(forResource: localization, ofType: "lproj"),
+            let bundle = Bundle(path: path) else { continue }
+      for key in ["TurnOffShellScript", "TurnOffNextShellScript"] {
+        let example = bundle.localizedString(forKey: key, value: nil, table: "AdvancedSettings")
+        guard !example.isEmpty && example != key else { continue }
+        #expect(example.contains(identifier), "\(localization): \(key) is missing the app's defaults domain")
+        #expect(!example.localizedCaseInsensitiveContains(AppIdentity.originalIdentifier))
+        checkedExamples += 1
+      }
+    }
+    #expect(checkedExamples > 0)
+  }
+
   @Test("The slow-scroll hint is translated in every shipped localization")
   func slowScrollHintTranslated() throws {
     let english = "Scroll more slowly"
@@ -251,6 +280,37 @@ struct AppLanguageTests {
             bundle.path(forResource: "GeneralSettings", ofType: "strings") != nil else { continue }
       let value = bundle.localizedString(forKey: "ScreenshotColorFormatHint", value: nil, table: "GeneralSettings")
       #expect(value != english && value != "ScreenshotColorFormatHint", "\(localization) is untranslated")
+    }
+  }
+
+  @Test("The history footer's update check is translated in every shipped localization")
+  func checkForUpdatesTranslated() throws {
+    let localizations = Bundle.main.localizations.filter { $0 != "en" && $0 != "Base" }
+    #expect(localizations.count >= 30)
+    for localization in localizations {
+      let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
+      let bundle = try #require(Bundle(path: path))
+      for (key, english) in [
+        ("check_for_updates", "Check for Updates"),
+        ("check_for_updates_tooltip", "Check for a new version of the application.")
+      ] {
+        let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+        #expect(!value.isEmpty && value != english && value != key, "\(localization): \(key) is untranslated")
+      }
+      let title = bundle.localizedString(forKey: "check_for_updates", value: nil, table: nil)
+      #expect(!title.hasSuffix("…"), "\(localization): \(title)")
+    }
+  }
+
+  @Test("The history footer's Preferences label has no trailing ellipsis in any localization")
+  func preferencesLabelHasNoEllipsis() throws {
+    let localizations = Bundle.main.localizations.filter { $0 != "Base" }
+    #expect(localizations.count >= 30)
+    for localization in localizations {
+      let path = try #require(Bundle.main.path(forResource: localization, ofType: "lproj"))
+      let bundle = try #require(Bundle(path: path))
+      let title = bundle.localizedString(forKey: "preferences", value: nil, table: nil)
+      #expect(!title.hasSuffix("…"), "\(localization): \(title)")
     }
   }
 

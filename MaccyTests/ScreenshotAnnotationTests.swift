@@ -6,6 +6,34 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotAnnotationTests {
+  @Test("Number marks reject overflowing text before calculating the next number")
+  func auditNumberLimits() throws {
+    let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
+    #expect(!document.append(.init(tool: .number, points: [.zero], text: String(Int.max))))
+    #expect(document.append(.init(tool: .number, points: [.zero], text: "999999")))
+    #expect(document.nextNumber == 1_000_000)
+  }
+
+  @Test("Undo during an active drag does not leave a stale annotation index")
+  func auditUndoDuringDrag() throws {
+    let window = try editor()
+    defer { window.close() }
+    let canvas = try #require(window.canvas)
+    canvas.tool = .rectangle
+    let start = CGPoint(x: canvas.imageRect.midX, y: canvas.imageRect.midY)
+    let end = CGPoint(x: start.x + 40, y: start.y + 30)
+    canvas.beginMark(at: start)
+    canvas.endMark(at: end)
+    #expect(canvas.document.marks.count == 1)
+    canvas.beginMark(at: end)
+    #expect(canvas.isMovingMark)
+    window.undoMark()
+    #expect(!canvas.isMovingMark && canvas.selectedMarkIndex == nil && canvas.document.marks.isEmpty)
+    canvas.endMark(at: start)
+    window.redoMark()
+    #expect(canvas.document.marks.count == 1)
+  }
+
   @Test("Snapshot text rendering matches the original AppKit drawing", arguments: ["Sample 42", "First line\n第二行"])
   func textRenderingParity(text: String) async throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
@@ -1059,6 +1087,60 @@ struct ScreenshotAnnotationTests {
     #expect(Item.styleRows(order: ["bogus", "size", "size"], disabled: [], narrow: false) == [[.size, .palette, .customColor]])
   }
 
+  @Test("Toolbar groups default to the original order and drag between their measured positions")
+  func toolbarGroupReorder() throws {
+    typealias Group = ScreenshotToolbarItem.Group
+    #expect(Group.ordered([]) == [.tools, .history, .output, .style])
+    #expect(Group.ordered(["style", "bogus", "style", "output"]) == [.style, .output, .tools, .history])
+    let positions: [Group: CGFloat] = [.tools: 0, .history: 310, .output: 392, .style: 586]
+    #expect(Group.history.reordered(translation: 40, positions: positions, order: []) == nil)
+    #expect(Group.history.reordered(translation: .nan, positions: positions, order: []) == nil)
+    let forward = try #require(Group.history.reordered(translation: 90, positions: positions, order: []))
+    #expect(forward == ["tools", "output", "history", "style"])
+    let backward = try #require(Group.style.reordered(translation: -586, positions: positions, order: []))
+    #expect(backward == ["style", "tools", "history", "output"])
+  }
+
+  @Test("New editor and selection toolbars use the saved group order independently of item preferences",
+        arguments: [420.0, 450.0, 800.0])
+  func savedToolbarGroupOrder(displayWidth: CGFloat) throws {
+    let groupOrder = Defaults[.toolbarGroupOrder], itemOrder = Defaults[.toolbarItemOrder]
+    let disabledItems = Defaults[.disabledToolbarItems]
+    defer {
+      Defaults[.toolbarGroupOrder] = groupOrder
+      Defaults[.toolbarItemOrder] = itemOrder
+      Defaults[.disabledToolbarItems] = disabledItems
+    }
+    Defaults[.toolbarGroupOrder] = ["style", "output", "history", "tools"]
+    Defaults[.toolbarItemOrder] = ["copy", "redo"]
+    Defaults[.disabledToolbarItems] = ["size"]
+    let display = NSRect(x: 0, y: 0, width: displayWidth, height: 800)
+    for selection in [false, true] {
+      let window: ScreenshotAnnotationWindow
+      if selection {
+        window = ScreenshotSelectionWindow(frame: display, visibleFrame: display, scale: 1, pinImmediately: false)
+      } else {
+        window = try #require(ScreenshotAnnotationWindow(image: fixture(), visibleFrame: display))
+      }
+      defer { window.close() }
+      window.showToolbar(beside: display.insetBy(dx: 50, dy: 50))
+      window.contentView?.layoutSubtreeIfNeeded()
+      let toolbar = window.annotationToolbar
+      func center(_ control: NSView) -> CGPoint {
+        control.convert(NSPoint(x: control.bounds.midX, y: control.bounds.midY), to: nil)
+      }
+      func precedes(_ first: NSView, _ second: NSView) -> Bool {
+        let a = center(first), b = center(second)
+        return abs(a.y - b.y) < 1 ? a.x < b.x : a.y > b.y
+      }
+      let tool = try #require(window.toolButtons.first)
+      let controls: [NSView] = [window.colorWell, window.copyButton, window.pinButton, window.redoButton, window.undoButton, tool]
+      #expect(controls.allSatisfy { $0.isDescendant(of: toolbar) })
+      #expect(zip(controls, controls.dropFirst()).allSatisfy { precedes($0.0, $0.1) })
+      #expect(window.styleSlider.window == nil)
+    }
+  }
+
   @Test("Row-center drag distances select the destination row")
   func toolbarReorderDistances() throws {
     let pitch = AnnotationToolSettings.rowHeight
@@ -1544,6 +1626,37 @@ struct ScreenshotAnnotationTests {
     #expect(window.contentView?.subviews.contains { $0 is NSButton } == false)
   }
 
+  @Test("Pin drag exports applied annotations as flattened PNG pixels even at a smaller display size")
+  func pinnedExportFlattensAnnotation() throws {
+    let image = try fixture()
+    image.size = NSSize(width: 120, height: 80)
+    let window = PinnedScreenshotWindow(
+      image: image, visibleFrame: NSRect(x: 0, y: 0, width: 1000, height: 800),
+      anchor: NSPoint(x: 500, y: 400)
+    )
+    defer { window.close() }
+    let document = try #require(ScreenshotAnnotationDocument(image: image))
+    #expect(document.append(.init(
+      tool: .redact, points: [NSPoint(x: 20, y: 20), NSPoint(x: 180, y: 100)], color: .red
+    )))
+    let rendered = try #require(document.renderedImage())
+    window.replaceImage(NSImage(cgImage: rendered, size: image.size))
+    let view = try #require(window.contentView?.subviews.compactMap { $0 as? NSImageView }.first)
+    let raster = try #require(view.image?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let file = try PinnedScreenshotDragExport.stage(raster, in: root)
+
+    let exported = try #require(NSBitmapImageRep(data: Data(contentsOf: file)))
+    #expect(exported.pixelsWide == 240 && exported.pixelsHigh == 160)
+    let mark = try color(exported, x: 40, y: 119)
+    #expect(mark.redComponent > 0.9 && mark.greenComponent < 0.2 && mark.blueComponent < 0.2)
+    #expect(mark.alphaComponent > 0.999)
+    let unmarked = try color(exported, x: 200, y: 119)
+    #expect(unmarked.redComponent > 0.9 && unmarked.greenComponent > 0.9 && unmarked.blueComponent > 0.9)
+  }
+
   @Test("Mosaic pixelates the covered region and keeps text under it from being dragged out")
   func mosaicPixelates() throws {
     let document = try #require(ScreenshotAnnotationDocument(image: fixture()))
@@ -1584,6 +1697,8 @@ struct ScreenshotAnnotationTests {
     }
     canvas.beginMark(at: viewPoint(60, 21))
     canvas.updateMark(to: viewPoint(60, 60))
+    canvas.updateMark(to: NSPoint(x: CGFloat.nan, y: 60))
+    canvas.updateMark(to: NSPoint(x: 60, y: CGFloat.infinity))
     canvas.updateMark(to: viewPoint(230, 60))
     #expect(document.marks.count == 3)
     canvas.endMark(at: viewPoint(230, 60))

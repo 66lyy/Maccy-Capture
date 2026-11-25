@@ -64,6 +64,9 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     applyRoundedCorners()
   }
 
+  @_optimize(none)
+  deinit {}
+
   private func applyRoundedCorners() {
     let radius = Popup.cornerRadius + Popup.horizontalPadding
 

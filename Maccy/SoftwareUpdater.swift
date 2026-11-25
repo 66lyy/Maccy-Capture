@@ -39,7 +39,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
 
   private(set) var isChecking = false
   private(set) var statusKey = "UpdateReady"
-  var isBusy: Bool { isChecking || updaterController?.updater.sessionInProgress == true }
+  var isBusy: Bool { isChecking || sparkle?.updater.sessionInProgress == true }
   var currentVersion: String {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
@@ -51,7 +51,8 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
   @ObservationIgnored private let canCheck: () -> Bool
   @ObservationIgnored private let hasActiveCapture: () -> Bool
   @ObservationIgnored private let sleep: (Duration) async throws -> Void
-  @ObservationIgnored private var updaterController: SPUStandardUpdaterController?
+  @ObservationIgnored private let progress: (any UpdateCheckProgress)?
+  @ObservationIgnored private var sparkle: (updater: SPUUpdater, driver: UpdateUserDriver)?
   @ObservationIgnored private var automaticCheckTimer: Task<Void, Never>?
   @ObservationIgnored private var checkTask: Task<Void, Never>?
   @ObservationIgnored private var isCheckingAutomatically = false
@@ -64,13 +65,15 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     load: @escaping (URLRequest) async throws -> (Data, URLResponse) = { try await RepositoryUpdateSession().load($0) },
     canCheck: @escaping () -> Bool = { !AppDelegate.isTesting && SoftwareUpdater.isSupportedBuild },
     hasActiveCapture: @escaping () -> Bool = { ScreenshotCapture.shared.hasActiveCapture },
-    sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    sleep: @escaping (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+    progress: (any UpdateCheckProgress)? = nil
   ) {
     self.defaults = defaults
     self.load = load
     self.canCheck = canCheck
     self.hasActiveCapture = hasActiveCapture
     self.sleep = sleep
+    self.progress = progress
     automaticallyChecksForUpdates = defaults.object(forKey: Self.automaticChecksKey) as? Bool ?? true
     channel = defaults.string(forKey: Self.channelKey).flatMap(RepositoryUpdateFeed.Channel.init(rawValue:)) ?? .stable
     super.init()
@@ -131,6 +134,8 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     isChecking = true
     isCheckingAutomatically = !userInitiated
     statusKey = "UpdateChecking"
+    let progress = userInitiated ? progress ?? sparkleUpdater().driver : nil
+    progress?.showChecking { [weak self] in self?.checkTask?.cancel() }
     checkTask = Task { [weak self] in
       guard let self else { return }
       var nextCheckDelay = Self.automaticCheckInterval
@@ -171,6 +176,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
           updater.checkForUpdatesInBackground()
         }
       } catch {
+        progress?.hideChecking()
         if Task.isCancelled || error is CancellationError {
           statusKey = "UpdateReady"
         } else if case RepositoryUpdateFeed.Failure.unavailable = error {
@@ -182,13 +188,16 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     }
   }
 
+  private func sparkleUpdater() -> (updater: SPUUpdater, driver: UpdateUserDriver) {
+    if let sparkle { return sparkle }
+    let driver = UpdateUserDriver(hostBundle: .main, delegate: nil)
+    let updater = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: self)
+    sparkle = (updater, driver)
+    return (updater, driver)
+  }
+
   private func prepareUpdater() -> SPUUpdater {
-    if updaterController == nil {
-      updaterController = SPUStandardUpdaterController(
-        startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil
-      )
-    }
-    let updater = updaterController!.updater
+    let updater = sparkleUpdater().updater
     updater.automaticallyChecksForUpdates = false
     updater.automaticallyDownloadsUpdates = false
     updater.sendsSystemProfile = false
@@ -241,11 +250,43 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     _ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?
   ) {
     resolved = nil
+    (progress ?? sparkle?.driver)?.hideChecking()
     statusKey = error == nil || (error as NSError?)?.code == Int(SUError.noUpdateError.rawValue)
       ? "UpdateReady" : "UpdateCheckFailed"
   }
 
   private func text(_ key: String) -> String {
     NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+  }
+}
+
+@MainActor
+protocol UpdateCheckProgress: AnyObject {
+  func showChecking(cancellation: @escaping () -> Void)
+  func hideChecking()
+}
+
+/// Shows Sparkle's checking window while release discovery runs, and hands it over to
+/// Sparkle's own check without closing it first so the window never blinks.
+final class UpdateUserDriver: SPUStandardUserDriver, UpdateCheckProgress {
+  private var discoveryWindow: NSWindow?
+
+  func showChecking(cancellation: @escaping () -> Void) {
+    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
+    super.showUserInitiatedUpdateCheck(cancellation: cancellation)
+    discoveryWindow = NSApp.windows.first { !existing.contains(ObjectIdentifier($0)) }
+  }
+
+  func hideChecking() {
+    guard discoveryWindow != nil else { return }
+    discoveryWindow = nil
+    dismissUpdateInstallation()
+  }
+
+  override func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
+    let window = discoveryWindow
+    discoveryWindow = nil
+    super.showUserInitiatedUpdateCheck(cancellation: cancellation)
+    window?.close()
   }
 }

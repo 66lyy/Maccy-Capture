@@ -70,6 +70,13 @@ class Footer: ItemsContainer {
         AppState.shared.openAbout()
       },
       FooterItem(
+        title: "check_for_updates",
+        help: "check_for_updates_tooltip"
+      ) {
+        AppState.shared.popup.close()
+        SoftwareUpdater.shared.checkForUpdates()
+      },
+      FooterItem(
         title: "quit",
         shortcuts: [KeyShortcut(key: .q)],
         help: "quit_tooltip"

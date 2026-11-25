@@ -1,5 +1,6 @@
 // swiftlint:disable file_length
 import AppKit.NSRunningApplication
+import AppKit.NSSound
 import Defaults
 import Foundation
 import Logging
@@ -11,7 +12,7 @@ import SwiftData
 @Observable
 class History: ItemsContainer { // swiftlint:disable:this type_body_length
   static let shared = History()
-  let logger = Logger(label: "org.p0deje.Maccy")
+  let logger: Logger
 
   var pasteStack: PasteStack?
 
@@ -37,7 +38,9 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   var searchQuery: String = "" {
     didSet(previousSearchQuery) {
       guard searchQuery != previousSearchQuery else { return }
+      let query = searchQuery
       throttler.throttle { [self] in
+        guard query == searchQuery else { return }
         updateSearchResults()
 
         if searchQuery.isEmpty {
@@ -72,6 +75,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   private let sorter = Sorter()
   private let throttler = Throttler(minimumDelay: 0.2)
   private let pinManager = PinManager()
+  private let notifyNewItem: (String, NSSound?) -> Void
   private var allPinnedItems: [HistoryItemDecorator] { pinManager.pinnedItems }
   private var allUnpinnedItems: [HistoryItemDecorator] = []
   private var filteredPinnedItems: [HistoryItemDecorator] = []
@@ -91,14 +95,24 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   @ObservationIgnored private var duplicateIndex: [Data: Set<ObjectIdentifier>] = [:]
   @ObservationIgnored private var indexedItems: [ObjectIdentifier: IndexedItem] = [:]
   @ObservationIgnored private var dirtyIndexedItems: Set<ObjectIdentifier> = []
+  @ObservationIgnored private var loadGeneration = 0
+  @ObservationIgnored private var loadTask: Task<Void, Error>?
   private var unpinnedSortBy = Defaults[.sortBy]
 
 #if DEBUG
   nonisolated static let isRunningUnitTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 #endif
 
-  init(ocrCoordinator: HistoryOCRCoordinator = HistoryOCRCoordinator()) {
+  init(
+    ocrCoordinator: HistoryOCRCoordinator = HistoryOCRCoordinator(),
+    logger: Logger = Logger(label: "org.p0deje.Maccy"),
+    notifyNewItem: @escaping (String, NSSound?) -> Void = { title, sound in
+      Notifier.notify(body: title, sound: sound)
+    }
+  ) {
     self.ocrCoordinator = ocrCoordinator
+    self.logger = logger
+    self.notifyNewItem = notifyNewItem
     #if DEBUG
     guard !Self.isRunningUnitTests else { return }
     #endif
@@ -137,9 +151,46 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  func load() async throws {
+  func load(waitForTurn: @escaping @MainActor () async -> Void = {}) async throws {
+    try Task.checkCancellation()
+    loadGeneration &+= 1
+    let generation = loadGeneration
+    loadTask?.cancel()
+    let task = Task {
+      try checkLoad(generation: generation)
+      await waitForTurn()
+      try checkLoad(generation: generation)
+    }
+    loadTask = task
+    defer {
+      if generation == loadGeneration {
+        loadTask = nil
+      }
+    }
+
+    do {
+      try await withTaskCancellationHandler {
+        try await task.value
+      } onCancel: {
+        task.cancel()
+      }
+      try runLoad(generation: generation)
+    } catch is CancellationError where generation != loadGeneration {
+      try Task.checkCancellation()
+    }
+  }
+
+  private func checkLoad(generation: Int) throws {
+    try Task.checkCancellation()
+    guard generation == loadGeneration else { throw CancellationError() }
+  }
+
+  private func runLoad(generation: Int) throws {
+    try checkLoad(generation: generation)
+
     let descriptor = FetchDescriptor<HistoryItem>()
     let results = try Storage.shared.context.fetch(descriptor)
+    try checkLoad(generation: generation)
     let maxSize = Defaults[.size]
     var unpinnedCount = 0
     var exceedingItems: [HistoryItem] = []
@@ -150,16 +201,25 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       exceedingItems.append(item)
       return false
     }
+    try checkLoad(generation: generation)
+    let decorators = try retainedItems.map {
+      try Task.checkCancellation()
+      return HistoryItemDecorator($0)
+    }
+    try checkLoad(generation: generation)
     if !exceedingItems.isEmpty {
-      try persistDeletion { context in exceedingItems.forEach(context.delete) }
+      try persistDeletion(operation: "trimming history") { context in exceedingItems.forEach(context.delete) }
       exceedingItems.forEach { forget($0) }
     }
-    let decorators = retainedItems.map { HistoryItemDecorator($0) }
     pinManager.load(from: decorators)
     allUnpinnedItems = decorators.filter(\.isUnpinned)
     unpinnedSortBy = Defaults[.sortBy]
-    filteredPinnedItems = allPinnedItems
-    filteredUnpinnedItems = allUnpinnedItems
+    if searchQuery.isEmpty {
+      filteredPinnedItems = allPinnedItems
+      filteredUnpinnedItems = allUnpinnedItems
+    } else {
+      updateSearchResults()
+    }
     rebuildDuplicateIndex(decorators)
 
     updateShortcuts()
@@ -189,7 +249,9 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   @discardableResult
   @MainActor
-  func add(_ item: HistoryItem, saveToStorage: Bool = true, indexImage: Bool = false) -> HistoryItemDecorator {
+  func add(
+    _ item: HistoryItem, saveToStorage: Bool = true, indexImage: Bool = false, playNotificationSound: Bool = true
+  ) -> HistoryItemDecorator {
     if item.modelContext == nil {
       Storage.shared.context.insert(item)
     }
@@ -219,13 +281,14 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       }
       deleteFromStorage(existingHistoryItem, replacingWith: item)
     } else {
-      Notifier.notify(body: item.title, sound: .write)
+      notifyNewItem(item.title, playNotificationSound ? .write : nil)
     }
 
     // Remove exceeding items. Do this after the item is added to avoid removing something
     // if a duplicate was found as then the size already stayed the same.
-    let capacity = max(1, Defaults[.size])
-    limitHistorySize(to: item.pin == nil ? capacity - 1 : capacity)
+    let reservedSlots = item.pin == nil ? 1 : 0
+    let existingItemLimit = max(Defaults[.size], reservedSlots) - reservedSlots
+    limitHistorySize(to: existingItemLimit)
 
     sessionLog[Clipboard.shared.changeCount] = item
 
@@ -263,16 +326,21 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   @MainActor
-  private func persistDeletion(_ stage: (ModelContext) throws -> Void) throws {
+  private func persistDeletion(operation: String, _ stage: (ModelContext) throws -> Void) throws {
     let context = Storage.shared.context
-    if context.hasChanges { try context.save() }
     do {
-      try context.transaction {
-        try stage(context)
-        try context.save()
+      if context.hasChanges { try context.save() }
+      do {
+        try context.transaction {
+          try stage(context)
+          try context.save()
+        }
+      } catch {
+        context.rollback()
+        throw error
       }
     } catch {
-      context.rollback()
+      logger.error("Failed while \(operation)")
       throw error
     }
   }
@@ -284,7 +352,6 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
       try clearPersisted(includingPinned: includingPinned)
       return true
     } catch {
-      logger.error("Failed to clear clipboard history")
       return false
     }
   }
@@ -301,7 +368,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
     let orphaned = FetchDescriptor<HistoryItemContent>(predicate: #Predicate { $0.item == nil })
     let descriptor = includingPinned ? FetchDescriptor<HistoryItem>()
       : FetchDescriptor(predicate: #Predicate<HistoryItem> { $0.pin == nil })
-    try persistDeletion { context in
+    try persistDeletion(operation: includingPinned ? "clearing all history" : "clearing history") { context in
       for orphan in try context.fetch(orphaned) { context.delete(orphan) }
       for item in try context.fetch(descriptor) { context.delete(item) }
     }
@@ -332,7 +399,6 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
   }
 
   func reportDeleteFailure() {
-    logger.error("Failed to delete history items")
     let alert = NSAlert()
     alert.messageText = NSLocalizedString("history_delete_failed", comment: "")
     alert.runModal()
@@ -340,7 +406,7 @@ class History: ItemsContainer { // swiftlint:disable:this type_body_length
 
   func deletePersisted(_ rows: [HistoryItemDecorator]) throws {
     let removed = rows.map { ($0, $0.item.pin) }
-    try persistDeletion { context in rows.forEach { context.delete($0.item) } }
+    try persistDeletion(operation: "deleting a history item") { context in rows.forEach { context.delete($0.item) } }
     for (row, pin) in removed {
       forget(row.item)
       removeRow(row, pin: pin)

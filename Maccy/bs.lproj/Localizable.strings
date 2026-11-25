@@ -7,7 +7,7 @@
 "clear_all" = "Očisti sve";
 "about" = "O Aplikaciji";
 "quit" = "Zatvori";
-"preferences" = "Podešavanja…";
+"preferences" = "Podešavanja";
 "clear_alert_message" = "Da li ste sigurni?";
 "clear_alert_comment" = "Ne možeš povratiti ovu radnju.";
 "clear_alert_cancel" = "Odustani";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "Privatnosti i sigurnosti";
 "system_preferences_name" = "Postavki sustava";
 "system_preferences_pane" = "Sigurnosti i privatnosti";
-"status_item_accessibility_label" = "Maccy — historija međuspremnika";
+"status_item_accessibility_label" = "Maccy Capture — historija međuspremnika";
 "status_item_disabled_accessibility_suffix" = "pauzirano";
 "search_clear_accessibility_label" = "Očisti pretragu";
 "history_item_pin_action" = "Zakači";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Slika, %d×%d";
 "history_item_image_accessibility_generic" = "Slika";
 "toolbar_remove_paste_stack_action" = "Zaustavi stog za lijepljenje";
+"check_for_updates" = "Provjeri ažuriranja";
+"check_for_updates_tooltip" = "Provjeri postoji li nova verzija aplikacije.";

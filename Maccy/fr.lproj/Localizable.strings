@@ -7,7 +7,7 @@
 "clear_all" = "Tout supprimer";
 "about" = "À propos";
 "quit" = "Quitter";
-"preferences" = "Préférences…";
+"preferences" = "Préférences";
 "clear_alert_message" = "Voulez-vous vraiment effacer l'historique ?";
 "clear_alert_comment" = "Vous ne pouvez pas annuler cette action.";
 "clear_alert_cancel" = "Annuler";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "Confidentialité et sécurité";
 "system_preferences_name" = "Préférences Système";
 "system_preferences_pane" = "Sécurité & confidentialité";
-"status_item_accessibility_label" = "Maccy — historique du presse-papiers";
+"status_item_accessibility_label" = "Maccy Capture — historique du presse-papiers";
 "status_item_disabled_accessibility_suffix" = "en pause";
 "search_clear_accessibility_label" = "Effacer la recherche";
 "history_item_pin_action" = "Épingler";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Image, %d×%d";
 "history_item_image_accessibility_generic" = "Image";
 "toolbar_remove_paste_stack_action" = "Arrêter la pile de collage";
+"check_for_updates" = "Rechercher les mises à jour";
+"check_for_updates_tooltip" = "Vérifier si une nouvelle version de l'application est disponible.";

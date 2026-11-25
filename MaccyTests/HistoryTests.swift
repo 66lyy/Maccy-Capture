@@ -1,7 +1,9 @@
 import AppKit
 import Testing
 import Defaults
+import Logging
 import SwiftData
+import os
 @testable import Maccy
 
 extension SharedStateTests {
@@ -87,6 +89,108 @@ extension SharedStateTests {
 
         #expect(history.unpinnedItems.map(\.item) == expected)
       }
+    }
+
+    @Test("Reloading after a sort change preserves the latest tag or text filter",
+          arguments: ["#image", "#code needle", "plain"])
+    func reloadPreservesActiveFilter(query: String) async throws {
+      let searchMode = Defaults[.searchMode]
+      Defaults[.searchMode] = .exact
+      defer {
+        Defaults[.searchMode] = searchMode
+        history.searchQuery = ""
+      }
+
+      let image = ocrItem(0)
+      image.title = "image"
+      image.pin = "b"
+      history.add(image)
+      history.add(historyItem("let needle = 1"))
+      history.add(historyItem("let other = 2"))
+      history.add(historyItem("plain text"))
+
+      let expected = switch query {
+      case "#image": ["image"]
+      case "#code needle": ["let needle = 1"]
+      default: ["plain text"]
+      }
+      history.searchQuery = "#image"
+      history.searchQuery = "#code"
+      history.searchQuery = query
+      let deadline = ContinuousClock.now + .seconds(2)
+      while history.items.map(\.title) != expected && ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      try #require(history.items.map(\.title) == expected)
+
+      Defaults[.sortBy] = .numberOfCopies
+      try await history.load()
+
+      #expect(history.items.map(\.title) == expected)
+    }
+
+    @Test("A cancelled history load neither replaces the list nor trims storage")
+    func cancelledLoadLeavesHistoryUntouched() async throws {
+      let row = history.add(historyItem("stored"))
+      Defaults[.size] = 0
+      let load = Task { @MainActor in try await history.load() }
+      load.cancel()
+
+      await #expect(throws: CancellationError.self) { try await load.value }
+      #expect(history.items.first === row)
+      try assertStorageCounts(items: 1, contents: 1)
+    }
+
+    @Test("An older history load cannot overwrite a newer load or trim storage")
+    func supersededLoadLeavesLatestHistoryUntouched() async throws {
+      history.add(historyItem("stored"))
+      let cancelled = OSAllocatedUnfairLock(initialState: false)
+      let (waiting, continuation) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
+      let older = Task { @MainActor in
+        try await history.load {
+          await withTaskCancellationHandler {
+            await withCheckedContinuation { _ = continuation.yield($0) }
+          } onCancel: {
+            cancelled.withLock { $0 = true }
+          }
+        }
+      }
+      var iterator = waiting.makeAsyncIterator()
+      let resumeOlder = try #require(await iterator.next())
+      let newestRow: HistoryItemDecorator
+      do {
+        defer { resumeOlder.resume() }
+        try await history.load()
+        #expect(cancelled.withLock { $0 })
+        newestRow = try #require(history.firstUnpinnedItem)
+        Defaults[.size] = 0
+      }
+
+      try await older.value
+
+      #expect(history.firstUnpinnedItem === newestRow)
+      try assertStorageCounts(items: 1, contents: 1)
+    }
+
+    @Test("Cancelling a waiting caller cancels its history load before it can trim storage")
+    func cancellationWhileWaitingLeavesHistoryUntouched() async throws {
+      let row = history.add(historyItem("stored"))
+      Defaults[.size] = 0
+      let (waiting, continuation) = AsyncStream.makeStream(of: CheckedContinuation<Void, Never>.self)
+      let load = Task { @MainActor in
+        try await history.load {
+          await withCheckedContinuation { _ = continuation.yield($0) }
+        }
+      }
+      var iterator = waiting.makeAsyncIterator()
+      let resumeLoad = try #require(await iterator.next())
+
+      load.cancel()
+      resumeLoad.resume()
+
+      await #expect(throws: CancellationError.self) { try await load.value }
+      #expect(history.firstUnpinnedItem === row)
+      try assertStorageCounts(items: 1, contents: 1)
     }
 
     @Test("Duplicate replacement preserves full-sort ordering", arguments: Sorter.By.allCases)
@@ -527,6 +631,28 @@ extension SharedStateTests {
       #expect(!context.hasChanges)
     }
 
+    @Test("Screenshot history notifications are silent without silencing ordinary copies")
+    func screenshotHistoryNotificationIsSilent() throws {
+      var notifications: [(title: String, sound: NSSound?)] = []
+      let history = History(notifyNewItem: { notifications.append(($0, $1)) })
+      defer { history.clearAll() }
+
+      let bitmap = try #require(NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: 1, pixelsHigh: 1, bitsPerSample: 8,
+        samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+        bytesPerRow: 0, bitsPerPixel: 0
+      ))
+      bitmap.setColor(.red, atX: 0, y: 0)
+      let data = try #require(bitmap.representation(using: .png, properties: [:]))
+      try ScreenshotCapture.shared.saveInHistory(data, history: history)
+      history.add(historyItem("ordinary copy"))
+
+      let screenshotTitle = NSLocalizedString("ScreenshotTitle", tableName: "GeneralSettings", comment: "")
+      #expect(notifications.map(\.title) == [screenshotTitle, "ordinary copy"])
+      #expect(notifications.first?.sound == nil)
+      #expect(notifications.last?.sound === NSSound.write)
+    }
+
     @Test("An attached item is saved without being inserted twice")
     func attachedItemIsSavedOnce() throws {
       let item = historyItem("attached")
@@ -585,6 +711,63 @@ extension SharedStateTests {
     private final class SaveCounts {
       var attempted = 0
       var completed = 0
+    }
+
+    @Test("History mutations report a read-only storage failure",
+          arguments: ["trimming history", "deleting a history item", "clearing history"])
+    func historyStorageSaveFailureIsLogged(operation: String) async throws {
+      let storage = Storage.shared
+      let originalContainer = storage.container
+      let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let url = directory.appendingPathComponent("History.sqlite")
+      do {
+        let writable = try ModelContainer(for: HistoryItem.self, configurations: ModelConfiguration(url: url))
+        let item = historyItem("stored", persisted: false)
+        writable.mainContext.insert(item)
+        try writable.mainContext.save()
+      }
+      storage.container = try ModelContainer(
+        for: HistoryItem.self, configurations: ModelConfiguration(url: url, allowsSave: false)
+      )
+      storage.context.autosaveEnabled = false
+      defer {
+        storage.context.rollback()
+        storage.container = originalContainer
+      }
+
+      let log = HistoryErrorLog()
+      let history = History(logger: Logging.Logger(label: "HistoryTests") { _ in log })
+      if operation == "trimming history" {
+        Defaults[.size] = 0
+        await #expect(throws: (any Error).self) { try await history.load() }
+      } else {
+        try await history.load()
+        let row = try #require(history.firstUnpinnedItem)
+        if operation == "deleting a history item" {
+          #expect(throws: (any Error).self) { try history.deletePersisted([row]) }
+        } else {
+          #expect(!history.clear())
+        }
+      }
+
+      #expect(log.errors.withLock { $0.contains { $0.contains(operation) } })
+    }
+
+    private struct HistoryErrorLog: LogHandler {
+      let errors = OSAllocatedUnfairLock(initialState: [String]())
+      var logLevel = Logging.Logger.Level.error
+      var metadata: Logging.Logger.Metadata = [:]
+
+      subscript(metadataKey key: String) -> Logging.Logger.Metadata.Value? {
+        get { metadata[key] }
+        set { metadata[key] = newValue }
+      }
+
+      func log(event: LogEvent) {
+        errors.withLock { $0.append(event.message.description) }
+      }
     }
 
     @Test("Vision indexes delivered screenshots without changing their title or clipboard contents",
@@ -976,6 +1159,19 @@ extension SharedStateTests {
       #expect(history.items.contains(items[10]))
       #expect(history.items.contains(items[0]))
       #expect(!history.items.contains(items[1]))
+    }
+
+    @Test("Invalid stored history sizes use the minimum supported size", arguments: [0, -1, Int.min])
+    func invalidHistorySize(size: Int) throws {
+      let pinned = history.add(historyItem("pinned"))
+      history.togglePin(pinned)
+      history.add(historyItem("old"))
+      Defaults[.size] = size
+      let latest = history.add(historyItem("latest"))
+
+      #expect(history.unpinnedItems == [latest])
+      #expect(history.pinnedItems == [pinned])
+      try assertStorageCounts(items: 2, contents: 2)
     }
 
     @Test("Pinning updates pin order")

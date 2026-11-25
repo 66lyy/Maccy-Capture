@@ -7,7 +7,7 @@
 "clear_all" = "Wis alles";
 "about" = "Over";
 "quit" = "Sluit";
-"preferences" = "Voorkeuren…";
+"preferences" = "Voorkeuren";
 "clear_alert_message" = "Weet je zeker dat je de geschiedenis wilt wissen?";
 "clear_alert_comment" = "Je kan deze actie niet ongedaan maken.";
 "clear_alert_cancel" = "Annuleer";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "Privacy- en Beveiligingsinstellingen";
 "system_preferences_name" = "Systeemvoorkeuren";
 "system_preferences_pane" = "Beveiliging en Privacyvoorkeuren";
-"status_item_accessibility_label" = "Maccy — klembordgeschiedenis";
+"status_item_accessibility_label" = "Maccy Capture — klembordgeschiedenis";
 "status_item_disabled_accessibility_suffix" = "gepauzeerd";
 "search_clear_accessibility_label" = "Zoekopdracht wissen";
 "history_item_pin_action" = "Pinnen";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Afbeelding, %d×%d";
 "history_item_image_accessibility_generic" = "Afbeelding";
 "toolbar_remove_paste_stack_action" = "Plakstapel stoppen";
+"check_for_updates" = "Zoek naar updates";
+"check_for_updates_tooltip" = "Controleer of er een nieuwe versie van de app is.";

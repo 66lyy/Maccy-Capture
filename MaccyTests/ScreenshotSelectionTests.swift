@@ -6,6 +6,47 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("Long screenshot editor clamps extreme drags and keeps mosaic and crop ranges valid")
+  func auditScrollingEditorDrags() throws {
+    let context = try #require(CGContext(
+      data: nil, width: 32, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ))
+    let image = try #require(context.makeImage())
+    let panel = ScrollingScreenshotPanel(
+      beside: .zero, bounds: NSRect(x: 0, y: 0, width: 1000, height: 800), level: 10
+    )
+    defer { panel.close() }
+    panel.showEditor(image, width: 32, height: 64, frame: NSRect(x: 20, y: 20, width: 330, height: 410))
+    func scrollViews(_ view: NSView) -> [NSScrollView] {
+      (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+    }
+    let content = try #require(panel.contentView)
+    let editor = try #require(scrollViews(content).first?.documentView)
+    func event(_ type: NSEvent.EventType, _ point: NSPoint) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: editor.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+        windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+      ))
+    }
+    editor.mouseDown(with: try event(.leftMouseDown, NSPoint(x: editor.bounds.midX, y: 42)))
+    for point in [NSPoint(x: CGFloat.nan, y: 45), NSPoint(x: CGFloat.infinity, y: 45),
+                  NSPoint(x: -100_000, y: 100_000)] {
+      editor.mouseDragged(with: try event(.leftMouseDragged, point))
+    }
+    editor.mouseUp(with: try event(.leftMouseUp, .zero))
+    let mosaic = try #require(panel.edit)
+    #expect(!mosaic.cells.isEmpty)
+    #expect(mosaic.cells.allSatisfy { $0.x >= 0 && $0.y >= 0 &&
+      $0.x * mosaic.blockSize < mosaic.width && $0.y * mosaic.blockSize < mosaic.height })
+    editor.mouseDown(with: try event(.leftMouseDown, NSPoint(x: editor.bounds.midX - 16, y: 10)))
+    editor.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: editor.bounds.midX, y: CGFloat.nan)))
+    editor.mouseDragged(with: try event(.leftMouseDragged, NSPoint(x: editor.bounds.midX, y: 26)))
+    editor.mouseUp(with: try event(.leftMouseUp, .zero))
+    let cropped = try #require(panel.edit)
+    #expect(!cropped.rows.isEmpty && cropped.rows.lowerBound > 0 && cropped.rows.upperBound == 64)
+  }
+
   @Test("Long capture backs off only after four unchanged frames and changed outcomes reset it")
   func scrollingCadence() {
     var cadence = ScrollingScreenshotCadence()
@@ -23,8 +64,8 @@ struct ScreenshotSelectionTests {
       #expect(!cadence.isIdle)
       for _ in 0..<4 { _ = cadence.delay(after: .unchanged, elapsed: .zero) }
     }
-    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(80)) == .milliseconds(5))
-    #expect(cadence.delay(after: .unmatched, elapsed: .milliseconds(48)) == .milliseconds(5))
+    #expect(cadence.delay(after: .appended, elapsed: .milliseconds(80)) == .milliseconds(17))
+    #expect(cadence.delay(after: .unmatched, elapsed: .milliseconds(48)) == .milliseconds(17))
     #expect(cadence.delay(after: .appended, elapsed: .milliseconds(-10)) == .milliseconds(50))
   }
 
@@ -60,14 +101,45 @@ struct ScreenshotSelectionTests {
     #expect(ScrollingScreenshotPanel.placement(beside: bounds, bounds: bounds, size: .zero) == .zero)
   }
 
-  @Test("Observed scrolling removes the fixed wait, while quiet captures retain their idle backoff")
+  @Test("Observed scrolling keeps a minimum wait, while quiet captures retain their idle backoff")
   func scrollingActivityCadence() {
     var cadence = ScrollingScreenshotCadence()
     for result: ScrollingScreenshotStitcher.AppendResult in [.appended, .unchanged, .unmatched, .reanchored] {
-      #expect(cadence.delay(after: result, elapsed: .milliseconds(1), scrollIsActive: true) == .zero)
+      #expect(cadence.delay(after: result, elapsed: .milliseconds(1), scrollIsActive: true) == .milliseconds(17))
     }
     for _ in 0..<4 { _ = cadence.delay(after: .unchanged, elapsed: .zero) }
     #expect(cadence.delay(after: .unchanged, elapsed: .milliseconds(20)) == .milliseconds(130))
+  }
+
+  @Test("Scroll events waking the capture loop cannot skip its minimum frame interval")
+  func scrollingActivityWakeKeepsFrameInterval() async throws {
+    var captures: [ContinuousClock.Instant] = []
+    let controller = ScreenshotSelectionController(displays: { [Self.displays[0]] },
+      presentWindow: { _, _ in }, captureRegion: { _, rectangle, _ in
+        captures.append(.now)
+        return NSImage(size: rectangle.size, flipped: false) { bounds in
+          NSColor.white.setFill(); bounds.fill(); return true
+        }
+      }, freezeDisplays: { _ in [] }, listWindows: { [] })
+    defer { controller.cancel() }
+    let task = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 20))
+    window.selectionView.endSelection(at: NSPoint(x: 80, y: 80))
+    window.onLongScreenshot?()
+    let panel = try #require(window.scrollingPanel)
+    for _ in 0..<100 {
+      if captures.count >= 4 { break }
+      panel.onScrollActivity?()
+      try await Task.sleep(for: .milliseconds(2))
+    }
+    controller.cancel()
+    _ = try await task.value
+    try #require(captures.count >= 4)
+    for (previous, next) in zip(captures, captures.dropFirst()) {
+      #expect(previous.duration(to: next) >= .milliseconds(17))
+    }
   }
 
   @Test("Activity monitors only observe events, tolerate missing global monitoring and remove tokens once")
@@ -551,6 +623,38 @@ struct ScreenshotSelectionTests {
     #expect(bounds.contains(rectangle))
   }
 
+  @Test("A drag ignores nonfinite AppKit pointer coordinates")
+  func invalidSelectionDrag() throws {
+    let view = ScreenshotSelectionView(
+      frame: NSRect(x: 0, y: 0, width: 400, height: 300), scale: 2, pinImmediately: false
+    )
+    defer { view.finishInteraction() }
+    func event(_ type: NSEvent.EventType, at point: NSPoint) throws -> NSEvent {
+      try #require(NSEvent.mouseEvent(
+        with: type, location: point, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+      ))
+    }
+    let invalid = NSPoint(x: CGFloat.nan, y: 120)
+    var begins = 0
+    var finished: NSRect?
+    view.onBegin = { begins += 1 }
+    view.onValidSelection = { finished = $0 }
+    view.mouseDown(with: try event(.leftMouseDown, at: invalid))
+    #expect(begins == 0)
+    view.mouseDown(with: try event(.leftMouseDown, at: NSPoint(x: 50, y: 50)))
+    view.mouseDragged(with: try event(.leftMouseDragged, at: NSPoint(x: 100, y: 100)))
+    let selected = try #require(view.selectedRect)
+    view.mouseMoved(with: try event(.mouseMoved, at: invalid))
+    view.mouseDragged(with: try event(.leftMouseDragged, at: invalid))
+    #expect(view.selectedRect == selected)
+    view.mouseDragged(with: try event(.leftMouseDragged, at: NSPoint(x: 150, y: 125)))
+    let expected = NSRect(x: 50, y: 50, width: 100, height: 75)
+    #expect(view.selectedRect == expected)
+    view.mouseUp(with: try event(.leftMouseUp, at: invalid))
+    #expect(finished == expected)
+  }
+
   @Test("AppKit coordinates map to capture coordinates on left and upper displays")
   func displayCoordinates() {
     let left = ScreenshotSelectionController.Display(
@@ -652,6 +756,7 @@ struct ScreenshotSelectionTests {
     #expect(presentation.map(\.wantsKeyboard) == [false, true])
     #expect(presentation.first?.window === controller.windows[1 - keyboardIndex])
     #expect(presentation.last?.window === controller.windows[keyboardIndex])
+    #expect(presentation.allSatisfy { $0.window.animationBehavior == .none })
     controller.cancel()
     #expect(try await task.value == nil)
   }
@@ -880,6 +985,19 @@ struct ScreenshotSelectionTests {
     #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "5", 23)) == .nsColor)
     #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "6", 22)) == nil)
     #expect(try ScreenshotSelectionView.colorFormat(after: .hex, for: colorKey(.keyDown, "\t", 48, .option)) == nil)
+  }
+
+  @Test("The color picker ignores invalid numeric key input and still copies the selected format",
+        arguments: [String(Int.min), "-1", "0", "6", "01", "+1", "12"])
+  func colorPickerIgnoresInvalidNumericKey(_ key: String) throws {
+    let view = try colorPickerView()
+    defer { view.finishInteraction() }
+    let pasteboard = NSPasteboard.withUniqueName()
+    defer { pasteboard.releaseGlobally() }
+    #expect(try view.handleColorShortcut(colorKey(.keyDown, "c", 8, .shift), to: pasteboard))
+    #expect(try view.handleColorShortcut(colorKey(.keyDown, key, 23), to: pasteboard))
+    #expect(try view.handleColorShortcut(colorKey(.keyUp, "c", 8, .shift), to: pasteboard))
+    #expect(pasteboard.string(forType: .string) == "rgb(4, 160, 255)")
   }
 
   @Test("Each color format produces text that pastes into CSS or Swift")

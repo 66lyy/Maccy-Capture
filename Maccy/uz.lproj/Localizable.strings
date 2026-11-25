@@ -7,7 +7,7 @@
 "clear_all" = "Hammasini tozalash";
 "about" = "Ilova haqida";
 "quit" = "Chiqish";
-"preferences" = "Moslashtirish…";
+"preferences" = "Moslashtirish";
 "clear_alert_message" = "Haqiqatan ham tarixni tozalamoqchimisiz?";
 "clear_alert_comment" = "Bu amalni bekor qila olmaysiz.";
 "clear_alert_cancel" = "Bekor qilish";
@@ -19,7 +19,7 @@
 "system_settings_pane" = "Maxfiylik va Xavfsizlik sozlamalari";
 "system_preferences_name" = "Tizim sozlamalari";
 "system_preferences_pane" = "Xavfsizlik va Maxfiylik sozlamalari";
-"status_item_accessibility_label" = "Maccy — bufer tarixi";
+"status_item_accessibility_label" = "Maccy Capture — bufer tarixi";
 "status_item_disabled_accessibility_suffix" = "pauza qilingan";
 "search_clear_accessibility_label" = "Qidiruvni tozalash";
 "history_item_pin_action" = "Biriktirish";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Rasm, %d×%d";
 "history_item_image_accessibility_generic" = "Rasm";
 "toolbar_remove_paste_stack_action" = "Joylashtirish to‘plamini to‘xtatish";
+"check_for_updates" = "Yangilanishlarni tekshirish";
+"check_for_updates_tooltip" = "Ilovaning yangi versiyasi bor-yo'qligini tekshirish.";

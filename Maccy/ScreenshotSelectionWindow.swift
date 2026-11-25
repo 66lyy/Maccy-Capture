@@ -25,6 +25,7 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
     )
     selectionView.setFrozenImage(frozen)
     super.init(display: frame, visibleFrame: visibleFrame, deferToolbar: true)
+    animationBehavior = .none
     level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.overlayWindow)))
     collectionBehavior.insert(.canJoinAllApplications)
     ignoresMouseEvents = false

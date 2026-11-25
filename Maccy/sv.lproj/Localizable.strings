@@ -19,7 +19,7 @@
 "system_settings_pane" = "";
 "system_preferences_name" = "";
 "system_preferences_pane" = "";
-"status_item_accessibility_label" = "Maccy — urklippshistorik";
+"status_item_accessibility_label" = "Maccy Capture — urklippshistorik";
 "status_item_disabled_accessibility_suffix" = "pausad";
 "search_clear_accessibility_label" = "Rensa sökning";
 "history_item_pin_action" = "Fäst";
@@ -30,3 +30,5 @@
 "history_item_image_accessibility_label_no_app" = "Bild, %d×%d";
 "history_item_image_accessibility_generic" = "Bild";
 "toolbar_remove_paste_stack_action" = "Stoppa inklistringsstacken";
+"check_for_updates" = "Sök efter uppdateringar";
+"check_for_updates_tooltip" = "Kontrollera om det finns en ny version av programmet.";
