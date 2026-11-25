@@ -20,6 +20,12 @@
 "LaunchAtLogin" = "登入時啟動";
 "CheckForUpdates" = "自動檢查更新";
 "CheckNow" = "立即檢查";
+"UpdateUpToDate" = "目前已是此管道的最新版本。";
+"UpdateNoApplicableVersion" = "此管道目前沒有適用於這台 Mac 的更新。";
+"UpdateNetworkFailed" = "無法連線至更新伺服器，請檢查網路連線後再試一次。";
+"UpdateSecureConnectionFailed" = "無法與更新伺服器建立安全連線。請檢查網路或代理伺服器設定後再試一次。";
+"UpdateReleaseUnavailable" = "暫時無法取得此管道的版本資訊，請稍後再試。";
+"UpdateCheckFailed" = "更新檢查或安裝失敗，現有的應用程式未被取代，請再試一次。";
 "Open" = "開啟：";
 "OpenTooltip" = "全局快捷键，用于打开应用程序。\n在按住修改器的同时重复按下主键将选择列表中的下一个项目。在此模式下，鬆開變量鍵將確認選擇並關閉彈出窗口。\n預設：⇧⌘C。";
 "Pin" = "釘選：";

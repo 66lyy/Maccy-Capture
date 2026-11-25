@@ -68,7 +68,11 @@
 "UpdateReady" = "Updates are verified before installation.";
 "UpdateChecking" = "Checking for updates…";
 "UpdateFound" = "An update is available. Follow the installer to update and restart.";
-"UpdateReleaseUnavailable" = "No update is available for download right now. Try again later.";
+"UpdateUpToDate" = "You’re up to date on this channel.";
+"UpdateNoApplicableVersion" = "No compatible update is available for this Mac on this channel.";
+"UpdateNetworkFailed" = "Couldn’t reach the update server. Check your connection and try again.";
+"UpdateSecureConnectionFailed" = "Couldn’t establish a secure connection to the update server. Check your network or proxy settings and try again.";
+"UpdateReleaseUnavailable" = "Release information is unavailable for this channel. Try again later.";
 "UpdateCheckFailed" = "The update check or installation failed. Your existing app and data are not replaced by an unverified download. Try again.";
 "UpdateUntrustedPackage" = "The download does not match the published update package.";
 "UpdateRestartHelp" = "Install Update restarts this exact copy so changes take effect immediately. Save annotations first; temporary pinned images close. Clipboard history is kept. CI builds are not notarized and may require screen recording permission again.";

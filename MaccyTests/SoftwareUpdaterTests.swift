@@ -1,4 +1,5 @@
-import Foundation
+import AppKit
+import Sparkle
 import Testing
 @testable import Maccy
 
@@ -218,8 +219,9 @@ struct SoftwareUpdaterTests {
   @Test("Automatic checks run at launch and repeat after the daily interval")
   func recurringAutomaticChecks() async throws {
     let clock = CheckClock()
+    let progress = CheckProgress()
     var requests: [URLRequest] = []
-    let updater = try makeUpdater(clock: clock) { request in
+    let updater = try makeUpdater(clock: clock, progress: progress) { request in
       requests.append(request)
       throw RepositoryUpdateFeed.Failure.unavailable
     }
@@ -242,6 +244,7 @@ struct SoftwareUpdaterTests {
     updater.stop()
     #expect(clock.advance() == false)
     #expect(requests.count == 2)
+    #expect(progress.events.isEmpty)
   }
 
   @Test("Opting in checks immediately and opting out cancels the next check")
@@ -378,8 +381,10 @@ struct SoftwareUpdaterTests {
     }
   }
 
-  @Test("A manual check shows the checking window before discovery and closes it when discovery fails")
-  func manualCheckShowsProgressAtOnce() async throws {
+  @Test("A manual discovery failure replaces progress with one localized result", arguments: [
+    "UpdateNetworkFailed", "UpdateSecureConnectionFailed", "UpdateReleaseUnavailable", "UpdateCheckFailed"
+  ])
+  func manualCheckShowsProgressAtOnce(status: String) async throws {
     let progress = CheckProgress()
     let (response, continuation) = AsyncStream<Void>.makeStream()
     defer { continuation.finish() }
@@ -387,7 +392,12 @@ struct SoftwareUpdaterTests {
     let updater = try makeUpdater(clock: CheckClock(), enabled: false, progress: progress) { _ in
       requests += 1
       for await _ in response { break }
-      throw URLError(.notConnectedToInternet)
+      switch status {
+      case "UpdateNetworkFailed": throw URLError(.notConnectedToInternet)
+      case "UpdateSecureConnectionFailed": throw URLError(.secureConnectionFailed)
+      case "UpdateReleaseUnavailable": throw RepositoryUpdateFeed.Failure.unavailable
+      default: throw RepositoryUpdateFeed.Failure.invalidRelease
+      }
     }
     defer { updater.stop() }
 
@@ -397,8 +407,119 @@ struct SoftwareUpdaterTests {
     #expect(progress.events == ["show"])
     continuation.yield(())
     try await waitUntil { !updater.isChecking }
-    #expect(progress.events == ["show", "hide"])
-    #expect(updater.statusKey == "UpdateCheckFailed")
+    #expect(progress.events == ["show", "hide", "failure"])
+    let message = try #require(progress.message)
+    #expect(!message.isEmpty && message != status)
+    #expect(updater.statusKey == status)
+  }
+
+  @Test("A transient metadata failure retries only that request once; Cancel stops the retry", arguments: [false, true])
+  func retryTransientMetadata(cancel: Bool) async throws {
+    let clock = CheckClock()
+    let progress = CheckProgress()
+    let production = RepositoryUpdateFeed()
+    let location = "https://github.com/\(production.repository)/releases/tag/\(stableTag)"
+    var requests: [URLRequest] = []
+    let updater = try makeUpdater(clock: clock, enabled: false, progress: progress) { request in
+      requests.append(request)
+      if request.url == production.releaseURL {
+        return (Data(), response(url: request.url, location: location))
+      }
+      throw URLError(.timedOut)
+    }
+    defer { updater.stop() }
+    updater.checkForUpdates()
+    try await waitUntil { clock.delays == [.seconds(1)] }
+    #expect(requests.map { $0.url?.lastPathComponent } == ["latest", "UPDATE-METADATA.json"])
+    if cancel { progress.cancel() }
+    clock.advance()
+    try await waitUntil { !updater.isChecking }
+    #expect(requests.count == (cancel ? 2 : 3))
+    if !cancel { #expect(requests.last == requests[1]) }
+    #expect(updater.statusKey == (cancel ? "UpdateReady" : "UpdateNetworkFailed"))
+    #expect(progress.events == (cancel ? ["show", "hide"] : ["show", "hide", "failure"]))
+  }
+
+  @Test("The checking window stays open across handoff and Cancel targets only the active phase", arguments: [false, true])
+  func nativeCheckingWindowHandoff(cancelBeforeHandoff: Bool) throws {
+    let driver = UpdateUserDriver(hostBundle: .main, delegate: nil)
+    defer { driver.dismissUpdateInstallation() }
+    let existing = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
+    var cancelledDiscovery = 0, cancelledSparkle = 0
+    driver.showChecking { cancelledDiscovery += 1 }
+    let window = try #require(NSApp.windows.first { $0.isVisible && !existing.contains(ObjectIdentifier($0)) })
+    func cancelButton(in view: NSView) -> NSButton? {
+      if let button = view as? NSButton, button.accessibilityIdentifier() == "SUStatusCancel" { return button }
+      return view.subviews.lazy.compactMap { cancelButton(in: $0) }.first
+    }
+    let cancel = try #require(window.contentView.flatMap { cancelButton(in: $0) })
+    if cancelBeforeHandoff { cancel.performClick(nil) }
+    driver.showUserInitiatedUpdateCheck { cancelledSparkle += 1 }
+    if !cancelBeforeHandoff {
+      #expect(window.isVisible)
+      cancel.performClick(nil)
+    }
+    #expect(cancelledDiscovery == (cancelBeforeHandoff ? 1 : 0))
+    #expect(cancelledSparkle == 1 && !window.isVisible)
+  }
+
+  @Test("Manual check results remain visible until acknowledged", arguments: [false, true])
+  func nativeResultAlert(upToDate: Bool) {
+    let driver = UpdateUserDriver(hostBundle: .main, delegate: nil)
+    defer { driver.dismissUpdateInstallation() }
+    let message = upToDate ? "Fixture is up to date" : "Fixture release is unavailable"
+    var sawMessage = false
+    let acknowledge = Timer(timeInterval: 0.05, repeats: true) { _ in
+      MainActor.assumeIsolated {
+        guard let window = NSApp.modalWindow, window.isVisible, let content = window.contentView else { return }
+        @MainActor func containsMessage(_ view: NSView) -> Bool {
+          (view as? NSTextField)?.stringValue == message || view.subviews.contains { containsMessage($0) }
+        }
+        sawMessage = containsMessage(content)
+        NSApp.stopModal()
+      }
+    }
+    defer { acknowledge.invalidate() }
+    RunLoop.main.add(acknowledge, forMode: .modalPanel)
+    driver.showChecking {}
+    if upToDate {
+      driver.showUserInitiatedUpdateCheck {}
+      let error = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.noUpdateError.rawValue), userInfo: [
+        NSLocalizedDescriptionKey: message, SPUNoUpdateFoundReasonKey: SPUNoUpdateFoundReason.onLatestVersion.rawValue
+      ])
+      driver.showUpdateNotFoundWithError(error, acknowledgement: {})
+    } else {
+      driver.hideChecking()
+      driver.showFailure(message: message)
+    }
+    #expect(sawMessage)
+  }
+
+  @Test("A completed check distinguishes latest, incompatible, and a failed check with the same numeric code")
+  func completedStatus() {
+    let updater = SoftwareUpdater()
+    let driver = UpdateUserDriver(hostBundle: .main, delegate: nil)
+    let sparkle = SPUUpdater(hostBundle: .main, applicationBundle: .main, userDriver: driver, delegate: updater)
+    for (domain, reason, key) in [
+      (SUSparkleErrorDomain, SPUNoUpdateFoundReason.onLatestVersion, "UpdateUpToDate"),
+      (SUSparkleErrorDomain, .onNewerThanLatestVersion, "UpdateUpToDate"),
+      (SUSparkleErrorDomain, .systemIsTooOld, "UpdateNoApplicableVersion"),
+      (NSURLErrorDomain, .unknown, "UpdateCheckFailed")
+    ] {
+      let error = NSError(domain: domain, code: Int(SUError.noUpdateError.rawValue),
+                          userInfo: [SPUNoUpdateFoundReasonKey: reason.rawValue])
+      updater.updater(sparkle, didFinishUpdateCycleFor: .updates, error: error)
+      #expect(updater.statusKey == key)
+    }
+    let downloadErrors: [(URLError.Code, String)] = [
+      (.timedOut, "UpdateNetworkFailed"), (.serverCertificateUntrusted, "UpdateSecureConnectionFailed")
+    ]
+    for (code, key) in downloadErrors {
+      let error = NSError(domain: SUSparkleErrorDomain, code: Int(SUError.downloadError.rawValue),
+                          userInfo: [NSUnderlyingErrorKey: URLError(code)])
+      updater.updater(sparkle, didFinishUpdateCycleFor: .updates, error: error)
+      #expect(updater.statusKey == key)
+    }
   }
 
   @Test("Cancelling the checking window stops discovery")
@@ -433,7 +554,7 @@ struct SoftwareUpdaterTests {
     defaults.register(defaults: [SoftwareUpdater.automaticChecksKey: enabled])
     return SoftwareUpdater(
       defaults: defaults, load: load, canCheck: { true }, hasActiveCapture: hasActiveCapture, sleep: clock.sleep,
-      progress: progress
+      progress: progress ?? CheckProgress()
     )
   }
 
@@ -448,6 +569,7 @@ struct SoftwareUpdaterTests {
   @MainActor
   private final class CheckProgress: UpdateCheckProgress {
     private(set) var events: [String] = []
+    private(set) var message: String?
     private var cancellation: (() -> Void)?
 
     func showChecking(cancellation: @escaping () -> Void) {
@@ -457,6 +579,11 @@ struct SoftwareUpdaterTests {
 
     func hideChecking() {
       events.append("hide")
+    }
+
+    func showFailure(message: String) {
+      self.message = message
+      events.append("failure")
     }
 
     func cancel() {

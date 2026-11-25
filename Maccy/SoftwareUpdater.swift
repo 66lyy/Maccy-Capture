@@ -149,7 +149,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
       }
       do {
         try Task.checkCancellation()
-        let (data, response) = try await load(feed.request())
+        let (data, response) = try await loadForDiscovery(feed.request())
         try Task.checkCancellation()
         if !userInitiated, hasActiveCapture() {
           nextCheckDelay = Self.automaticCheckRetryInterval
@@ -157,7 +157,7 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
           return
         }
         let tags = try feed.releaseTags(data: data, response: response)
-        let release = try await feed.resolve(tags: tags, load: load)
+        let release = try await feed.resolve(tags: tags, load: loadForDiscovery)
         try Task.checkCancellation()
         if !userInitiated, hasActiveCapture() {
           nextCheckDelay = Self.automaticCheckRetryInterval
@@ -176,15 +176,51 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
           updater.checkForUpdatesInBackground()
         }
       } catch {
+        resolved = nil
         progress?.hideChecking()
         if Task.isCancelled || error is CancellationError {
           statusKey = "UpdateReady"
-        } else if case RepositoryUpdateFeed.Failure.unavailable = error {
-          statusKey = "UpdateReleaseUnavailable"
-        } else {
-          statusKey = "UpdateCheckFailed"
+          return
         }
+        switch error {
+        case RepositoryUpdateFeed.Failure.unavailable: statusKey = "UpdateReleaseUnavailable"
+        default: statusKey = Self.failureStatus(error as NSError)
+        }
+        progress?.showFailure(message: text(statusKey))
       }
+    }
+  }
+
+  private func loadForDiscovery(_ request: URLRequest) async throws -> (Data, URLResponse) {
+    do {
+      return try await load(request)
+    } catch let error as URLError where [.timedOut, .networkConnectionLost, .cannotConnectToHost].contains(error.code) {
+      try Task.checkCancellation()
+      try await sleep(.seconds(1))
+      try Task.checkCancellation()
+      return try await load(request)
+    }
+  }
+
+  private static func failureStatus(_ error: NSError) -> String {
+    let cause: NSError
+    if error.domain == SUSparkleErrorDomain, error.code == Int(SUError.downloadError.rawValue),
+       let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+      cause = underlying
+    } else {
+      cause = error
+    }
+    guard let networkError = cause as? URLError else { return "UpdateCheckFailed" }
+    switch networkError.code {
+    case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
+         .serverCertificateHasUnknownRoot, .serverCertificateNotYetValid, .clientCertificateRejected,
+         .clientCertificateRequired:
+      return "UpdateSecureConnectionFailed"
+    case .timedOut, .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost,
+         .dnsLookupFailed:
+      return "UpdateNetworkFailed"
+    default:
+      return "UpdateCheckFailed"
     }
   }
 
@@ -250,13 +286,23 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
     _ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?
   ) {
     resolved = nil
-    (progress ?? sparkle?.driver)?.hideChecking()
-    statusKey = error == nil || (error as NSError?)?.code == Int(SUError.noUpdateError.rawValue)
-      ? "UpdateReady" : "UpdateCheckFailed"
+    guard let error = error as NSError? else {
+      statusKey = "UpdateReady"
+      return
+    }
+    guard error.domain == SUSparkleErrorDomain, error.code == Int(SUError.noUpdateError.rawValue) else {
+      statusKey = Self.failureStatus(error)
+      return
+    }
+    let reason = (error.userInfo[SPUNoUpdateFoundReasonKey] as? NSNumber)?.int32Value
+    statusKey = reason == SPUNoUpdateFoundReason.onLatestVersion.rawValue ||
+      reason == SPUNoUpdateFoundReason.onNewerThanLatestVersion.rawValue ? "UpdateUpToDate" : "UpdateNoApplicableVersion"
   }
 
   private func text(_ key: String) -> String {
-    NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+    let fallback = Bundle.main.url(forResource: "en", withExtension: "lproj").flatMap(Bundle.init(url:))
+    return Bundle.main.localizedString(forKey: key, value: fallback?.localizedString(forKey: key, value: nil,
+      table: "GeneralSettings"), table: "GeneralSettings")
   }
 }
 
@@ -264,29 +310,52 @@ final class SoftwareUpdater: NSObject, SPUUpdaterDelegate {
 protocol UpdateCheckProgress: AnyObject {
   func showChecking(cancellation: @escaping () -> Void)
   func hideChecking()
+  func showFailure(message: String)
 }
 
 /// Shows Sparkle's checking window while release discovery runs, and hands it over to
 /// Sparkle's own check without closing it first so the window never blinks.
 final class UpdateUserDriver: SPUStandardUserDriver, UpdateCheckProgress {
-  private var discoveryWindow: NSWindow?
+  private final class PendingCheck {
+    var cancel: (() -> Void)?
+
+    init(_ cancel: @escaping () -> Void) { self.cancel = cancel }
+  }
+
+  private var pendingCheck: PendingCheck?
 
   func showChecking(cancellation: @escaping () -> Void) {
-    let existing = Set(NSApp.windows.map(ObjectIdentifier.init))
-    super.showUserInitiatedUpdateCheck(cancellation: cancellation)
-    discoveryWindow = NSApp.windows.first { !existing.contains(ObjectIdentifier($0)) }
+    let pending = PendingCheck(cancellation)
+    pendingCheck = pending
+    super.showUserInitiatedUpdateCheck {
+      let cancel = pending.cancel
+      pending.cancel = nil
+      cancel?()
+    }
   }
 
   func hideChecking() {
-    guard discoveryWindow != nil else { return }
-    discoveryWindow = nil
+    guard pendingCheck != nil else { return }
     dismissUpdateInstallation()
   }
 
+  func showFailure(message: String) {
+    NSApp.activate()
+    let error = NSError(domain: "MaccyCaptureUpdates", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
+    showUpdaterError(error, acknowledgement: {})
+  }
+
   override func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
-    let window = discoveryWindow
-    discoveryWindow = nil
-    super.showUserInitiatedUpdateCheck(cancellation: cancellation)
-    window?.close()
+    guard let pending = pendingCheck else {
+      super.showUserInitiatedUpdateCheck(cancellation: cancellation)
+      return
+    }
+    pendingCheck = nil
+    if pending.cancel == nil { cancellation() } else { pending.cancel = cancellation }
+  }
+
+  override func dismissUpdateInstallation() {
+    pendingCheck = nil
+    super.dismissUpdateInstallation()
   }
 }

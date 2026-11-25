@@ -68,7 +68,11 @@
 "UpdateReady" = "更新会在安装前验证。";
 "UpdateChecking" = "正在检查更新…";
 "UpdateFound" = "发现新版，请按提示安装并重启生效。";
-"UpdateReleaseUnavailable" = "暂时无法下载更新，请稍后重试。";
+"UpdateUpToDate" = "当前已是此渠道的最新版本。";
+"UpdateNoApplicableVersion" = "此渠道暂无适用于这台 Mac 的更新。";
+"UpdateNetworkFailed" = "无法连接更新服务器，请检查网络连接后重试。";
+"UpdateSecureConnectionFailed" = "无法与更新服务器建立安全连接。请检查网络或代理设置后重试。";
+"UpdateReleaseUnavailable" = "暂时无法获取此渠道的发布信息，请稍后重试。";
 "UpdateCheckFailed" = "更新检查或安装失败，不会以未经验证的下载替换现有应用，请重试。";
 "UpdateUntrustedPackage" = "下载内容与发布的更新包不匹配。";
 "UpdateRestartHelp" = "确认安装后自动重启当前这份应用，新功能立即生效。请先保存标注，临时贴图会关闭，剪贴板历史保留。CI 构建未经公证，可能需要重新授予录屏权限。";
