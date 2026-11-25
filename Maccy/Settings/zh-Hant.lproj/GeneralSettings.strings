@@ -1,4 +1,10 @@
-"ScreenshotLongFinishScrolling" = "結束捲動";
+"ScreenshotLongFinishScrolling" = "結束捲動並編輯";
+"ScreenshotLongAutoScroll" = "自動捲動";
+"ScreenshotLongUp" = "向上";
+"ScreenshotLongDown" = "向下";
+"ScreenshotLongEdit" = "編輯";
+"ScreenshotLongCopy" = "複製";
+"ScreenshotLongPin" = "釘選";
 "ScreenshotLongEditHint" = "拖曳控制點裁切，在圖片上塗抹打馬賽克。";
 "ScreenshotLongSlowScroll" = "太快了，請慢一點";
 "ScreenshotLongLostTrack" = "跟丟了，請往回捲一點";
@@ -6,7 +12,9 @@
 "ScreenshotLongAutoDown" = "自動向下";
 "ScreenshotLongAutoActive" = "正在自動捲動，點一下螢幕任意位置即可停止。";
 "ScreenshotLongAutoStopped" = "自動捲動已停止，可繼續手動捲動或複製長圖。";
-"ScreenshotLongAutoPermission" = "自動捲動需要在系統設定中允許「輔助使用」，也可繼續手動捲動。";
+"ScreenshotLongAutoPermission" = "開啟設定會結束此次截圖。在「輔助使用」中允許 Maccy Capture 後重試。";
+"ScreenshotLongAutoNoMotion" = "頁面未移動。請確認選取範圍中央可捲動，或改試另一方向。";
+"ScreenshotLongAutoClickUnavailable" = "無法監聽停止點擊。請檢查輔助使用權限，或改用手動捲動。";
 "ScreenshotLongAutoTarget" = "選取範圍中央沒有相符的目標視窗，可繼續手動捲動。";
 "Title" = "一般";
 "LaunchAtLogin" = "登入時啟動";

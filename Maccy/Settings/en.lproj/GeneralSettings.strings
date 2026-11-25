@@ -1,4 +1,10 @@
-"ScreenshotLongFinishScrolling" = "Finish Scrolling";
+"ScreenshotLongFinishScrolling" = "Finish scrolling and edit";
+"ScreenshotLongAutoScroll" = "Auto-scroll";
+"ScreenshotLongUp" = "Up";
+"ScreenshotLongDown" = "Down";
+"ScreenshotLongEdit" = "Edit";
+"ScreenshotLongCopy" = "Copy";
+"ScreenshotLongPin" = "Pin";
 "ScreenshotLongEditHint" = "Drag handles to crop. Paint on the image to pixelate.";
 "ScreenshotLongSlowScroll" = "Too fast, slow down";
 "ScreenshotLongLostTrack" = "Lost track. Scroll back toward the captured area.";
@@ -6,7 +12,9 @@
 "ScreenshotLongAutoDown" = "Auto-scroll down";
 "ScreenshotLongAutoActive" = "Auto-scrolling. Click anywhere to stop.";
 "ScreenshotLongAutoStopped" = "Auto-scroll stopped. Continue manually or copy the result.";
-"ScreenshotLongAutoPermission" = "Allow Accessibility in System Settings for auto-scroll, or scroll manually.";
+"ScreenshotLongAutoPermission" = "Opening Settings ends this capture. Allow Maccy Capture in Accessibility, then retry.";
+"ScreenshotLongAutoNoMotion" = "Page didn’t move. Center the selection on scrollable content or try the other direction.";
+"ScreenshotLongAutoClickUnavailable" = "Can’t detect stop clicks. Check Accessibility access or scroll manually.";
 "ScreenshotLongAutoTarget" = "No matching window at the center of the selection. Scroll manually.";
 "Title" = "General";
 "PreferencesWindowTitle" = "Settings";

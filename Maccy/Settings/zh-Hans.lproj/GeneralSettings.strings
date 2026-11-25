@@ -1,4 +1,10 @@
-"ScreenshotLongFinishScrolling" = "结束滚动";
+"ScreenshotLongFinishScrolling" = "结束滚动并编辑";
+"ScreenshotLongAutoScroll" = "自动滚动";
+"ScreenshotLongUp" = "向上";
+"ScreenshotLongDown" = "向下";
+"ScreenshotLongEdit" = "编辑";
+"ScreenshotLongCopy" = "复制";
+"ScreenshotLongPin" = "贴屏";
 "ScreenshotLongEditHint" = "拖动手柄裁剪，在图上涂抹打码。";
 "ScreenshotLongSlowScroll" = "太快了，请慢一点";
 "ScreenshotLongLostTrack" = "跟丢了，请往回滚一点";
@@ -6,7 +12,9 @@
 "ScreenshotLongAutoDown" = "自动向下";
 "ScreenshotLongAutoActive" = "正在自动滚动，点击屏幕任意位置停止。";
 "ScreenshotLongAutoStopped" = "自动滚动已停止，可继续手动滚动或复制长图。";
-"ScreenshotLongAutoPermission" = "自动滚动需要在系统设置中允许「辅助功能」，也可继续手动滚动。";
+"ScreenshotLongAutoPermission" = "打开设置会结束本次截图。在「辅助功能」中允许 Maccy Capture 后重试。";
+"ScreenshotLongAutoNoMotion" = "页面未移动。请确认选区中心可滚动，或改试另一方向。";
+"ScreenshotLongAutoClickUnavailable" = "无法监听停止点击。请检查辅助功能权限，或改用手动滚动。";
 "ScreenshotLongAutoTarget" = "选区中心没有可匹配的目标窗口，可继续手动滚动。";
 "Title" = "通用";
 "PreferencesWindowTitle" = "偏好设置";

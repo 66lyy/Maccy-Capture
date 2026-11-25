@@ -48,17 +48,46 @@ if [[ "$STATUS" != "identical" && "$STATUS" != "ahead" ]]; then
   exit 2
 fi
 
-read -r RUN_ID RUN_NUMBER < <(gh api \
-  "repos/$GH_REPO/actions/workflows/build-capture.yml/runs?branch=$MACCY_DEFAULT_BRANCH&event=push&status=success&head_sha=$SHA&per_page=1" \
-  --jq '.workflow_runs[0] | select(. != null) | "\(.id) \(.run_number)"') || true
-if [[ ! "${RUN_ID:-}" =~ ^[0-9]+$ || ! "${RUN_NUMBER:-}" =~ ^[0-9]+$ ]]; then
-  echo "No successful default-branch build of $SHA." >&2
-  exit 2
-fi
+RUNS_URL="repos/$GH_REPO/actions/workflows/build-capture.yml/runs?branch=$MACCY_DEFAULT_BRANCH&event=push&head_sha=$SHA&per_page=100"
+for ((attempt = 1; ; attempt++)); do
+  if ! run="$(gh api "$RUNS_URL" --jq '.workflow_runs | (map(select(.conclusion == "success"))[0] // .[0] // empty) | [.id, .run_number, .status, (.conclusion // "-")] | @tsv')"; then
+    echo "Could not query build-capture for $SHA (attempt $attempt)." >&2
+  elif [[ -z "$run" ]]; then
+    echo "Waiting for the $MACCY_DEFAULT_BRANCH push build of $SHA to appear (attempt $attempt)." >&2
+  else
+    read -r RUN_ID RUN_NUMBER status conclusion <<< "$run"
+    if [[ ! "$RUN_ID" =~ ^[0-9]+$ || ! "$RUN_NUMBER" =~ ^[0-9]+$ ]]; then
+      echo "Invalid build-capture run identifiers for $SHA." >&2
+      exit 2
+    fi
+    if [[ "$status" == completed ]]; then
+      if [[ "$conclusion" == success ]]; then break; fi
+      echo "Build-capture run $RUN_ID for $SHA finished with $conclusion; not publishing." >&2
+      exit 2
+    fi
+    echo "Waiting for build-capture run $RUN_ID ($status, attempt $attempt)." >&2
+  fi
+  if (( attempt == 66 )); then
+    echo "Timed out waiting for a successful push build of $SHA on $MACCY_DEFAULT_BRANCH." >&2
+    exit 2
+  fi
+  sleep 60
+done
 
-DIST_DIR="${RUNNER_TEMP:-$(mktemp -d)}/MaccyCapture-stable"
-rm -rf "$DIST_DIR"
-gh run download "$RUN_ID" -n "Maccy-Capture-macOS-universal-$RUN_NUMBER" -D "$DIST_DIR"
+WORK_DIR="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/MaccyCapture-stable.XXXXXX")"
+trap 'rm -rf "$WORK_DIR"' EXIT
+DIST_DIR="$WORK_DIR/packages"
+ARTIFACT="Maccy-Capture-macOS-universal-$RUN_NUMBER"
+for ((attempt = 1; ; attempt++)); do
+  if gh run download "$RUN_ID" -n "$ARTIFACT" -D "$DIST_DIR"; then break; fi
+  if (( attempt == 6 )); then
+    echo "Could not download $ARTIFACT from run $RUN_ID after $attempt attempts; not publishing." >&2
+    exit 2
+  fi
+  echo "Retrying download of $ARTIFACT from run $RUN_ID in 30 seconds (attempt $attempt failed)." >&2
+  rm -rf "$DIST_DIR"
+  sleep 30
+done
 cd "$DIST_DIR"
 sha256sum --check SHA256SUMS.txt
 grep -Fxq "Source revision: $SHA" BUILD-INFO.txt

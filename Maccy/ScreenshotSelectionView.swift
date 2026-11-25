@@ -21,7 +21,6 @@ final class ScreenshotSelectionView: NSView {
     selectedRect != nil || drag != nil || colorCopyTask != nil || colorPick != nil
   }
   private(set) var frozen: NSImage?
-  var catchesAutoScrollClicks = false { didSet { needsDisplay = true } }
   var isScrolling = false {
     didSet {
       selectionHint.isHidden = isScrolling
@@ -726,7 +725,7 @@ final class ScreenshotSelectionView: NSView {
       if !isScrolling { frozen?.draw(in: bounds, from: .zero, operation: .copy, fraction: 1) }
       NSGraphicsContext.restoreGraphicsState()
     }
-    if !isScrolling || catchesAutoScrollClicks {
+    if !isScrolling {
       // A fully transparent hole would let clicks fall through to the window below.
       NSColor.black.withAlphaComponent(0.001).setFill()
       for rectangle in highlights { rectangle.fill(using: .sourceOver) }

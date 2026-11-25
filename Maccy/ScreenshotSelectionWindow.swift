@@ -82,13 +82,13 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
 
 @MainActor
 final class ScrollingScreenshotActivityMonitor {
-  private static let mask: NSEvent.EventTypeMask = [.scrollWheel, .mouseMoved, .leftMouseDragged,
-    .leftMouseDown, .rightMouseDown, .otherMouseDown]
+  private static let mask: NSEvent.EventTypeMask = [.scrollWheel, .mouseMoved, .leftMouseDragged]
   private let addLocal: (@escaping (NSEvent) -> NSEvent?) -> Any?
   private let addGlobal: (@escaping (NSEvent) -> Void) -> Any?
   private let remove: (Any) -> Void
   private var tokens: [Any] = []
-  private(set) var monitorsLocalClicks = false
+  private let installClickStop: @MainActor (@escaping () -> Void) -> (() -> Void)?
+  private var removeClickStop: (() -> Void)?
   var isMonitoring: Bool { !tokens.isEmpty }
 
   init(
@@ -98,35 +98,69 @@ final class ScrollingScreenshotActivityMonitor {
     addGlobal: @escaping (@escaping (NSEvent) -> Void) -> Any? = {
       AppDelegate.isTesting ? nil : NSEvent.addGlobalMonitorForEvents(matching: ScrollingScreenshotActivityMonitor.mask, handler: $0)
     },
-    remove: @escaping (Any) -> Void = { NSEvent.removeMonitor($0) }
+    remove: @escaping (Any) -> Void = { NSEvent.removeMonitor($0) },
+    installClickStop: @escaping @MainActor (@escaping () -> Void) -> (() -> Void)? = ScrollStopClickTap.install
   ) {
     self.addLocal = addLocal
     self.addGlobal = addGlobal
     self.remove = remove
+    self.installClickStop = installClickStop
   }
 
-  func start(stopOnClick: @escaping () -> Bool = { false }, _ observe: @escaping (NSEvent) -> Void) {
+  func armStopClick(_ stop: @escaping () -> Void) -> Bool {
+    disarmStopClick()
+    removeClickStop = installClickStop(stop)
+    return removeClickStop != nil
+  }
+
+  func disarmStopClick() {
+    removeClickStop?()
+    removeClickStop = nil
+  }
+
+  func start(_ observe: @escaping (NSEvent) -> Void) {
     stop()
-    func handle(_ event: NSEvent) -> NSEvent? {
-      switch event.type {
-      case .leftMouseDown, .rightMouseDown, .otherMouseDown:
-        if stopOnClick() { return nil }
-      default: observe(event)
-      }
-      return event
-    }
-    let local = addLocal(handle)
-    monitorsLocalClicks = local != nil
-    tokens = [local, addGlobal { _ = handle($0) }].compactMap { $0 }
+    tokens = [addLocal { event in observe(event); return event }, addGlobal(observe)].compactMap { $0 }
   }
 
   func stop() {
+    disarmStopClick()
     tokens.forEach(remove)
     tokens.removeAll()
-    monitorsLocalClicks = false
   }
 
-  isolated deinit { tokens.forEach(remove) }
+  isolated deinit { stop() }
+}
+
+@MainActor
+private final class ScrollStopClickTap {
+  private let stop: () -> Void
+
+  private init(stop: @escaping () -> Void) { self.stop = stop }
+
+  static func install(_ stop: @escaping () -> Void) -> (() -> Void)? {
+    guard !AppDelegate.isTesting else { return nil }
+    let handler = ScrollStopClickTap(stop: stop)
+    let mask = [CGEventType.leftMouseDown, .rightMouseDown, .otherMouseDown].reduce(CGEventMask(0)) {
+      $0 | (1 << $1.rawValue)
+    }
+    guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+      eventsOfInterest: mask, callback: { _, type, event, context in
+        guard let context else { return Unmanaged.passUnretained(event) }
+        let handler = Unmanaged<ScrollStopClickTap>.fromOpaque(context).takeUnretainedValue()
+        MainActor.assumeIsolated { handler.stop() }
+        return type == .tapDisabledByTimeout || type == .tapDisabledByUserInput ? Unmanaged.passUnretained(event) : nil
+      }, userInfo: Unmanaged.passUnretained(handler).toOpaque()),
+      let source = CFMachPortCreateRunLoopSource(nil, tap, 0) else { return nil }
+    CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+    CGEvent.tapEnable(tap: tap, enable: true)
+    return { [handler] in
+      withExtendedLifetime(handler) {
+        CFMachPortInvalidate(tap)
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+      }
+    }
+  }
 }
 
 @MainActor
@@ -139,16 +173,17 @@ final class ScrollingScreenshotPanel: NSPanel {
   var onStopAutoScroll: (() -> Void)?
   private(set) var isAutoScrolling = false
   private var autoHint: String?
-  private var autoButtons: [NSButton] = []
+  private lazy var directions = NSSegmentedControl(labels: [text("ScreenshotLongUp"), text("ScreenshotLongDown")],
+    trackingMode: .momentary, target: self, action: #selector(scrollInSelectedDirection(_:)))
+  private lazy var accessButton = iconButton("gearshape", label: "ScreenshotOpenSettings", action: #selector(openAutoScrollSettings))
   private let autoLine = NSStackView()
   private let activityMonitor: ScrollingScreenshotActivityMonitor
-  private var controls: [NSButton] = []
+  private var controls: [NSControl] = []
   private(set) var image: CGImage?
   private let thumbnail = NSImageView()
   private let editorScroll = NSScrollView()
   private let editor = ScrollingScreenshotEditView()
   private let preview = NSView()
-  private var previewHeight: NSLayoutConstraint?
   private var editButton: NSButton?
   private var undoButton: NSButton?
   private var editing = false
@@ -159,7 +194,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   private var outputButtons: [NSButton] = []
   var isMonitoringScrollEvents: Bool { activityMonitor.isMonitoring }
   var canBeginAutoScroll: Bool {
-    !editing && !isAutoScrolling && activityMonitor.monitorsLocalClicks && autoButtons.first?.isEnabled == true
+    !editing && !isAutoScrolling && directions.isEnabled
   }
 
   override var canBecomeKey: Bool { true }
@@ -215,9 +250,6 @@ final class ScrollingScreenshotPanel: NSPanel {
     surface.controlsView.addSubview(group)
     contentView = surface
     thumbnail.imageScaling = .scaleProportionallyUpOrDown
-    previewHeight = preview.heightAnchor.constraint(equalToConstant: 120)
-    previewHeight?.isActive = true
-    preview.widthAnchor.constraint(equalToConstant: 264).isActive = true
     for view in [thumbnail, editorScroll] {
       view.frame = preview.bounds
       view.autoresizingMask = [.width, .height]
@@ -227,54 +259,67 @@ final class ScrollingScreenshotPanel: NSPanel {
     editorScroll.drawsBackground = false
     editorScroll.documentView = editor
     editorScroll.isHidden = true
-    dimensions.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+    let title = NSTextField(labelWithString: text("ScreenshotLong"))
+    title.font = .systemFont(ofSize: 13, weight: .semibold)
+    dimensions.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+    dimensions.textColor = .secondaryLabelColor
+    let cancel = iconButton("xmark", label: "ScreenshotCancel", action: #selector(cancelResult))
+    let header = NSStackView(views: [title, NSView(), dimensions, cancel])
+    header.spacing = 8
     hint.stringValue = text("ScreenshotLongHint")
-    hint.font = .systemFont(ofSize: 12)
-    hint.preferredMaxLayoutWidth = 244
+    hint.font = .systemFont(ofSize: 11)
+    hint.textColor = .secondaryLabelColor
+    hint.preferredMaxLayoutWidth = frame.width - 52
     warningIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
     warningIcon.contentTintColor = .systemOrange
-    warningIcon.alphaValue = 0
+    warningIcon.isHidden = true
     warningIcon.widthAnchor.constraint(equalToConstant: 14).isActive = true
     warningIcon.heightAnchor.constraint(equalToConstant: 14).isActive = true
-    let hintLine = NSStackView(views: [warningIcon, hint])
+    let hintLine = NSStackView(views: [warningIcon, hint, NSView()])
     hintLine.spacing = 6
     hintLine.alignment = .centerY
-    hintLine.heightAnchor.constraint(equalToConstant: 32).isActive = true
-    let copy = NSButton(title: text("AnnotationCopy"), target: self, action: #selector(copyResult))
-    let pin = NSButton(title: text("ScreenshotPinImage"), target: self, action: #selector(pinResult))
-    let cancel = NSButton(title: text("ScreenshotCancel"), target: self, action: #selector(cancelResult))
+    hint.setContentCompressionResistancePriority(.required, for: .vertical)
+    let copy = actionButton("ScreenshotLongCopy", symbol: "doc.on.doc", help: "AnnotationCopy", action: #selector(copyResult))
+    copy.bezelColor = .controlAccentColor
+    copy.applyGlassBezel(tint: .controlAccentColor)
+    let pin = actionButton("ScreenshotLongPin", symbol: "pin", help: "ScreenshotPinImage", action: #selector(pinResult))
     outputButtons = [copy, pin]
-    let edit = NSButton(title: text("ScreenshotLongFinishScrolling"), target: self, action: #selector(beginEditing))
-    let undo = NSButton(title: text("AnnotationUndo"), target: self, action: #selector(undoEdit))
+    let edit = actionButton("ScreenshotLongEdit", symbol: "crop", help: "ScreenshotLongFinishScrolling", action: #selector(beginEditing))
+    let undo = actionButton("AnnotationUndo", symbol: "arrow.uturn.backward", help: "AnnotationUndo", action: #selector(undoEdit))
+    edit.isBordered = false
+    undo.isBordered = false
     editButton = edit
     undoButton = undo
-    autoButtons = [NSButton(title: text("ScreenshotLongAutoUp"), target: self, action: #selector(autoUp)),
-      NSButton(title: text("ScreenshotLongAutoDown"), target: self, action: #selector(autoDown))]
-    autoButtons.forEach { $0.isEnabled = false; autoLine.addArrangedSubview($0) }
-    controls = [copy, pin, cancel, edit] + autoButtons
-    for button in controls {
-      button.bezelStyle = .rounded
-      _ = button.applyGlassBezel()
+    let scrollLabel = NSTextField(labelWithString: text("ScreenshotLongAutoScroll"))
+    scrollLabel.font = .systemFont(ofSize: 12, weight: .medium)
+    directions.setAccessibilityLabel(scrollLabel.stringValue)
+    for (index, symbol, help) in [(0, "arrow.up", "ScreenshotLongAutoUp"), (1, "arrow.down", "ScreenshotLongAutoDown")] {
+      directions.setImage(NSImage(systemSymbolName: symbol, accessibilityDescription: nil), forSegment: index)
+      directions.setToolTip(text(help), forSegment: index)
     }
+    directions.segmentDistribution = .fillEqually
+    directions.isEnabled = false
+    [scrollLabel, NSView(), accessButton, directions].forEach { autoLine.addArrangedSubview($0) }
+    accessButton.isHidden = true
+    controls = [copy, pin, cancel, edit, undo, accessButton, directions]
     outputButtons.forEach { $0.isEnabled = false }
     edit.isEnabled = false
     undo.isHidden = true
-    undo.bezelStyle = .rounded
-    _ = undo.applyGlassBezel()
-    let actions = NSStackView(views: [copy, pin, cancel])
+    let actions = NSStackView(views: [edit, undo, NSView(), pin, copy])
     actions.spacing = 8
-    let editLine = NSStackView(views: [dimensions, edit, undo])
-    editLine.spacing = 8
-    let stack = NSStackView(views: [preview, editLine, autoLine, hintLine, actions])
+    let rows = [header, preview, autoLine, hintLine, actions]
+    let stack = NSStackView(views: rows)
     stack.orientation = .vertical
+    stack.alignment = .leading
     stack.spacing = 8
     stack.translatesAutoresizingMaskIntoConstraints = false
     group.controlsView.addSubview(stack)
     NSLayoutConstraint.activate([
-      stack.centerXAnchor.constraint(equalTo: group.controlsView.centerXAnchor),
-      stack.centerYAnchor.constraint(equalTo: group.controlsView.centerYAnchor),
-      stack.widthAnchor.constraint(lessThanOrEqualTo: group.controlsView.widthAnchor, constant: -24)
-    ])
+      stack.leadingAnchor.constraint(equalTo: group.controlsView.leadingAnchor, constant: 14),
+      stack.trailingAnchor.constraint(equalTo: group.controlsView.trailingAnchor, constant: -14),
+      stack.topAnchor.constraint(equalTo: group.controlsView.topAnchor, constant: 12),
+      stack.bottomAnchor.constraint(equalTo: group.controlsView.bottomAnchor, constant: -12)
+    ] + rows.map { $0.widthAnchor.constraint(equalTo: stack.widthAnchor) })
     editor.onChange = { [weak self] in
       guard let self, let edit = self.editor.edit else { return }
       dimensions.stringValue = "\(edit.width) × \(edit.rows.count) px"
@@ -289,11 +334,7 @@ final class ScrollingScreenshotPanel: NSPanel {
 
   private func startMonitoringScrollEvents() {
     guard isVisible, !editing, !isMonitoringScrollEvents else { return }
-    activityMonitor.start(stopOnClick: { [weak self] in
-      guard let self, isAutoScrolling else { return false }
-      onStopAutoScroll?()
-      return true
-    }) { [weak self] event in
+    activityMonitor.start { [weak self] event in
       if event.type == .scrollWheel { self?.onScrollActivity?() }
       else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
     }
@@ -314,8 +355,8 @@ final class ScrollingScreenshotPanel: NSPanel {
   }
 
   func updateMousePassthrough(at point: NSPoint) {
-    let frames = controls.map { convertToScreen($0.convert($0.bounds, to: nil)) }
-    ignoresMouseEvents = Self.ignoresMouse(at: point, controls: frames)
+    let frames = controls.filter { !$0.isHiddenOrHasHiddenAncestor }.map { convertToScreen($0.convert($0.bounds, to: nil)) }
+    ignoresMouseEvents = isAutoScrolling || Self.ignoresMouse(at: point, controls: frames)
   }
 
   override func orderFrontRegardless() {
@@ -356,12 +397,32 @@ final class ScrollingScreenshotPanel: NSPanel {
 
   func stopMonitoring() { stopMonitoringScrollEvents() }
 
-  @objc private func autoUp() { onAutoScroll?(.up) }
-  @objc private func autoDown() { onAutoScroll?(.down) }
+  @objc private func scrollInSelectedDirection(_ sender: NSSegmentedControl) {
+    switch sender.selectedSegment {
+    case 0: onAutoScroll?(.up)
+    case 1: onAutoScroll?(.down)
+    default: break
+    }
+  }
+
+  @objc private func openAutoScrollSettings() {
+    guard !AppDelegate.isTesting,
+          let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    else { return }
+    onCancel?()
+    NSWorkspace.shared.open(url)
+  }
+
+  func armStopClick() -> Bool {
+    activityMonitor.armStopClick { [weak self] in self?.onStopAutoScroll?() }
+  }
 
   func setAutoScrolling(_ active: Bool, hintKey: String) {
     isAutoScrolling = active
+    if !active { activityMonitor.disarmStopClick() }
+    accessButton.isHidden = hintKey != "ScreenshotLongAutoPermission" && hintKey != "ScreenshotLongAutoClickUnavailable"
     autoHint = hintKey
+    updateMousePassthrough(at: NSEvent.mouseLocation)
     updateHint(capped: false, warning: .normal)
   }
 
@@ -371,7 +432,7 @@ final class ScrollingScreenshotPanel: NSPanel {
     dimensions.stringValue = "\(width) × \(height) px"
     outputButtons.forEach { $0.isEnabled = true }
     editButton?.isEnabled = true
-    autoButtons.forEach { $0.isEnabled = !capped }
+    directions.isEnabled = !capped
     updateHint(capped: capped, showSlowScrollHint: false)
   }
 
@@ -385,8 +446,8 @@ final class ScrollingScreenshotPanel: NSPanel {
       : warning == .lostTrack ? "ScreenshotLongLostTrack"
       : warning == .tooFast && !isAutoScrolling ? "ScreenshotLongSlowScroll" : autoHint ?? "ScreenshotLongHint")
     let warns = !capped && warning != .normal
-    hint.textColor = warns ? .systemOrange : .labelColor
-    warningIcon.alphaValue = warns ? 1 : 0
+    hint.textColor = warns ? .systemOrange : .secondaryLabelColor
+    warningIcon.isHidden = !warns
     contentView?.wantsLayer = true
     contentView?.layer?.cornerRadius = 16
     contentView?.layer?.borderWidth = warns ? 2 : 0
@@ -408,7 +469,6 @@ final class ScrollingScreenshotPanel: NSPanel {
   func showEditor(_ image: CGImage, width: Int, height: Int, frame: NSRect) {
     let instructions = text("ScreenshotLongEditHint")
     hint.stringValue = instructions
-    previewHeight?.constant += frame.height - self.frame.height
     setFrame(frame, display: true)
     thumbnail.isHidden = true
     editorScroll.isHidden = false
@@ -452,6 +512,28 @@ final class ScrollingScreenshotPanel: NSPanel {
   @objc private func copyResult() { onFinish?(false) }
   @objc private func pinResult() { onFinish?(true) }
   @objc private func cancelResult() { onCancel?() }
+
+  private func iconButton(_ symbol: String, label: String, action: Selector) -> NSButton {
+    let button = NSButton(title: text(label), target: self, action: action)
+    button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    button.imagePosition = .imageOnly
+    button.isBordered = false
+    button.contentTintColor = .secondaryLabelColor
+    button.toolTip = text(label)
+    button.setAccessibilityLabel(text(label))
+    button.widthAnchor.constraint(equalToConstant: 24).isActive = true
+    button.heightAnchor.constraint(equalToConstant: 24).isActive = true
+    return button
+  }
+
+  private func actionButton(_ label: String, symbol: String, help: String, action: Selector) -> NSButton {
+    let button = NSButton(title: text(label), target: self, action: action)
+    button.bezelStyle = .rounded
+    button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    button.imagePosition = .imageLeading
+    button.toolTip = text(help)
+    return button
+  }
 
   private func text(_ key: String) -> String {
     PinnedScreenshotWindow.localized(key)

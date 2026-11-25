@@ -14,42 +14,108 @@ from generate_update_feed import SPARKLE, create_appcast, create_metadata
 
 
 class UpdateFeedTests(unittest.TestCase):
-    def test_stable_downloads_only_the_matching_successful_build(self):
-        script = pathlib.Path(__file__).with_name("publish_stable.sh").resolve()
-        mock = self.root / "gh"
+    def run_stable(self, runs, *, download_failures=0, corrupt=False):
+        tag = 'maccy-capture-v2.11.0'
+        script = pathlib.Path(__file__).with_name('publish_stable.sh').resolve()
+        for index, response in enumerate(runs, start=1):
+            if response is not None:
+                (self.root / f'run-{index}.json').write_text(json.dumps({'workflow_runs': response}))
+        dist = self.root / 'dist'
+        dist.mkdir()
+        self.info['CFBundleShortVersionString'] = '2.11.0'
+        self.save_info()
+        self.archive = self.archive.rename(dist / self.archive.name.replace('2.8.0-', '2.11.0-1042.1-'))
+        self.archive.with_suffix('.dmg').write_bytes(b'synthetic disk image')
+        (dist / 'BUILD-INFO.txt').write_text(f'Source revision: {self.revision}\nVersion: 2.11.0\n')
+        (dist / 'UPDATE-METADATA.json').write_text(json.dumps(self.metadata()))
+        checksums = ''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n'
+                            for path in sorted(dist.iterdir()))
+        (dist / 'SHA256SUMS.txt').write_text(checksums)
+        if corrupt:
+            self.archive.write_bytes(b'corrupt')
+
+        mock = self.root / 'gh'
         mock.write_text('''#!/usr/bin/env bash
-set -eu
+set -euo pipefail
+log="$RUNNER_TEMP/commands"
+echo "$1 $2" >> "$log"
 case "$1:$2" in
   api:*/releases/tags/*) exit 1;;
   api:*/commits/tags/*) echo "$FIXTURE_SHA";;
   api:*/compare/*) echo identical;;
-  api:*/actions/workflows/*) [[ "$2" == *"status=success&head_sha=$FIXTURE_SHA&"* ]] || exit 1; echo "$BUILD_RUN";;
+  api:*/actions/workflows/*)
+    [[ "$2" == "repos/fixture/capture/actions/workflows/build-capture.yml/runs?branch=master&event=push&head_sha=$FIXTURE_SHA&per_page=100" ]]
+    attempt=$(grep -c '/actions/workflows/' "$log")
+    if (( attempt > FIXTURE_RESPONSES )); then attempt=$FIXTURE_RESPONSES; fi
+    [[ -f "$RUNNER_TEMP/run-$attempt.json" ]] || exit 1
+    jq -r "$4" "$RUNNER_TEMP/run-$attempt.json";;
   run:download)
-    printf '%s %s' "$3" "$5" > "$RUNNER_TEMP/selected"
-    mkdir -p "$7"; echo 'invalid fixture checksum' > "$7/SHA256SUMS.txt";;
+    [[ "$3 $4 $5 $6" == '21 -n Maccy-Capture-macOS-universal-8 -D' ]]
+    mkdir -p "$7"
+    if (( $(grep -c '^run download$' "$log") <= FIXTURE_DOWNLOAD_FAILURES )); then
+      touch "$7/partial"; exit 1
+    fi
+    [[ ! -e "$7/partial" ]]
+    cp "$RUNNER_TEMP/dist/"* "$7/";;
+  release:view) echo 123;;
+  release:create|release:upload|release:edit) :;;
   *) exit 99;;
 esac
 ''')
         mock.chmod(0o755)
-        tag = 'maccy-capture-v2.11.0'
-        for build_run in ['21 8', '21 invalid', 'invalid 8']:
-            with self.subTest(build_run=build_run):
-                environment = {
-                    'PATH': f"{self.root}:{os.environ['PATH']}", 'RUNNER_TEMP': str(self.root),
-                    'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': f'refs/tags/{tag}',
-                    'GH_REPO': 'fixture/capture', 'MACCY_DEFAULT_BRANCH': 'master',
-                    'MACCY_RELEASE_TAG': tag, 'FIXTURE_SHA': self.revision, 'BUILD_RUN': build_run,
-                }
-                selected = self.root / 'selected'
-                selected.unlink(missing_ok=True)
-                result = subprocess.run(['bash', str(script)], env=environment, capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertNotEqual(result.returncode, 99)
-                if build_run == '21 8':
-                    self.assertEqual(selected.read_text(), '21 Maccy-Capture-macOS-universal-8')
-                else:
-                    self.assertIn('No successful default-branch build', result.stderr)
-                    self.assertFalse(selected.exists())
+        sleep = self.root / 'sleep'
+        sleep.write_text('#!/bin/sh\necho "sleep $1" >> "$RUNNER_TEMP/commands"\n')
+        sleep.chmod(0o755)
+        environment = os.environ | {
+            'PATH': f"{self.root}:{os.environ['PATH']}", 'RUNNER_TEMP': str(self.root),
+            'GITHUB_ACTIONS': 'true', 'GITHUB_EVENT_NAME': 'push', 'GITHUB_REF': f'refs/tags/{tag}',
+            'GH_REPO': 'fixture/capture', 'MACCY_DEFAULT_BRANCH': 'master', 'MACCY_RELEASE_TAG': tag,
+            'FIXTURE_SHA': self.revision, 'FIXTURE_RESPONSES': str(len(runs)),
+            'FIXTURE_DOWNLOAD_FAILURES': str(download_failures),
+        }
+        result = subprocess.run(['bash', str(script)], env=environment, capture_output=True, text=True, timeout=30)
+        return result, (self.root / 'commands').read_text().splitlines()
+
+    def build_run(self, status='completed', conclusion='success'):
+        return {'id': 21, 'run_number': 8, 'status': status, 'conclusion': conclusion}
+
+    def test_stable_waits_for_exact_build_then_retries_clean_download(self):
+        runs = [None, [], [self.build_run('queued', None)], [self.build_run('in_progress', None)],
+                [self.build_run(conclusion='cancelled') | {'id': 22}, self.build_run()]]
+        result, commands = self.run_stable(runs, download_failures=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(commands.count('sleep 60'), 4)
+        self.assertEqual(commands.count('run download'), 3)
+        self.assertEqual(commands.count('sleep 30'), 2)
+        self.assertEqual(commands.count('release create'), 1)
+        self.assertEqual(commands.count('release edit'), 1)
+
+    def test_stable_times_out_when_build_never_appears(self):
+        result, commands = self.run_stable([[]])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('Timed out', result.stderr)
+        self.assertEqual(commands.count('sleep 60'), 65)
+        self.assertNotIn('run download', commands)
+        self.assertNotIn('release create', commands)
+
+    def test_stable_rejects_invalid_build_identifiers(self):
+        result, commands = self.run_stable([[self.build_run() | {'run_number': 'invalid'}]])
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('Invalid build-capture run identifiers', result.stderr)
+        self.assertNotIn('run download', commands)
+
+    def test_stable_aborts_after_download_retries(self):
+        result, commands = self.run_stable([[self.build_run()]], download_failures=6)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('after 6 attempts', result.stderr)
+        self.assertEqual(commands.count('run download'), 6)
+        self.assertNotIn('release create', commands)
+
+    def test_stable_does_not_retry_or_publish_corrupt_artifact(self):
+        result, commands = self.run_stable([[self.build_run()]], corrupt=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(commands.count('run download'), 1)
+        self.assertNotIn('release create', commands)
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -138,7 +204,7 @@ esac
             '  */releases/tags/*) exit 1 ;;\n'
             '  */commits/tags/*) [ "$TAG_EXISTS" = yes ] && printf "%s\\n" "$REVISION" ;;\n'
             '  */compare/*) printf "%s\\n" "$COMPARE_STATUS" ;;\n'
-            '  */actions/workflows/*) exit 0 ;;\n'
+            '  */actions/workflows/*) echo "21 8 completed failure" ;;\n'
             "  *) exit 1 ;;\n"
             "esac\n",
             encoding="utf-8",
@@ -167,13 +233,13 @@ esac
             return result.stderr, command_log.read_text().splitlines()
 
         stderr, commands = run()
-        self.assertIn("No successful default-branch build", stderr)
+        self.assertIn("finished with failure; not publishing", stderr)
         self.assertEqual(commands, [
             f"repos/fixture/capture/releases/tags/{tag}",
             f"repos/fixture/capture/commits/tags/{tag}",
             f"repos/fixture/capture/compare/{self.revision}...master",
             "repos/fixture/capture/actions/workflows/build-capture.yml/"
-            f"runs?branch=master&event=push&status=success&head_sha={self.revision}&per_page=1",
+            f"runs?branch=master&event=push&head_sha={self.revision}&per_page=100",
         ])
         stderr, commands = run(TAG_EXISTS="no")
         self.assertIn("Could not resolve the release tag", stderr)

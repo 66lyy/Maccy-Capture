@@ -19,6 +19,7 @@ Apple Silicon + Intel 通用架构的 Release `.app`，提供 ZIP、DMG 和 SHA-
 在该工作流页点击 **Run workflow** 可手动打包。
 在默认分支上手动构建也会发布独立的测试版 Release；其他分支和 Pull Request 只提供 Artifacts。
 推送 `maccy-capture-v2.11.0` 这类稳定版标签，会发布该提交已通过验证的默认分支构建。
+如果标签先到，发布任务会每分钟查询一次该提交的默认分支推送构建，最多等待 65 分钟；构建成功后，产物下载失败会再试最多 5 次，不会改用其他提交的构建。
 
 配置证书后，发布版会复用固定的自签名证书；其他构建使用 ad-hoc 签名。
 两者均未使用 Apple 开发者 ID 签名或公证，首次启动可能被 Gatekeeper 拦截。

@@ -20,13 +20,17 @@ struct ScreenshotSelectionTests {
     #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(399)) == .wait)
     #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(400)) == .step)
     #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(1399)) == .wait)
-    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(1400)) == .stop)
+    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(1400)) == .noMotion)
+    var stationary = ScrollingScreenshotAutoScroll(.down, target: target)
+    #expect(stationary.advance(after: .appended, now: start) == .step)
+    #expect(stationary.advance(after: .unchanged, now: start + .seconds(1)) == .wait)
+    #expect(stationary.advance(after: .unchanged, now: start + .seconds(3)) == .noMotion)
     for result: ScrollingScreenshotStitcher.AppendResult in [.unmatched, .invalid, .capped] {
       #expect(scroll.advance(after: result, now: start + .seconds(2)) == .stop)
     }
   }
 
-  @Test("A stop click is consumed, releases the overlays, and keeps the stitched PNG", arguments: [false, true])
+  @Test("Auto-scroll requires access and an armed stop click, keeps overlays click-through and preserves the PNG", arguments: [false, true])
   func automaticScrollStopAndExport(up: Bool) async throws {
     let display = Self.displays[1]
     let target = ScreenshotElementDetection.Window(pid: 42, frame: display.captureFrame, id: 17)
@@ -37,9 +41,17 @@ struct ScreenshotSelectionTests {
     }
     var offset = 48, steps = 0
     var local: ((NSEvent) -> NSEvent?)?
+    var stopClick: (() -> Void)?
+    var canStop = false
     let monitor = ScrollingScreenshotActivityMonitor(addLocal: { local = $0; return NSObject() },
-      addGlobal: { _ in nil }, remove: { _ in })
-    var permitted = false
+      addGlobal: { _ in nil }, remove: { _ in }, installClickStop: { handler in
+        guard canStop else { return nil }
+        stopClick = handler
+        return { stopClick = nil }
+      })
+    var missing: AutoScrollPermission? = .accessibility
+    var requests: [AutoScrollPermission] = []
+    var pointerMoves = 0
     let controller = ScreenshotSelectionController(displays: { [display] }, presentWindow: { _, _ in },
       captureRegion: { _, _, _ in
         let bytes = Data(page[(offset * width * 4)..<((offset + height) * width * 4)])
@@ -50,7 +62,12 @@ struct ScreenshotSelectionTests {
           decode: nil, shouldInterpolate: false, intent: .defaultIntent))
         return NSImage(cgImage: image, size: NSSize(width: width, height: height))
       }, freezeDisplays: { _ in [] }, listWindows: { [target] }, makeScrollMonitor: { monitor },
-      allowAutoScroll: { permitted }, postScroll: { window, point, delta in
+      missingAutoScrollPermission: { missing }, requestAutoScrollPermission: { requests.append($0) },
+      positionScrollPointer: { point in
+        #expect(point == CGPoint(x: -750, y: 550))
+        pointerMoves += 1
+        return true
+      }, postScroll: { window, point, delta in
         #expect(window == target)
         #expect(point == CGPoint(x: -750, y: 550))
         #expect(delta == (up ? 10 : -10))
@@ -70,15 +87,25 @@ struct ScreenshotSelectionTests {
     try #require(panel.image != nil)
     panel.onAutoScroll?(up ? .up : .down)
     #expect(!panel.isAutoScrolling && window.ignoresMouseEvents && steps == 0)
-    permitted = true
     panel.onAutoScroll?(up ? .up : .down)
-    #expect(panel.isAutoScrolling && !window.ignoresMouseEvents)
+    #expect(requests == [.accessibility] && stopClick == nil)
+    missing = .postEvents
+    panel.onAutoScroll?(up ? .up : .down)
+    #expect(requests == [.accessibility, .postEvents] && steps == 0)
+    missing = nil
+    panel.onAutoScroll?(up ? .up : .down)
+    #expect(!panel.isAutoScrolling && pointerMoves == 0)
+    canStop = true
+    panel.onAutoScroll?(up ? .up : .down)
+    #expect(panel.isAutoScrolling && window.ignoresMouseEvents && panel.ignoresMouseEvents && pointerMoves == 1)
     for _ in 0..<200 where steps < 2 { try await Task.sleep(for: .milliseconds(10)) }
     try #require(steps >= 2)
     let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [],
       timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     let handle = try #require(local)
-    #expect(handle(click) == nil)
+    let stop = try #require(stopClick)
+    stop()
+    #expect(stopClick == nil)
     #expect(!panel.isAutoScrolling && window.ignoresMouseEvents && controller.isSelecting)
     #expect(handle(click) === click)
     let stopped = steps
@@ -304,14 +331,24 @@ struct ScreenshotSelectionTests {
     defer { panel.close() }
     let content = try #require(panel.contentView)
     content.layoutSubtreeIfNeeded()
-    func buttons(_ view: NSView) -> [NSButton] {
-      (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons)
+    func descendants(_ view: NSView) -> [NSView] {
+      [view] + view.subviews.flatMap(descendants)
     }
-    let button = try #require(buttons(content).first)
-    let frame = panel.convertToScreen(button.convert(button.bounds, to: nil))
+    let views = descendants(content)
+    let directions = try #require(views.compactMap { $0 as? NSSegmentedControl }.first)
+    #expect(directions.segmentCount == 2 && !directions.isEnabled)
+    let buttons = views.compactMap { $0 as? NSButton }.filter { !$0.isHiddenOrHasHiddenAncestor && $0.target === panel }
+    #expect(buttons.count == 4)
+    for control in [directions as NSControl] + buttons {
+      let frame = panel.convertToScreen(control.convert(control.bounds, to: nil))
+      #expect(!frame.isEmpty && panel.frame.contains(frame))
+      panel.updateMousePassthrough(at: NSPoint(x: frame.midX, y: frame.midY))
+      #expect(!panel.ignoresMouseEvents)
+    }
+    let preview = try #require(views.compactMap { $0 as? NSImageView }.first { $0.imageScaling == .scaleProportionallyUpOrDown })
+    #expect(preview.bounds.height >= 100)
+    let frame = panel.convertToScreen(preview.convert(preview.bounds, to: nil))
     panel.updateMousePassthrough(at: NSPoint(x: frame.midX, y: frame.midY))
-    #expect(!panel.ignoresMouseEvents)
-    panel.updateMousePassthrough(at: NSPoint(x: panel.frame.midX, y: panel.frame.maxY - 40))
     #expect(panel.ignoresMouseEvents)
     #expect(ScrollingScreenshotPanel.ignoresMouse(at: .zero, controls: []))
     panel.close()

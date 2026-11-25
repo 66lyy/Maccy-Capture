@@ -3,14 +3,32 @@ import ApplicationServices
 import CoreGraphics
 import Defaults
 
+enum AutoScrollPermission: Hashable {
+  case accessibility, postEvents
+
+  static func missing() -> Self? {
+    guard !AppDelegate.isTesting, AXIsProcessTrusted() else { return .accessibility }
+    return CGPreflightPostEventAccess() ? nil : .postEvents
+  }
+
+  func request() {
+    guard !AppDelegate.isTesting else { return }
+    switch self {
+    case .accessibility: _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    case .postEvents: _ = CGRequestPostEventAccess()
+    }
+  }
+}
+
 nonisolated struct ScrollingScreenshotAutoScroll {
   enum Direction { case up, down }
-  enum Action: Equatable { case wait, step, stop }
+  enum Action: Equatable { case wait, step, stop, noMotion }
 
   let direction: Direction
   let target: ScreenshotElementDetection.Window
   private var lastStep: ContinuousClock.Instant?
   private var lastMotion: ContinuousClock.Instant?
+  private var hasMoved = false
 
   init(_ direction: Direction, target: ScreenshotElementDetection.Window) {
     self.direction = direction
@@ -26,11 +44,14 @@ nonisolated struct ScrollingScreenshotAutoScroll {
                         now: ContinuousClock.Instant) -> Action {
     switch result {
     case .unmatched, .invalid, .capped: return .stop
-    case .appended, .upward, .reanchored: lastMotion = now
+    case .appended, .upward, .reanchored:
+      if lastStep != nil { lastMotion = now; hasMoved = true }
     case .unchanged: break
     }
     if let lastStep {
-      guard let lastMotion else { return lastStep.duration(to: now) >= .seconds(1) ? .stop : .wait }
+      guard let lastMotion else {
+        return lastStep.duration(to: now) >= (hasMoved ? .seconds(1) : .seconds(3)) ? .noMotion : .wait
+      }
       guard lastMotion.duration(to: now) >= .milliseconds(100) else { return .wait }
     }
     lastStep = now
@@ -142,7 +163,9 @@ final class ScreenshotSelectionController {
   private var scrollingDelayTask: Task<Void, Error>?
   private var scrollingLastActivity: ContinuousClock.Instant?
   private let makeScrollMonitor: @MainActor () -> ScrollingScreenshotActivityMonitor
-  private let allowAutoScroll: () -> Bool
+  private let missingAutoScrollPermission: () -> AutoScrollPermission?
+  private let requestAutoScrollPermission: (AutoScrollPermission) -> Void
+  private let positionScrollPointer: (CGPoint) -> Bool
   private let postScroll: (ScreenshotElementDetection.Window, CGPoint, Int32) -> Bool
 
   init(
@@ -162,17 +185,20 @@ final class ScreenshotSelectionController {
       ScreenshotElementDetection.windows()
     },
     makeScrollMonitor: @escaping @MainActor () -> ScrollingScreenshotActivityMonitor = { .init() },
-    allowAutoScroll: @escaping () -> Bool = {
-      !AppDelegate.isTesting && (CGPreflightPostEventAccess() || CGRequestPostEventAccess())
+    missingAutoScrollPermission: @escaping () -> AutoScrollPermission? = { AutoScrollPermission.missing() },
+    requestAutoScrollPermission: @escaping (AutoScrollPermission) -> Void = { $0.request() },
+    positionScrollPointer: @escaping (CGPoint) -> Bool = {
+      !AppDelegate.isTesting && CGWarpMouseCursorPosition($0) == .success
     },
     postScroll: @escaping (ScreenshotElementDetection.Window, CGPoint, Int32) -> Bool = { target, point, delta in
-      guard !AppDelegate.isTesting, let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+      guard !AppDelegate.isTesting, let primary = NSScreen.screens.first,
+        NSWindow.windowNumber(at: NSPoint(x: point.x, y: primary.frame.maxY - point.y),
+                              belowWindowWithWindowNumber: 0) == Int(target.id),
+        let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
         wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0) else { return false }
       event.flags = []
       event.location = point
-      event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(target.id))
-      event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(target.id))
-      event.postToPid(target.pid)
+      event.post(tap: .cghidEventTap)
       return true
     }
   ) {
@@ -183,7 +209,9 @@ final class ScreenshotSelectionController {
     self.freezeDisplays = freezeDisplays
     self.listWindows = listWindows
     self.makeScrollMonitor = makeScrollMonitor
-    self.allowAutoScroll = allowAutoScroll
+    self.missingAutoScrollPermission = missingAutoScrollPermission
+    self.requestAutoScrollPermission = requestAutoScrollPermission
+    self.positionScrollPointer = positionScrollPointer
     self.postScroll = postScroll
   }
 
@@ -301,29 +329,30 @@ final class ScreenshotSelectionController {
     -> (ScrollingScreenshotProcessor.Update) -> Void {
     let point = CGPoint(x: captureRect.midX, y: captureRect.midY)
     var automatic: ScrollingScreenshotAutoScroll?
-    let stop: (String) -> Void = { [weak self, weak panel] hint in
+    var requested: Set<AutoScrollPermission> = []
+    let stop: (String) -> Void = { [weak panel] hint in
       automatic = nil
-      for overlay in self?.windows ?? [] {
-        overlay.ignoresMouseEvents = true
-        overlay.selectionView.catchesAutoScrollClicks = false
-      }
       panel?.setAutoScrolling(false, hintKey: hint)
     }
     panel.onStopAutoScroll = { stop("ScreenshotLongAutoStopped") }
     panel.onAutoScroll = { [weak self, weak panel] direction in
       guard let self, let panel, isSelecting, panel.canBeginAutoScroll else { return }
-      guard allowAutoScroll() else { stop("ScreenshotLongAutoPermission"); return }
+      if let missing = missingAutoScrollPermission() {
+        stop("ScreenshotLongAutoPermission")
+        if requested.insert(missing).inserted { requestAutoScrollPermission(missing) }
+        guard missingAutoScrollPermission() == nil, isSelecting, panel.canBeginAutoScroll else { return }
+      }
       guard let target = listWindows().first(where: { $0.frame.contains(point) }) else {
         stop("ScreenshotLongAutoTarget")
         return
       }
-      automatic = ScrollingScreenshotAutoScroll(direction, target: target)
-      for overlay in windows {
-        overlay.selectionView.catchesAutoScrollClicks = true
-        overlay.displayIfNeeded()
-        overlay.ignoresMouseEvents = false
+      guard panel.armStopClick() else {
+        stop("ScreenshotLongAutoClickUnavailable")
+        return
       }
+      automatic = ScrollingScreenshotAutoScroll(direction, target: target)
       panel.setAutoScrolling(true, hintKey: "ScreenshotLongAutoActive")
+      guard positionScrollPointer(point) else { stop("ScreenshotLongAutoTarget"); return }
       scrollingDelayTask?.cancel()
     }
     return { [weak self] update in
@@ -331,11 +360,14 @@ final class ScreenshotSelectionController {
       let action = update.capReached || update.warning == .lostTrack ? .stop
         : automatic?.advance(after: update.appendResult, now: .now)
       if action == .step, let automatic {
+        guard missingAutoScrollPermission() == nil else { stop("ScreenshotLongAutoPermission"); return }
         guard listWindows().first(where: { $0.frame.contains(point) }) == automatic.target,
               postScroll(automatic.target, point, automatic.delta(for: captureRect.height)) else {
           stop("ScreenshotLongAutoTarget")
           return
         }
+      } else if action == .noMotion {
+        stop("ScreenshotLongAutoNoMotion")
       } else if action == .stop {
         stop(update.appendResult == .unmatched ? "ScreenshotLongLostTrack" : "ScreenshotLongAutoStopped")
       }

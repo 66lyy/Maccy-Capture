@@ -75,6 +75,7 @@ jobs:
             -only-testing:MaccyTests/AppIdentityTests \
             -only-testing:MaccyTests/CollectionSurroundingTests \
             -only-testing:MaccyTests/ExceptionPreprocessorTests \
+            -only-testing:MaccyTests/FloatingPanelTests \
             -only-testing:MaccyTests/JSONFormatterTests \
             -only-testing:MaccyTests/LiquidGlassTests \
             -only-testing:MaccyTests/SoftwareUpdaterTests \

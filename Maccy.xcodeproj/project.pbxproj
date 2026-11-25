@@ -27,6 +27,7 @@
 		D97A404AD50147B884795D14 /* ExceptionPreprocessorTests.m in Sources */ = {isa = PBXBuildFile; fileRef = D97A404AD50147B884795D15 /* ExceptionPreprocessorTests.m */; };
 		B9ACD419E2F67A01C5D83F13 /* ScreenCapturePermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */; };
 		B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */; };
+		B9ACD419E2F67A01C5D84511 /* FloatingPanelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9ACD419E2F67A01C5D84512 /* FloatingPanelTests.swift */; };
 		0ABDD5122BB47F1E0054963B /* NSWorkspace+ApplicationName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */; };
 		21FFF308D9217B43FD4C393F /* VoiceOver.swift in Sources */ = {isa = PBXBuildFile; fileRef = B21DCA6C3D17E48D33D6E608 /* VoiceOver.swift */; };
 		2F0E055F2FFD2EB300CCD1DE /* ReorderableContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F0E055E2FFD2EAF00CCD1DE /* ReorderableContainer.swift */; };
@@ -251,6 +252,7 @@
 		D97A404AD50147B884795D16 /* ExceptionPreprocessor.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ExceptionPreprocessor.h; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F14 /* ScreenCapturePermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCapturePermission.swift; sourceTree = "<group>"; };
 		B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIdentityTests.swift; sourceTree = "<group>"; };
+		B9ACD419E2F67A01C5D84512 /* FloatingPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingPanelTests.swift; sourceTree = "<group>"; };
 		088F4DA628BECBC40003AD19 /* tr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = tr; path = tr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		0ABDD5112BB47F1E0054963B /* NSWorkspace+ApplicationName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NSWorkspace+ApplicationName.swift"; sourceTree = "<group>"; };
 		11680E44DAF848ADB8BA358E /* pt */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = pt; path = pt.lproj/PinsSettings.strings; sourceTree = "<group>"; };
@@ -857,6 +859,7 @@
 				AC1811260000000000000002 /* ScreenshotCaptureTests.swift */,
 				AC1811180000000000000008 /* ScreenshotSelectionTests.swift */,
 				B9ACD419E2F67A01C5D83F16 /* AppIdentityTests.swift */,
+				B9ACD419E2F67A01C5D84512 /* FloatingPanelTests.swift */,
 				D97A404AD50147B884795D15 /* ExceptionPreprocessorTests.m */,
 				F1404A720000000000000004 /* JSONFormatterTests.swift */,
 				F1404A720000000000000006 /* LiquidGlassTests.swift */,
@@ -1237,6 +1240,7 @@
 				DA3CE8001E44A62500B3AA98 /* ClipboardTests.swift in Sources */,
 				4CB7148130897A9E00A357EC /* SharedStateTests.swift in Sources */,
 				B9ACD419E2F67A01C5D83F15 /* AppIdentityTests.swift in Sources */,
+				B9ACD419E2F67A01C5D84511 /* FloatingPanelTests.swift in Sources */,
 				D97A404AD50147B884795D14 /* ExceptionPreprocessorTests.m in Sources */,
 				F1404A720000000000000003 /* JSONFormatterTests.swift in Sources */,
 				F1404A720000000000000005 /* LiquidGlassTests.swift in Sources */,

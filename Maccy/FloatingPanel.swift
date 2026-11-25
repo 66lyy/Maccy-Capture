@@ -53,7 +53,9 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
     standardWindowButton(.miniaturizeButton)?.isHidden = true
     standardWindowButton(.zoomButton)?.isHidden = true
 
-    contentView = NSHostingView(
+    let container = NSView(frame: NSRect(origin: .zero, size: contentRect.size))
+    contentView = container
+    let hostingView = NSHostingView(
       rootView: FloatingPanelRootView(
         content: view(),
         onWindowDragEnded: { [weak self] in
@@ -61,6 +63,10 @@ class FloatingPanel<Content: View>: NSPanel, NSWindowDelegate {
         }
       )
     )
+    hostingView.sizingOptions = []
+    hostingView.frame = container.bounds
+    hostingView.autoresizingMask = [.width, .height]
+    container.addSubview(hostingView)
     applyRoundedCorners()
   }
 

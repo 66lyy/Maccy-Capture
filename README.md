@@ -27,6 +27,7 @@ You can also select **Run workflow** on the workflow page to build manually.
 Manual builds on the default branch also publish a test release;
 other branches and pull requests provide artifacts only.
 Pushing a stable tag such as `maccy-capture-v2.11.0` publishes the verified default-branch build at that commit.
+If the tag arrives first, publishing polls for that exact push build once a minute for up to 65 minutes, then retries the artifact download up to five times. It never substitutes another commit's build.
 
 Published builds reuse a fixed self-signed certificate when configured. Other builds are ad-hoc signed.
 Neither is Developer ID signed or notarized by Apple, so Gatekeeper may block the first launch.

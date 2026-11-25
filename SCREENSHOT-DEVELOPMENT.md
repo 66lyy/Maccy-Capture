@@ -69,7 +69,8 @@ The selection becomes a live, click-through hole: scroll the underlying app with
 A separate glass panel shows the stitched thumbnail and pixel size. Enter / ⌘C copies, P pins,
 and Esc / ⌘W cancels. Start anywhere and scroll in either direction; revisiting captured rows does not duplicate them.
 Alternatively, choose **Auto-scroll up** or **Auto-scroll down** (requires Accessibility permission).
-Keep the selection center over the scrollable content. Auto-scroll waits for each step to match before sending another.
+If access is missing, copy any partial image you want to keep. **Open System Settings** ends the capture so that Settings itself will not be captured. Allow Maccy Capture in Accessibility, return to the page and start a new capture. Manual scrolling does not require this grant.
+Keep the selection center over the scrollable content: auto-scroll moves the pointer there at startup and waits for each step to match before sending another.
 Click once to stop without discarding the image; at the page edge or on a failed match it also stops automatically.
 Captures exclude all capture controls; unchanged, blank, or unmatched frames do not extend the image. Sticky headers and footers
 are kept once. The normal selection timeout stops, but display-layout changes still cancel;
