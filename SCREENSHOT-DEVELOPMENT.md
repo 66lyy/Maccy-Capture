@@ -67,8 +67,11 @@ Move or resize the selection before choosing a tool.
 Before drawing, choose **Long Screenshot** to capture scrolling content in a region (not available in capture-and-pin).
 The selection becomes a live, click-through hole: scroll the underlying app with the wheel or trackpad.
 A separate glass panel shows the stitched thumbnail and pixel size. Enter / ⌘C copies, P pins,
-and Esc / ⌘W cancels. Captures run about every 150 ms, excluding all capture controls;
-unchanged, upward, blank, or unmatched frames do not extend the image. Sticky headers and footers
+and Esc / ⌘W cancels. Start anywhere and scroll in either direction; revisiting captured rows does not duplicate them.
+Alternatively, choose **Auto-scroll up** or **Auto-scroll down** (requires Accessibility permission).
+Keep the selection center over the scrollable content. Auto-scroll waits for each step to match before sending another.
+Click once to stop without discarding the image; at the page edge or on a failed match it also stops automatically.
+Captures exclude all capture controls; unchanged, blank, or unmatched frames do not extend the image. Sticky headers and footers
 are kept once. The normal selection timeout stops, but display-layout changes still cancel;
 capture pauses at the 100-million-pixel limit so you can copy or pin the result.
 

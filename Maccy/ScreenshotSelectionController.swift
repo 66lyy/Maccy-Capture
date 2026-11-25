@@ -3,6 +3,42 @@ import ApplicationServices
 import CoreGraphics
 import Defaults
 
+nonisolated struct ScrollingScreenshotAutoScroll {
+  enum Direction { case up, down }
+  enum Action: Equatable { case wait, step, stop }
+
+  let direction: Direction
+  let target: ScreenshotElementDetection.Window
+  private var lastStep: ContinuousClock.Instant?
+  private var lastMotion: ContinuousClock.Instant?
+
+  init(_ direction: Direction, target: ScreenshotElementDetection.Window) {
+    self.direction = direction
+    self.target = target
+  }
+
+  func delta(for height: CGFloat) -> Int32 {
+    let points = Int32(max(1, min(96, (height / 6).rounded(.down))))
+    return direction == .up ? points : -points
+  }
+
+  mutating func advance(after result: ScrollingScreenshotStitcher.AppendResult,
+                        now: ContinuousClock.Instant) -> Action {
+    switch result {
+    case .unmatched, .invalid, .capped: return .stop
+    case .appended, .upward, .reanchored: lastMotion = now
+    case .unchanged: break
+    }
+    if let lastStep {
+      guard let lastMotion else { return lastStep.duration(to: now) >= .seconds(1) ? .stop : .wait }
+      guard lastMotion.duration(to: now) >= .milliseconds(100) else { return .wait }
+    }
+    lastStep = now
+    lastMotion = nil
+    return .step
+  }
+}
+
 @MainActor
 final class ScreenshotSelectionController {
   struct Display: Sendable {
@@ -106,6 +142,8 @@ final class ScreenshotSelectionController {
   private var scrollingDelayTask: Task<Void, Error>?
   private var scrollingLastActivity: ContinuousClock.Instant?
   private let makeScrollMonitor: @MainActor () -> ScrollingScreenshotActivityMonitor
+  private let allowAutoScroll: () -> Bool
+  private let postScroll: (ScreenshotElementDetection.Window, CGPoint, Int32) -> Bool
 
   init(
     displays: @escaping @MainActor () -> [Display] = { Display.current() },
@@ -123,7 +161,20 @@ final class ScreenshotSelectionController {
     listWindows: @escaping @Sendable () -> [ScreenshotElementDetection.Window] = {
       ScreenshotElementDetection.windows()
     },
-    makeScrollMonitor: @escaping @MainActor () -> ScrollingScreenshotActivityMonitor = { .init() }
+    makeScrollMonitor: @escaping @MainActor () -> ScrollingScreenshotActivityMonitor = { .init() },
+    allowAutoScroll: @escaping () -> Bool = {
+      !AppDelegate.isTesting && (CGPreflightPostEventAccess() || CGRequestPostEventAccess())
+    },
+    postScroll: @escaping (ScreenshotElementDetection.Window, CGPoint, Int32) -> Bool = { target, point, delta in
+      guard !AppDelegate.isTesting, let event = CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+        wheelCount: 1, wheel1: delta, wheel2: 0, wheel3: 0) else { return false }
+      event.flags = []
+      event.location = point
+      event.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: Int64(target.id))
+      event.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: Int64(target.id))
+      event.postToPid(target.pid)
+      return true
+    }
   ) {
     self.displays = displays
     self.pointerLocation = pointerLocation
@@ -132,6 +183,8 @@ final class ScreenshotSelectionController {
     self.freezeDisplays = freezeDisplays
     self.listWindows = listWindows
     self.makeScrollMonitor = makeScrollMonitor
+    self.allowAutoScroll = allowAutoScroll
+    self.postScroll = postScroll
   }
 
   func select(pinImmediately: Bool, timeout: Duration = .seconds(120)) async throws -> Selection? {
@@ -242,6 +295,51 @@ final class ScreenshotSelectionController {
     let pixels = display.pixelBounds(for: captureRect, in: CGSize(width: frozen.width, height: frozen.height))
     guard !pixels.isEmpty else { return nil }
     return frozen.cropping(to: pixels)
+  }
+
+  private func configureAutoScroll(_ panel: ScrollingScreenshotPanel, captureRect: CGRect)
+    -> (ScrollingScreenshotProcessor.Update) -> Void {
+    let point = CGPoint(x: captureRect.midX, y: captureRect.midY)
+    var automatic: ScrollingScreenshotAutoScroll?
+    let stop: (String) -> Void = { [weak self, weak panel] hint in
+      automatic = nil
+      for overlay in self?.windows ?? [] {
+        overlay.ignoresMouseEvents = true
+        overlay.selectionView.catchesAutoScrollClicks = false
+      }
+      panel?.setAutoScrolling(false, hintKey: hint)
+    }
+    panel.onStopAutoScroll = { stop("ScreenshotLongAutoStopped") }
+    panel.onAutoScroll = { [weak self, weak panel] direction in
+      guard let self, let panel, isSelecting, panel.canBeginAutoScroll else { return }
+      guard allowAutoScroll() else { stop("ScreenshotLongAutoPermission"); return }
+      guard let target = listWindows().first(where: { $0.frame.contains(point) }) else {
+        stop("ScreenshotLongAutoTarget")
+        return
+      }
+      automatic = ScrollingScreenshotAutoScroll(direction, target: target)
+      for overlay in windows {
+        overlay.selectionView.catchesAutoScrollClicks = true
+        overlay.displayIfNeeded()
+        overlay.ignoresMouseEvents = false
+      }
+      panel.setAutoScrolling(true, hintKey: "ScreenshotLongAutoActive")
+      scrollingDelayTask?.cancel()
+    }
+    return { [weak self] update in
+      guard let self, automatic != nil else { return }
+      let action = update.capReached || update.warning == .lostTrack ? .stop
+        : automatic?.advance(after: update.appendResult, now: .now)
+      if action == .step, let automatic {
+        guard listWindows().first(where: { $0.frame.contains(point) }) == automatic.target,
+              postScroll(automatic.target, point, automatic.delta(for: captureRect.height)) else {
+          stop("ScreenshotLongAutoTarget")
+          return
+        }
+      } else if action == .stop {
+        stop(update.appendResult == .unmatched ? "ScreenshotLongLostTrack" : "ScreenshotLongAutoStopped")
+      }
+    }
   }
 
   private func makeWindow(
@@ -358,6 +456,7 @@ final class ScreenshotSelectionController {
       window.scrollingPanel = panel
       let processor = ScrollingScreenshotProcessor()
       let captureRect = Self.captureRectangle(rectangle, display: display)
+      let advanceAutoScroll = configureAutoScroll(panel, captureRect: captureRect)
       panel.onCancel = { [weak self] in self?.cancel() }
       panel.onScrollActivity = { [weak self] in
         guard let self else { return }
@@ -428,11 +527,12 @@ final class ScreenshotSelectionController {
               panel.update(image, width: update.width, height: update.height, capped: update.capReached)
               lastThumbnailUpdate = now
             }
+            advanceAutoScroll(update)
             panel.updateHint(capped: update.capReached, warning: update.warning)
             if update.capReached { return }
             let active = scrollingLastActivity.map { $0.duration(to: .now) < .milliseconds(200) } ?? false
             let delay = cadence.delay(after: update.appendResult, elapsed: started.duration(to: .now),
-              scrollIsActive: active)
+              scrollIsActive: active || panel.isAutoScrolling)
             let earliestNextCapture = ContinuousClock.now + ScrollingScreenshotCadence.minimumDelay
             let sleeper = Task { try await Task.sleep(for: delay) }
             scrollingDelayTask = sleeper

@@ -37,7 +37,7 @@ nonisolated struct ScrollingScreenshotStitcher {
 
   private struct Anchor {
     let signatures: RowSignatures
-    let height: Int
+    var height: Int
     let footer: Int
     let tail: Int
   }
@@ -47,8 +47,8 @@ nonisolated struct ScrollingScreenshotStitcher {
   }
 
   private mutating func rememberAnchor() {
-    anchors.removeAll { $0.height < height - frameHeight * 3 }
-    if anchors.last.map({ referenceHeight - $0.height >= max(1, frameHeight / 6) }) ?? true {
+    anchors.removeAll { abs(referenceHeight - $0.height) > frameHeight * 3 }
+    if !anchors.contains(where: { abs(referenceHeight - $0.height) < max(1, frameHeight / 6) }) {
       anchors.append(anchor)
     }
   }
@@ -440,37 +440,6 @@ nonisolated struct ScrollingScreenshotStitcher {
     }.prefix(32).map(\.key))
   }
 
-  private func isUpwardScroll(from previous: RowSignatures, to next: RowSignatures) -> Bool {
-    var header = 0
-    while header < frameHeight && rowsMatch(header, header, in: previous, previous: next) { header += 1 }
-    var end = frameHeight
-    while end > header && rowsMatch(end - 1, end - 1, in: previous, previous: next) { end -= 1 }
-    let band = end - header
-    let minimumOverlap = max(4, band / 3)
-    guard band > minimumOverlap else { return false }
-    var bestScore = 0.0
-    var runnerUp = 0.0
-    for shift in candidateShifts(in: previous, header: header, end: end,
-                                 maximumShift: band - minimumOverlap, previous: next) {
-      let overlap = band - shift
-      var matched = 0
-      var distinctMatches: Set<UInt64> = []
-      for row in header..<(end - shift) {
-        if rowsMatch(row + shift, row, in: previous, previous: next) {
-          matched += 1
-          if previous.informative[row] { distinctMatches.insert(previous.hashes[0][row]) }
-        }
-      }
-      guard distinctMatches.count >= min(4, overlap) else { continue }
-      let score = Double(matched) / Double(overlap)
-      if score > bestScore {
-        runnerUp = bestScore
-        bestScore = score
-      } else { runnerUp = max(runnerUp, score) }
-    }
-    return bestScore >= 0.95 && bestScore - runnerUp >= 0.05
-  }
-
   init(width: Int, height: Int, maximumPixels: Int) {
     self.width = width
     frameHeight = height
@@ -480,22 +449,20 @@ nonisolated struct ScrollingScreenshotStitcher {
 
   @discardableResult
   mutating func append(rgba: [UInt8]) -> Bool {
-    var wasUpward = false
     if !isLost {
-      let changed = appendForward(rgba: rgba)
+      let changed = matchFrame(rgba: rgba)
       if appendResult == .appended {
         failedFrames = 0
         rememberAnchor()
         return changed
       }
-      if appendResult == .reanchored {
+      if appendResult == .reanchored || appendResult == .upward {
         failedFrames = 0
+        rememberAnchor()
         return false
       }
-      if appendResult == .unmatched { failedFrames = min(2, failedFrames + 1) }
-      else if appendResult == .upward { failedFrames = 0 }
-      guard !capReached, appendResult == .unmatched || appendResult == .upward else { return false }
-      wasUpward = appendResult == .upward
+      guard !capReached, appendResult == .unmatched else { return false }
+      failedFrames = min(2, failedFrames + 1)
       if failedFrames == 2 { isLost = true }
     } else {
       matchedShift = nil
@@ -522,7 +489,7 @@ nonisolated struct ScrollingScreenshotStitcher {
       probe.referenceHeight = anchor.height
       probe.recoveryProbe = true
       probe.lastFrame = nil
-      _ = probe.appendForward(rgba: rgba, keys: next)
+      _ = probe.matchFrame(rgba: rgba, keys: next)
       guard probe.appendResult == .reanchored else { continue }
       if let recovered, recovered.referenceHeight != probe.referenceHeight { return false }
       recovered = probe
@@ -536,12 +503,12 @@ nonisolated struct ScrollingScreenshotStitcher {
     matchedShift = nil
     failedFrames = 0
     isLost = false
-    appendResult = wasUpward ? .upward : .reanchored
+    appendResult = .reanchored
     return false
   }
 
   @discardableResult
-  private mutating func appendForward(rgba: [UInt8], keys suppliedKeys: RowSignatures? = nil) -> Bool {
+  private mutating func matchFrame(rgba: [UInt8], keys suppliedKeys: RowSignatures? = nil) -> Bool {
     appendResult = .invalid
     matchedShift = nil
     if capReached {
@@ -553,17 +520,8 @@ nonisolated struct ScrollingScreenshotStitcher {
           !capReached else { return false }
     let keys = suppliedKeys ?? rowSignatures(rgba)
     let previousFrame = lastFrame
-    var matchesReference = false
-    appendResult = .unchanged
-    defer {
-      lastFrame = keys
-      if appendResult != .appended && appendResult != .reanchored {
-        if capReached { appendResult = .capped }
-        else if !matchesReference, let previousFrame, previousFrame.values != keys.values {
-          appendResult = isUpwardScroll(from: previousFrame, to: keys) ? .upward : .unmatched
-        }
-      }
-    }
+    lastFrame = keys
+    appendResult = .unmatched
     if chunks.isEmpty {
       chunks = [rgba]
       height = frameHeight
@@ -573,10 +531,14 @@ nonisolated struct ScrollingScreenshotStitcher {
       appendResult = .appended
       return true
     }
+    if !recoveryProbe, previousFrame?.values == keys.values {
+      appendResult = .unchanged
+      return false
+    }
     var header = 0
     while header < frameHeight && rowsMatch(header, header, in: keys) { header += 1 }
     guard header < frameHeight else {
-      matchesReference = true
+      appendResult = .unchanged
       let informativeRows = keys.informative.indices.filter { keys.informative[$0] }
       if recoveryProbe, informativeRows.count >= min(8, frameHeight),
          Set(informativeRows.map { keys.hashes[0][$0] }).count >= min(4, frameHeight) {
@@ -598,11 +560,59 @@ nonisolated struct ScrollingScreenshotStitcher {
       }
       footer = frameHeight - boundary
     }
-    var trimmed = max(footerHeight, footer, replacementTailHeight)
+    let trimmed = max(footerHeight, footer, replacementTailHeight)
     let band = frameHeight - header - trimmed
     let minimumOverlap = max(4, band / 3)
     maximumMatchableShift = max(0, band - minimumOverlap)
     guard band > minimumOverlap else { return false }
+    if let match = overlap(in: keys, header: header, footer: footer, trimmed: trimmed) {
+      return appendBottom(rgba, keys: keys, match: match, footer: footer)
+    }
+    var reverse = self
+    reverse.signatures = keys
+    guard let match = reverse.overlap(in: signatures, header: header, footer: footer, trimmed: trimmed) else {
+      return false
+    }
+    let nextBottom = referenceHeight - match.shift
+    let missing = max(0, frameHeight - nextBottom)
+    if recoveryProbe && (missing > 0 || nextBottom > height) { return false }
+    let count = min(missing, maximumHeight - height)
+    if count > 0 {
+      let stride = width * 4
+      let start = match.header + missing - count
+      var prefix = Array(rgba.prefix(match.header * stride))
+      prefix.append(contentsOf: rgba[(start * stride)..<((start + count) * stride)])
+      var replace = match.header * stride
+      while replace > 0 {
+        let size = chunks[0].count
+        if size > replace { chunks[0].removeFirst(replace); break }
+        chunks.removeFirst()
+        replace -= size
+      }
+      chunks.insert(prefix, at: 0)
+      for index in anchors.indices { anchors[index].height += count }
+      height += count
+      outputColumns = match.columns
+      capReached = height == maximumHeight
+    }
+    signatures = keys
+    referenceHeight = nextBottom + count
+    footerHeight = footer
+    replacementTailHeight = match.corner
+    matchedShift = match.shift
+    appendResult = count > 0 ? .appended : recoveryProbe ? .reanchored : .upward
+    return count > 0
+  }
+
+  private struct Overlap {
+    let shift: Int
+    let header: Int
+    let trimmed: Int
+    let columns: Range<Int>
+    let corner: Int
+  }
+
+  private func overlap(in keys: RowSignatures, header: Int, footer: Int, trimmed: Int) -> Overlap? {
     var bestShift = 0
     var bestHeader = header
     var bestTrimmed = trimmed
@@ -614,7 +624,7 @@ nonisolated struct ScrollingScreenshotStitcher {
       new: rowInformation(in: keys, columns: 0..<binCount))
     var maskedInformation: [Int: (old: RowInformation, new: RowInformation)] = [:]
     for shift in candidateShifts(in: keys, header: header, end: frameHeight - trimmed,
-                                 maximumShift: band - minimumOverlap) {
+                                 maximumShift: maximumMatchableShift) {
       let corner = cornerFooter(in: keys, shift: shift, footer: footer)
       let candidateTrimmed = max(trimmed, corner)
       guard frameHeight - candidateTrimmed - shift > header else { continue }
@@ -654,21 +664,26 @@ nonisolated struct ScrollingScreenshotStitcher {
         bestCorner = corner
       } else { runnerUp = max(runnerUp, candidate.value) }
     }
-    guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return false }
+    guard bestScore >= 0.95, bestScore - runnerUp >= 0.05 else { return nil }
     let previousColumns = outputColumns ?? 0..<binCount
     let columns = max(previousColumns.lowerBound, bestColumns.lowerBound)..<min(
       previousColumns.upperBound, bestColumns.upperBound)
-    guard columns.lowerBound == 0, binCount - columns.count <= scrollbarBinCap else { return false }
-    trimmed = max(bestTrimmed, footer)
-    var start = max(bestHeader, frameHeight - trimmed - bestShift)
+    guard columns.lowerBound == 0, binCount - columns.count <= scrollbarBinCap else { return nil }
+    return Overlap(shift: bestShift, header: bestHeader, trimmed: bestTrimmed, columns: columns, corner: bestCorner)
+  }
+
+  private mutating func appendBottom(_ rgba: [UInt8], keys: RowSignatures, match: Overlap, footer: Int) -> Bool {
+    var footer = footer
+    let trimmed = max(match.trimmed, footer)
+    var start = max(match.header, frameHeight - trimmed - match.shift)
     if footer > 0, height - trimmed + frameHeight - start > maximumHeight {
       let movesWithBody = ((frameHeight - footer)..<frameHeight).allSatisfy {
-        rowsMatch($0, $0 - bestShift, in: keys, previous: keys)
+        rowsMatch($0, $0 - match.shift, in: keys, previous: keys)
       }
       if movesWithBody { footer = 0 }
     }
     let nextReferenceHeight = referenceHeight - trimmed + frameHeight - start
-    let nextTail = max(bestCorner, hasStaticEdges(in: keys, footer: footer) ? replacementTailHeight : 0)
+    let nextTail = max(match.corner, hasStaticEdges(in: keys, footer: footer) ? replacementTailHeight : 0)
     if recoveryProbe || nextReferenceHeight <= height {
       signatures = keys
       referenceHeight = nextReferenceHeight
@@ -678,11 +693,12 @@ nonisolated struct ScrollingScreenshotStitcher {
       return false
     }
     start += height - referenceHeight
-    guard start >= bestHeader, start < frameHeight - footer else { return false }
+    guard start >= match.header, start < frameHeight - footer else { return false }
     let contentCount = frameHeight - footer - start
     let count = min(contentCount, maximumHeight - (height - trimmed + footer))
     guard count > 0 else {
       capReached = true
+      appendResult = .capped
       return false
     }
     let stride = width * 4
@@ -691,7 +707,7 @@ nonisolated struct ScrollingScreenshotStitcher {
       return false
     }
     chunks.append(Array(rgba[(start * stride)..<((start + count) * stride)]))
-    outputColumns = columns
+    outputColumns = match.columns
     replacementTailHeight = nextTail
     if footer > 0 { chunks.append(Array(rgba[((frameHeight - footer) * stride)..<rgba.count])) }
     height = height - trimmed + count + footer
@@ -699,7 +715,7 @@ nonisolated struct ScrollingScreenshotStitcher {
     footerHeight = footer
     signatures = keys
     capReached = count < contentCount || height == maximumHeight
-    matchedShift = bestShift
+    matchedShift = match.shift
     appendResult = .appended
     return true
   }

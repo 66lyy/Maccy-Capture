@@ -2,6 +2,12 @@
 "ScreenshotLongEditHint" = "拖动手柄裁剪，在图上涂抹打码。";
 "ScreenshotLongSlowScroll" = "太快了，请慢一点";
 "ScreenshotLongLostTrack" = "跟丢了，请往回滚一点";
+"ScreenshotLongAutoUp" = "自动向上";
+"ScreenshotLongAutoDown" = "自动向下";
+"ScreenshotLongAutoActive" = "正在自动滚动，点击屏幕任意位置停止。";
+"ScreenshotLongAutoStopped" = "自动滚动已停止，可继续手动滚动或复制长图。";
+"ScreenshotLongAutoPermission" = "自动滚动需要在系统设置中允许「辅助功能」，也可继续手动滚动。";
+"ScreenshotLongAutoTarget" = "选区中心没有可匹配的目标窗口，可继续手动滚动。";
 "Title" = "通用";
 "PreferencesWindowTitle" = "偏好设置";
 "ShortcutSettingsTitle" = "快捷键";

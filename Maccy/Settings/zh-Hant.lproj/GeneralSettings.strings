@@ -2,6 +2,12 @@
 "ScreenshotLongEditHint" = "拖曳控制點裁切，在圖片上塗抹打馬賽克。";
 "ScreenshotLongSlowScroll" = "太快了，請慢一點";
 "ScreenshotLongLostTrack" = "跟丟了，請往回捲一點";
+"ScreenshotLongAutoUp" = "自動向上";
+"ScreenshotLongAutoDown" = "自動向下";
+"ScreenshotLongAutoActive" = "正在自動捲動，點一下螢幕任意位置即可停止。";
+"ScreenshotLongAutoStopped" = "自動捲動已停止，可繼續手動捲動或複製長圖。";
+"ScreenshotLongAutoPermission" = "自動捲動需要在系統設定中允許「輔助使用」，也可繼續手動捲動。";
+"ScreenshotLongAutoTarget" = "選取範圍中央沒有相符的目標視窗，可繼續手動捲動。";
 "Title" = "一般";
 "LaunchAtLogin" = "登入時啟動";
 "CheckForUpdates" = "自動檢查更新";

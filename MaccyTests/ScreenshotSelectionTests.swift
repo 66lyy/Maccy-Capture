@@ -6,6 +6,91 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ScreenshotSelectionTests {
+  @Test("Automatic steps wait for confirmed and settled movement and stop at a stationary edge")
+  func automaticScrollPacing() {
+    let target = ScreenshotElementDetection.Window(pid: 1, frame: .zero, id: 12)
+    var scroll = ScrollingScreenshotAutoScroll(.up, target: target)
+    let start = ContinuousClock.now
+    #expect(scroll.delta(for: 240) == 40)
+    #expect(ScrollingScreenshotAutoScroll(.down, target: target).delta(for: 1800) == -96)
+    #expect(scroll.advance(after: .unchanged, now: start) == .step)
+    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(200)) == .wait)
+    #expect(scroll.advance(after: .upward, now: start + .milliseconds(250)) == .wait)
+    #expect(scroll.advance(after: .appended, now: start + .milliseconds(300)) == .wait)
+    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(399)) == .wait)
+    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(400)) == .step)
+    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(1399)) == .wait)
+    #expect(scroll.advance(after: .unchanged, now: start + .milliseconds(1400)) == .stop)
+    for result: ScrollingScreenshotStitcher.AppendResult in [.unmatched, .invalid, .capped] {
+      #expect(scroll.advance(after: result, now: start + .seconds(2)) == .stop)
+    }
+  }
+
+  @Test("A stop click is consumed, releases the overlays, and keeps the stitched PNG", arguments: [false, true])
+  func automaticScrollStopAndExport(up: Bool) async throws {
+    let display = Self.displays[1]
+    let target = ScreenshotElementDetection.Window(pid: 42, frame: display.captureFrame, id: 17)
+    let width = 8, height = 24
+    let page = (0..<(width * 128)).flatMap { index -> [UInt8] in
+      let row = index / width, column = index % width
+      return [UInt8((row * 37 + column * 19) % 239), UInt8((row * 71 + column * 13) % 239), UInt8(row), 255]
+    }
+    var offset = 48, steps = 0
+    var local: ((NSEvent) -> NSEvent?)?
+    let monitor = ScrollingScreenshotActivityMonitor(addLocal: { local = $0; return NSObject() },
+      addGlobal: { _ in nil }, remove: { _ in })
+    var permitted = false
+    let controller = ScreenshotSelectionController(displays: { [display] }, presentWindow: { _, _ in },
+      captureRegion: { _, _, _ in
+        let bytes = Data(page[(offset * width * 4)..<((offset + height) * width * 4)])
+        let provider = try #require(CGDataProvider(data: bytes as CFData))
+        let image = try #require(CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+          bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider,
+          decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        return NSImage(cgImage: image, size: NSSize(width: width, height: height))
+      }, freezeDisplays: { _ in [] }, listWindows: { [target] }, makeScrollMonitor: { monitor },
+      allowAutoScroll: { permitted }, postScroll: { window, point, delta in
+        #expect(window == target)
+        #expect(point == CGPoint(x: -750, y: 550))
+        #expect(delta == (up ? 10 : -10))
+        steps += 1
+        offset += up ? -4 : 4
+        return true
+      })
+    defer { controller.cancel() }
+    let selection = Task { try await controller.select(pinImmediately: false) }
+    try await waitForSelection(controller)
+    let window = try #require(controller.windows.first)
+    window.selectionView.beginSelection(at: NSPoint(x: 20, y: 20))
+    window.selectionView.endSelection(at: NSPoint(x: 80, y: 80))
+    window.onLongScreenshot?()
+    let panel = try #require(window.scrollingPanel)
+    for _ in 0..<200 where panel.image == nil { try await Task.sleep(for: .milliseconds(10)) }
+    try #require(panel.image != nil)
+    panel.onAutoScroll?(up ? .up : .down)
+    #expect(!panel.isAutoScrolling && window.ignoresMouseEvents && steps == 0)
+    permitted = true
+    panel.onAutoScroll?(up ? .up : .down)
+    #expect(panel.isAutoScrolling && !window.ignoresMouseEvents)
+    for _ in 0..<200 where steps < 2 { try await Task.sleep(for: .milliseconds(10)) }
+    try #require(steps >= 2)
+    let click = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: .zero, modifierFlags: [],
+      timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+    let handle = try #require(local)
+    #expect(handle(click) == nil)
+    #expect(!panel.isAutoScrolling && window.ignoresMouseEvents && controller.isSelecting)
+    #expect(handle(click) === click)
+    let stopped = steps
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(steps == stopped)
+    panel.onFinish?(false)
+    let result = try await selection.value
+    let data = try #require(result?.renderedData)
+    let png = try #require(NSBitmapImageRep(data: data))
+    #expect(png.pixelsWide == width && png.pixelsHigh == height + stopped * 4)
+  }
+
   @Test("Long screenshot editor clamps extreme drags and keeps mosaic and crop ranges valid")
   func auditScrollingEditorDrags() throws {
     let context = try #require(CGContext(

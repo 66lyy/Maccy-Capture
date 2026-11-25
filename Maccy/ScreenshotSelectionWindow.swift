@@ -82,18 +82,21 @@ final class ScreenshotSelectionWindow: ScreenshotAnnotationWindow {
 
 @MainActor
 final class ScrollingScreenshotActivityMonitor {
+  private static let mask: NSEvent.EventTypeMask = [.scrollWheel, .mouseMoved, .leftMouseDragged,
+    .leftMouseDown, .rightMouseDown, .otherMouseDown]
   private let addLocal: (@escaping (NSEvent) -> NSEvent?) -> Any?
   private let addGlobal: (@escaping (NSEvent) -> Void) -> Any?
   private let remove: (Any) -> Void
   private var tokens: [Any] = []
+  private(set) var monitorsLocalClicks = false
   var isMonitoring: Bool { !tokens.isEmpty }
 
   init(
     addLocal: @escaping (@escaping (NSEvent) -> NSEvent?) -> Any? = {
-      NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
+      NSEvent.addLocalMonitorForEvents(matching: ScrollingScreenshotActivityMonitor.mask, handler: $0)
     },
     addGlobal: @escaping (@escaping (NSEvent) -> Void) -> Any? = {
-      AppDelegate.isTesting ? nil : NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel, .mouseMoved, .leftMouseDragged], handler: $0)
+      AppDelegate.isTesting ? nil : NSEvent.addGlobalMonitorForEvents(matching: ScrollingScreenshotActivityMonitor.mask, handler: $0)
     },
     remove: @escaping (Any) -> Void = { NSEvent.removeMonitor($0) }
   ) {
@@ -102,14 +105,25 @@ final class ScrollingScreenshotActivityMonitor {
     self.remove = remove
   }
 
-  func start(_ observe: @escaping (NSEvent) -> Void) {
+  func start(stopOnClick: @escaping () -> Bool = { false }, _ observe: @escaping (NSEvent) -> Void) {
     stop()
-    tokens = [addLocal { event in observe(event); return event }, addGlobal(observe)].compactMap { $0 }
+    func handle(_ event: NSEvent) -> NSEvent? {
+      switch event.type {
+      case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+        if stopOnClick() { return nil }
+      default: observe(event)
+      }
+      return event
+    }
+    let local = addLocal(handle)
+    monitorsLocalClicks = local != nil
+    tokens = [local, addGlobal { _ = handle($0) }].compactMap { $0 }
   }
 
   func stop() {
     tokens.forEach(remove)
     tokens.removeAll()
+    monitorsLocalClicks = false
   }
 
   isolated deinit { tokens.forEach(remove) }
@@ -121,6 +135,12 @@ final class ScrollingScreenshotPanel: NSPanel {
   var onEdit: (() -> Void)?
   var onCancel: (() -> Void)?
   var onScrollActivity: (() -> Void)?
+  var onAutoScroll: ((ScrollingScreenshotAutoScroll.Direction) -> Void)?
+  var onStopAutoScroll: (() -> Void)?
+  private(set) var isAutoScrolling = false
+  private var autoHint: String?
+  private var autoButtons: [NSButton] = []
+  private let autoLine = NSStackView()
   private let activityMonitor: ScrollingScreenshotActivityMonitor
   private var controls: [NSButton] = []
   private(set) var image: CGImage?
@@ -138,6 +158,9 @@ final class ScrollingScreenshotPanel: NSPanel {
   private let warningIcon = NSImageView()
   private var outputButtons: [NSButton] = []
   var isMonitoringScrollEvents: Bool { activityMonitor.isMonitoring }
+  var canBeginAutoScroll: Bool {
+    !editing && !isAutoScrolling && activityMonitor.monitorsLocalClicks && autoButtons.first?.isEnabled == true
+  }
 
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
@@ -176,7 +199,7 @@ final class ScrollingScreenshotPanel: NSPanel {
        activityMonitor: ScrollingScreenshotActivityMonitor = .init()) {
     self.activityMonitor = activityMonitor
     let frame = Self.placement(
-      beside: rectangle, bounds: bounds, size: NSSize(width: 330, height: 240)
+      beside: rectangle, bounds: bounds, size: NSSize(width: 330, height: 276)
     )
     super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     self.level = NSWindow.Level(rawValue: level)
@@ -225,7 +248,10 @@ final class ScrollingScreenshotPanel: NSPanel {
     let undo = NSButton(title: text("AnnotationUndo"), target: self, action: #selector(undoEdit))
     editButton = edit
     undoButton = undo
-    controls = [copy, pin, cancel, edit]
+    autoButtons = [NSButton(title: text("ScreenshotLongAutoUp"), target: self, action: #selector(autoUp)),
+      NSButton(title: text("ScreenshotLongAutoDown"), target: self, action: #selector(autoDown))]
+    autoButtons.forEach { $0.isEnabled = false; autoLine.addArrangedSubview($0) }
+    controls = [copy, pin, cancel, edit] + autoButtons
     for button in controls {
       button.bezelStyle = .rounded
       _ = button.applyGlassBezel()
@@ -239,7 +265,7 @@ final class ScrollingScreenshotPanel: NSPanel {
     actions.spacing = 8
     let editLine = NSStackView(views: [dimensions, edit, undo])
     editLine.spacing = 8
-    let stack = NSStackView(views: [preview, editLine, hintLine, actions])
+    let stack = NSStackView(views: [preview, editLine, autoLine, hintLine, actions])
     stack.orientation = .vertical
     stack.spacing = 8
     stack.translatesAutoresizingMaskIntoConstraints = false
@@ -263,7 +289,11 @@ final class ScrollingScreenshotPanel: NSPanel {
 
   private func startMonitoringScrollEvents() {
     guard isVisible, !editing, !isMonitoringScrollEvents else { return }
-    activityMonitor.start { [weak self] event in
+    activityMonitor.start(stopOnClick: { [weak self] in
+      guard let self, isAutoScrolling else { return false }
+      onStopAutoScroll?()
+      return true
+    }) { [weak self] event in
       if event.type == .scrollWheel { self?.onScrollActivity?() }
       else { self?.updateMousePassthrough(at: NSEvent.mouseLocation) }
     }
@@ -272,6 +302,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   }
 
   private func stopMonitoringScrollEvents() {
+    if isAutoScrolling { onStopAutoScroll?() }
     activityMonitor.stop()
   }
 
@@ -316,6 +347,8 @@ final class ScrollingScreenshotPanel: NSPanel {
   override func close() {
     stopMonitoringScrollEvents()
     onScrollActivity = nil
+    onAutoScroll = nil
+    onStopAutoScroll = nil
     onEdit = nil
     ignoresMouseEvents = false
     super.close()
@@ -323,12 +356,22 @@ final class ScrollingScreenshotPanel: NSPanel {
 
   func stopMonitoring() { stopMonitoringScrollEvents() }
 
+  @objc private func autoUp() { onAutoScroll?(.up) }
+  @objc private func autoDown() { onAutoScroll?(.down) }
+
+  func setAutoScrolling(_ active: Bool, hintKey: String) {
+    isAutoScrolling = active
+    autoHint = hintKey
+    updateHint(capped: false, warning: .normal)
+  }
+
   func update(_ image: CGImage, width: Int, height: Int, capped: Bool) {
     self.image = image
     thumbnail.image = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     dimensions.stringValue = "\(width) × \(height) px"
     outputButtons.forEach { $0.isEnabled = true }
     editButton?.isEnabled = true
+    autoButtons.forEach { $0.isEnabled = !capped }
     updateHint(capped: capped, showSlowScrollHint: false)
   }
 
@@ -340,7 +383,7 @@ final class ScrollingScreenshotPanel: NSPanel {
     guard !editing else { return }
     hint.stringValue = text(capped ? "ScreenshotLongLimit"
       : warning == .lostTrack ? "ScreenshotLongLostTrack"
-      : warning == .tooFast ? "ScreenshotLongSlowScroll" : "ScreenshotLongHint")
+      : warning == .tooFast && !isAutoScrolling ? "ScreenshotLongSlowScroll" : autoHint ?? "ScreenshotLongHint")
     let warns = !capped && warning != .normal
     hint.textColor = warns ? .systemOrange : .labelColor
     warningIcon.alphaValue = warns ? 1 : 0
@@ -355,6 +398,7 @@ final class ScrollingScreenshotPanel: NSPanel {
     updateHint(capped: false, warning: .normal)
     editing = true
     stopMonitoringScrollEvents()
+    autoLine.isHidden = true
     ignoresMouseEvents = false
     editButton?.isEnabled = false
     outputButtons.forEach { $0.isEnabled = false }
@@ -410,7 +454,7 @@ final class ScrollingScreenshotPanel: NSPanel {
   @objc private func cancelResult() { onCancel?() }
 
   private func text(_ key: String) -> String {
-    NSLocalizedString(key, tableName: "GeneralSettings", comment: "")
+    PinnedScreenshotWindow.localized(key)
   }
 }
 

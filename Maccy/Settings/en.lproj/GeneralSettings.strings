@@ -1,7 +1,13 @@
 "ScreenshotLongFinishScrolling" = "Finish Scrolling";
 "ScreenshotLongEditHint" = "Drag handles to crop. Paint on the image to pixelate.";
 "ScreenshotLongSlowScroll" = "Too fast, slow down";
-"ScreenshotLongLostTrack" = "Lost track, scroll back up a little";
+"ScreenshotLongLostTrack" = "Lost track. Scroll back toward the captured area.";
+"ScreenshotLongAutoUp" = "Auto-scroll up";
+"ScreenshotLongAutoDown" = "Auto-scroll down";
+"ScreenshotLongAutoActive" = "Auto-scrolling. Click anywhere to stop.";
+"ScreenshotLongAutoStopped" = "Auto-scroll stopped. Continue manually or copy the result.";
+"ScreenshotLongAutoPermission" = "Allow Accessibility in System Settings for auto-scroll, or scroll manually.";
+"ScreenshotLongAutoTarget" = "No matching window at the center of the selection. Scroll manually.";
 "Title" = "General";
 "PreferencesWindowTitle" = "Settings";
 "ShortcutSettingsTitle" = "Shortcuts";
